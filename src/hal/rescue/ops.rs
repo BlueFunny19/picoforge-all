@@ -226,15 +226,19 @@ impl RescueOperations for PcscTransport {
         let version_major = select_resp[2];
         let version_minor = select_resp[3];
 
-        // FIX: Handle missing Serial Number safely
         // If the firmware sends 14 bytes, we have a serial. If it sends 6, we don't.
+        // The 8-byte chip id sits at [4..12]; the user-facing serial is the 8-digit
+        // Yubico decimal (first 4 bytes, top 6 bits of byte 0 cleared, big-endian) —
+        // the same value the device reports over PIV/OTP/OpenPGP GET SERIAL and that
+        // ykman/YubiKey Manager display. See rsk_mgmt::serial4.
         let serial_str = if select_resp.len() >= 14 {
-            hex::encode_upper(&select_resp[4..12])
+            let id = &select_resp[4..12];
+            u32::from_be_bytes([id[0] & 0x03, id[1], id[2], id[3]]).to_string()
         } else {
             log::warn!(
                 "Device did not return a Serial Number (Firmware mismatch?). Using placeholder."
             );
-            "00000000".to_string()
+            "0".to_string()
         };
 
         log::info!("Device Version: {}.{}", version_major, version_minor);
@@ -257,14 +261,13 @@ impl RescueOperations for PcscTransport {
             return Err(PFError::Device("Failed to read flash".into()));
         }
 
+        // FlashInfo layout: free, used, total(=KV partition), nfiles, chip_size.
         let mut cursor = Cursor::new(&flash_response[..flash_response.len() - 2]);
         let _free = cursor.read_u32::<BigEndian>().unwrap_or(0);
         let used = cursor.read_u32::<BigEndian>().unwrap_or(0);
         let total = cursor.read_u32::<BigEndian>().unwrap_or(0);
-
-        // NOTE: captured but currently unused variables
-        let _nfiles = cursor.read_u32::<BigEndian>().unwrap_or(0);
-        let _chip_size = cursor.read_u32::<BigEndian>().unwrap_or(0);
+        let nfiles = cursor.read_u32::<BigEndian>().unwrap_or(0);
+        let chip_size = cursor.read_u32::<BigEndian>().unwrap_or(0);
 
         // --- Read Secure Boot Status ---
         let secure_response = self.transmit(
@@ -346,6 +349,12 @@ impl RescueOperations for PcscTransport {
                             .trim_matches(char::from(0));
                         config.product_name = product_str.to_string();
                     }
+                    PhyTag::UsbManufacturer => {
+                        let mfr = std::str::from_utf8(field_data)
+                            .unwrap_or("")
+                            .trim_matches(char::from(0));
+                        config.manufacturer_name = mfr.to_string();
+                    }
                     PhyTag::Opts => {
                         if field_data.len() >= 2 {
                             let options_raw = u16::from_be_bytes([field_data[0], field_data[1]]);
@@ -408,6 +417,12 @@ impl RescueOperations for PcscTransport {
                 flash_used: Some(used / 1024),
                 flash_total: Some(total / 1024),
                 firmware_version: format!("{}.{}", version_major, version_minor),
+                // No USB descriptor over the Rescue/PC-SC channel.
+                bcd_device: None,
+                manufacturer: None,
+                flash_files: Some(nfiles),
+                // 0 = an older firmware that doesn't report the chip size.
+                flash_chip_size: (chip_size > 0).then_some(chip_size),
             },
             config,
             secure_boot: sb_enabled,
@@ -538,6 +553,19 @@ impl RescueOperations for PcscTransport {
             tlv.push(0x00);
         }
 
+        // Manufacturer Name (Tag 0x0F)
+        if let Some(mfr) = config.manufacturer_name.filter(|n| !n.is_empty()) {
+            let mfr_bytes = mfr.as_bytes();
+            let len = mfr_bytes.len() + 1;
+            if len > 32 {
+                return Err(PFError::Io("Manufacturer name too long".into()));
+            }
+            tlv.push(PhyTag::UsbManufacturer as u8);
+            tlv.push(len as u8);
+            tlv.extend_from_slice(mfr_bytes);
+            tlv.push(0x00);
+        }
+
         // LED Order (Tag 0x0D) — RS-Key extension, silently preserved
         if let Some(val) = config.led_order {
             tlv.push(PhyTag::LedOrder as u8);
@@ -553,8 +581,9 @@ impl RescueOperations for PcscTransport {
             tlv.push(val | UsbInterfaces::CCID.bits());
         }
 
-        // LED count (Tag 0x0E) — RS-Key extension; the rescue write is full-replace,
-        // so emit it here too or a CCID write silently drops the configured count.
+        // LED count (Tag 0x0E) — RS-Key extension. The rescue WRITE 0x1C merges
+        // (RS-Key bcd 0x083A+), so an omitted tag is preserved; emit it anyway to
+        // faithfully round-trip the value the device reported.
         if let Some(val) = config.led_num {
             tlv.push(PhyTag::LedNum as u8);
             tlv.push(0x01);
@@ -593,7 +622,7 @@ impl RescueOperations for PcscTransport {
 
     /// Reboots the device, optionally entering BOOTSEL (mass storage) mode for firmware updates.
     ///
-    /// Sends a REBOOT APDU: `80 1B [P1] 00 00` where:
+    /// Sends a REBOOT APDU: `80 1F [P1] 00 00` where:
     /// - `P1 = 0x00` (`RebootParam::Normal`): Reboots into normal FIDO mode
     /// - `P1 = 0x01` (`RebootParam::Bootsel`): Reboots into BOOTSEL/UF2 bootloader mode
     ///
@@ -788,6 +817,7 @@ impl RescueOperations for PcscTransport {
         };
 
         let mut config = ManagementAppConfig::default();
+        let mut enabled_seen = false;
         let mut offset = 0;
         while offset < tlv_data.len() {
             if offset + 2 > tlv_data.len() {
@@ -809,6 +839,7 @@ impl RescueOperations for PcscTransport {
                 MGMT_TAG_USB_ENABLED => {
                     if field_data.len() >= 2 {
                         config.usb_enabled = u16::from_be_bytes([field_data[0], field_data[1]]);
+                        enabled_seen = true;
                     }
                 }
                 _ => {
@@ -816,6 +847,11 @@ impl RescueOperations for PcscTransport {
                 }
             }
             offset += field_len;
+        }
+        // An absent USB_ENABLED tag means "all supported apps enabled" (firmware
+        // enabled_from_conf), not "all disabled" — else every applet false-gates.
+        if !enabled_seen {
+            config.usb_enabled = config.usb_supported;
         }
 
         log::info!(

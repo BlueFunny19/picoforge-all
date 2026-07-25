@@ -24,6 +24,7 @@
 //! | `supports_rs_key_vendor_command` | Whether RS-Key-specific vendor commands (0x05 etc.) are available. |
 //! | `supports_rescue_channel` | Whether the PC/SC rescue channel is accessible. |
 
+pub mod applets;
 pub mod picofido;
 pub mod rskey;
 

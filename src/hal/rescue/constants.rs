@@ -319,6 +319,8 @@ pub enum PhyTag {
     /// RS-Key specific tag specifying how many individual LEDs
     /// are present (e.g., 1 for single, 3 for RGB).
     LedNum = 0x0E,
+    /// USB iManufacturer string (null-terminated), an RS-Key extension.
+    UsbManufacturer = 0x0F,
 }
 
 impl PhyTag {
@@ -339,6 +341,7 @@ impl PhyTag {
             0x0C => Some(Self::LedDriver),
             0x0D => Some(Self::LedOrder),
             0x0E => Some(Self::LedNum),
+            0x0F => Some(Self::UsbManufacturer),
             _ => None,
         }
     }

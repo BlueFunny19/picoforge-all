@@ -729,6 +729,44 @@ pub const RSKEY_CONFIG_READ: u8 = 0x0D;
 /// as CONFIG_READ. Requires ACFG-gated PIN token.
 pub const RSKEY_CONFIG_WRITE: u8 = 0x0C;
 
+// RS-Key 0x41 vendor subcommands for seed backup, soft-lock, and the audit
+// journal. Backup export/load and audit read/checkpoint are ACFG-gated
+// (PIN token or, absent a PIN, a physical touch); MSE / STATE / UNLOCK are not.
+/// MSE — ephemeral-ECDH channel setup for backup export/restore and unlock.
+pub const RSKEY_VENDOR_MSE: u8 = 1;
+/// EXPORT — read the encrypted master seed (one-time window).
+pub const RSKEY_VENDOR_EXPORT: u8 = 2;
+/// LOAD — restore a seed from a backup.
+pub const RSKEY_VENDOR_LOAD: u8 = 3;
+/// FINALIZE — seal the one-time export window.
+pub const RSKEY_VENDOR_FINALIZE: u8 = 4;
+/// STATE — `{1: sealed, 2: has_seed, 3: locked, 4: unlocked}`.
+pub const RSKEY_VENDOR_STATE: u8 = 5;
+/// UNLOCK — load a soft-locked seed into RAM for this power cycle.
+pub const RSKEY_VENDOR_UNLOCK: u8 = 6;
+/// AUDIT_READ — export the journal window.
+pub const RSKEY_VENDOR_AUDIT_READ: u8 = 7;
+/// AUDIT_CHECKPOINT — sign the chain head over a host challenge.
+pub const RSKEY_VENDOR_AUDIT_CHECKPOINT: u8 = 8;
+/// ATT_IMPORT — install an org attestation P-256 key + cert chain (MSE-wrapped).
+pub const RSKEY_VENDOR_ATT_IMPORT: u8 = 9;
+/// ATT_CLEAR — remove the org attestation (back to the self-signed cert).
+pub const RSKEY_VENDOR_ATT_CLEAR: u8 = 10;
+/// ATT_STATE — `{1: installed, 2: chain_hash}`.
+pub const RSKEY_VENDOR_ATT_STATE: u8 = 11;
+/// AUDIT_CONFIG — turn the audit journal on/off. `subCommandParams` key 1 is the
+/// target: `0` = disable, `1` = enable (both PIN + touch gated), `2` = read-only
+/// status (ungated). The response `{1: bool}` is the resulting on/off state.
+pub const RSKEY_VENDOR_AUDIT_CONFIG: u8 = 14;
+
+// authenticatorConfig VendorPrototype (0xFF) 64-bit IDs for the at-rest soft
+// lock: they wrap / restore the FIDO seed and so run over authenticatorConfig
+// (PIN required), not the 0x41 channel.
+/// AUT_ENABLE — wrap the seed under a host lock key and erase the plaintext.
+pub const RSKEY_AUT_ENABLE: u64 = 0x03E4_3F56_B342_85E2;
+/// AUT_DISABLE — restore the plaintext seed (requires a prior unlock).
+pub const RSKEY_AUT_DISABLE: u64 = 0x1831_A40F_04A2_5ED9;
+
 /// RS-Key config target: device configuration (VID, PID, serial, product name).
 pub const RSKEY_CFG_TARGET_DEV_CONF: u8 = 0x00;
 /// RS-Key config target: physical config (LED GPIO, brightness, options).

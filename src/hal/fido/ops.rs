@@ -120,10 +120,26 @@ pub trait FidoOperations {
         credential_id_map: Value,
     ) -> Result<(), PFError>;
     /// Read RS-Key configuration via the 0x41 CONFIG_READ vendor command.
-    fn rs_key_config_read(&self, target: u8) -> Result<Vec<u8>, PFError>;
+    fn rs_key_config_read(&self, target: u8) -> Result<(Vec<u8>, super::EffectivePhy), PFError>;
     /// Write RS-Key configuration via the 0x41 CONFIG_WRITE vendor command.
     fn rs_key_config_write(&self, pin_token: &[u8], target: u8, blob: &[u8])
     -> Result<(), PFError>;
+    /// Send an RS-Key 0x41 vendor subcommand (backup / audit / soft-lock) and
+    /// return `(ctap_status, response_map)`.
+    fn rs_key_vendor(
+        &self,
+        sub_cmd: u8,
+        params: Option<Value>,
+        pin: Option<&str>,
+    ) -> Result<(u8, Option<Value>), PFError>;
+    /// Invoke an authenticatorConfig VendorPrototype (0xFF) command by 64-bit id
+    /// with an optional parameter, authorised by a PERM_ACFG `pin_token`.
+    fn authconfig_vendor(
+        &self,
+        pin_token: &[u8],
+        vendor_id: u64,
+        param: Option<Value>,
+    ) -> Result<(), PFError>;
     /// Compute a pinUvAuthToken signature for a credential management sub-command.
     fn sign_credential_mgmt_command(
         &self,
@@ -1442,7 +1458,7 @@ impl FidoOperations for HidTransport {
     /// Targets: `RSKEY_CFG_TARGET_PHY` (0x01) and `RSKEY_CFG_TARGET_LED` (0x02).
     /// `DEV_CONF` (0x00) is write-only over FIDO — the firmware rejects it here
     /// (readable only via the CCID Management applet), so this returns an error.
-    fn rs_key_config_read(&self, target: u8) -> Result<Vec<u8>, PFError> {
+    fn rs_key_config_read(&self, target: u8) -> Result<(Vec<u8>, super::EffectivePhy), PFError> {
         let mut params = BTreeMap::new();
         params.insert(Value::Integer(1), Value::Integer(RSKEY_CONFIG_READ as i128));
 
@@ -1456,14 +1472,31 @@ impl FidoOperations for HidTransport {
         full_payload.extend(inner);
         let resp = self.send_cbor(CTAPHID_CBOR, &full_payload)?;
 
-        // Response is CBOR `{1: blob(bstr)}` — unwrap key 1 to the raw record.
+        // Response `{1: blob(bstr), 2: {phy_tag: value}}`: key 1 is the raw record;
+        // key 2 (RS-Key 0x0852+) is the boot-resolved effective LED pin (tag 4) /
+        // driver (tag 12) / touch timeout (tag 8). Key 2 is optional.
         match from_slice::<Value>(&resp) {
-            Ok(Value::Map(m)) => match m.get(&Value::Integer(1)) {
-                Some(Value::Bytes(b)) => Ok(b.clone()),
-                _ => Err(PFError::Device(
-                    "CONFIG_READ response missing blob (key 1)".into(),
-                )),
-            },
+            Ok(Value::Map(m)) => {
+                let blob = match m.get(&Value::Integer(1)) {
+                    Some(Value::Bytes(b)) => b.clone(),
+                    _ => {
+                        return Err(PFError::Device(
+                            "CONFIG_READ response missing blob (key 1)".into(),
+                        ));
+                    }
+                };
+                let mut eff = super::EffectivePhy::default();
+                if let Some(Value::Map(e)) = m.get(&Value::Integer(2)) {
+                    let byte = |k: i128| match e.get(&Value::Integer(k)) {
+                        Some(Value::Integer(n)) if (0..=255).contains(n) => Some(*n as u8),
+                        _ => None,
+                    };
+                    eff.led_gpio = byte(4);
+                    eff.led_driver = byte(12);
+                    eff.touch_timeout = byte(8);
+                }
+                Ok((blob, eff))
+            }
             _ => Err(PFError::Device(
                 "CONFIG_READ response is not a CBOR map".into(),
             )),
@@ -1517,6 +1550,104 @@ impl FidoOperations for HidTransport {
         // several seconds on RP2040 — use a generous timeout.
         const CONFIG_WRITE_TIMEOUT_MS: i32 = 30_000;
         self.send_cbor_with_timeout(CTAPHID_CBOR, &full_payload, CONFIG_WRITE_TIMEOUT_MS)
+            .map(|_| ())
+    }
+
+    fn rs_key_vendor(
+        &self,
+        sub_cmd: u8,
+        params: Option<Value>,
+        pin: Option<&str>,
+    ) -> Result<(u8, Option<Value>), PFError> {
+        let params_bytes = match &params {
+            Some(v) => to_vec(v).map_err(|e| PFError::Io(e.to_string()))?,
+            None => Vec::new(),
+        };
+
+        let mut outer = BTreeMap::new();
+        outer.insert(Value::Integer(1), Value::Integer(sub_cmd as i128));
+        if let Some(v) = params {
+            outer.insert(Value::Integer(2), v);
+        }
+        // With a PIN, authorise via a PERM_ACFG token + MAC — the proven
+        // CONFIG_WRITE path (protocol 1, 16-byte tag). Without one, the firmware
+        // gates on a physical touch instead, so no auth fields are sent.
+        if let Some(pin) = pin {
+            let token = self.get_pin_token_with_permission(
+                pin,
+                PinUvAuthTokenPermissions::AUTHENTICATOR_CONFIG,
+                None,
+            )?;
+            let mut input = vec![0xFFu8; 32];
+            input.push(RSKEY_CTAPHID_VENDOR_CMD);
+            input.push(sub_cmd);
+            input.extend(&params_bytes);
+            let hmac_key = hmac::Key::new(hmac::HMAC_SHA256, &token);
+            let mac = hmac::sign(&hmac_key, &input).as_ref()[..16].to_vec();
+            outer.insert(Value::Integer(3), Value::Integer(1));
+            outer.insert(Value::Integer(4), Value::Bytes(mac));
+        }
+
+        let inner = to_vec(&Value::Map(outer)).map_err(|e| PFError::Io(e.to_string()))?;
+        let mut full_payload = vec![RSKEY_CTAPHID_VENDOR_CMD];
+        full_payload.extend(inner);
+
+        // Touch-gated variants block until the button is pressed — allow ~30 s.
+        const VENDOR_TOUCH_TIMEOUT_MS: i32 = 32_000;
+        let resp = self.send_raw_with_timeout(CTAPHID_CBOR, &full_payload, VENDOR_TOUCH_TIMEOUT_MS)?;
+        if resp.is_empty() {
+            return Err(PFError::Device("empty vendor response".into()));
+        }
+        let status = resp[0];
+        let map = if status == 0 && resp.len() > 1 {
+            from_slice::<Value>(&resp[1..]).ok()
+        } else {
+            None
+        };
+        Ok((status, map))
+    }
+
+    fn authconfig_vendor(
+        &self,
+        pin_token: &[u8],
+        vendor_id: u64,
+        param: Option<Value>,
+    ) -> Result<(), PFError> {
+        let mut sub = BTreeMap::new();
+        sub.insert(Value::Integer(0x01), Value::Integer(vendor_id as i128));
+        if let Some(p) = param {
+            let key = match &p {
+                Value::Bytes(_) => 0x02,
+                Value::Integer(_) => 0x03,
+                Value::Text(_) => 0x04,
+                _ => return Err(PFError::Io("unsupported vendor parameter type".into())),
+            };
+            sub.insert(Value::Integer(key), p);
+        }
+        let sub_val = Value::Map(sub);
+        let sub_bytes = to_vec(&sub_val).map_err(|e| PFError::Io(e.to_string()))?;
+
+        let pin_auth =
+            self.sign_config_command(pin_token, ConfigSubCommand::VendorPrototype as u8, &sub_bytes);
+
+        let mut cfg = BTreeMap::new();
+        cfg.insert(
+            Value::Integer(ConfigParam::SubCommand as i128),
+            Value::Integer(ConfigSubCommand::VendorPrototype as i128),
+        );
+        cfg.insert(Value::Integer(ConfigParam::SubCommandParams as i128), sub_val);
+        cfg.insert(Value::Integer(ConfigParam::PinUvAuthProtocol as i128), Value::Integer(1));
+        cfg.insert(
+            Value::Integer(ConfigParam::PinUvAuthParam as i128),
+            Value::Bytes(pin_auth),
+        );
+
+        let cbor = to_vec(&Value::Map(cfg)).map_err(|e| PFError::Io(e.to_string()))?;
+        let mut payload = vec![CtapCommand::Config as u8];
+        payload.extend(cbor);
+        // A soft-lock toggle waits on a touch — allow ~30 s.
+        const AUTCFG_TIMEOUT_MS: i32 = 32_000;
+        self.send_cbor_with_timeout(CTAPHID_CBOR, &payload, AUTCFG_TIMEOUT_MS)
             .map(|_| ())
     }
 

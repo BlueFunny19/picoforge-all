@@ -54,6 +54,8 @@
 //!    open transport → build CBOR payload → send → parse response → return.
 //! 4. Expose it through [`super::io`].
 
+pub mod audit;
+pub mod backup;
 pub mod constants;
 pub mod ops;
 use crate::hal::transport::fido::{CTAPHID_CBOR, HidTransport};
@@ -92,6 +94,18 @@ const RSKEY_PHY_TAG_ENABLED_USB_ITF: u8 = 0x0B;
 const RSKEY_PHY_TAG_LED_DRIVER: u8 = 0x0C;
 const RSKEY_PHY_TAG_LED_ORDER: u8 = 0x0D;
 const RSKEY_PHY_TAG_LED_NUM: u8 = 0x0E;
+const RSKEY_PHY_TAG_USB_MANUFACTURER: u8 = 0x0F;
+
+/// The boot-resolved *effective* phy values a device reports in CONFIG_READ key 2
+/// (build defaults or overrides) — used to show real numbers instead of a bare
+/// "firmware default". All `None` on firmware that predates the field / a headless
+/// build.
+#[derive(Default, Clone, Copy)]
+pub struct EffectivePhy {
+    pub led_gpio: Option<u8>,
+    pub led_driver: Option<u8>,
+    pub touch_timeout: Option<u8>,
+}
 
 const RSKEY_OPT_DIMMABLE: u16 = 0x02;
 const RSKEY_OPT_DISABLE_POWER_RESET: u16 = 0x04;
@@ -651,6 +665,9 @@ pub fn read_device_details() -> Result<FullDeviceStatus, PFError> {
         vid: format!("{:04X}", transport.vid),
         pid: format!("{:04X}", transport.pid),
         product_name: transport.product_name.clone(),
+        // The effective iManufacturer string, so the field mirrors Product Name;
+        // a phy 0x0F override (read below) then wins if one is set.
+        manufacturer_name: transport.manufacturer.clone().unwrap_or_default(),
         ..Default::default()
     };
     let config = if firmware_type == FirmwareType::RSKey {
@@ -691,6 +708,11 @@ pub fn read_device_details() -> Result<FullDeviceStatus, PFError> {
             flash_used: mem_stats.map(|(used, _)| used / 1024),
             flash_total: mem_stats.map(|(_, total)| total / 1024),
             firmware_version,
+            bcd_device: Some(transport.release_number),
+            manufacturer: transport.manufacturer.clone(),
+            // Object count / chip size come from the Rescue FlashInfo, not FIDO.
+            flash_files: None,
+            flash_chip_size: None,
         },
         config,
         secure_boot: false,
@@ -774,7 +796,11 @@ fn parse_management_info(raw: &[u8]) -> Result<ManagementInfo, String> {
         match tag {
             0x01 => info.usb_supported = parse_management_u16(field_data),
             0x02 if field_data.len() == 4 => {
-                info.serial = Some(hex::encode_upper(field_data));
+                // TAG_SERIAL is the 8-digit Yubico decimal (already serial4-masked
+                // by the firmware), big-endian — render it as ykman does, not hex.
+                let n =
+                    u32::from_be_bytes([field_data[0], field_data[1], field_data[2], field_data[3]]);
+                info.serial = Some(n.to_string());
             }
             0x03 => info.usb_enabled = parse_management_u16(field_data),
             0x05 if field_data.len() >= 2 => {
@@ -893,10 +919,13 @@ fn read_legacy_physical_config(transport: &HidTransport, mut config: AppConfig) 
 fn read_rskey_physical_config(transport: &HidTransport, mut config: AppConfig) -> AppConfig {
     // `rs_key_config_read` unwraps the CBOR `{1: blob}` and returns the raw
     // `EF_PHY` TLV record — a bare `TAG LEN VALUE` sequence, no length prefix.
-    let Ok(data) = transport.rs_key_config_read(RSKEY_CFG_TARGET_PHY) else {
+    let Ok((data, effective)) = transport.rs_key_config_read(RSKEY_CFG_TARGET_PHY) else {
         log::info!("RS-Key FIDO config read unavailable (pre-v0.3.1 firmware or transport error)");
         return config;
     };
+    config.effective_led_gpio = effective.led_gpio;
+    config.effective_led_driver = effective.led_driver;
+    config.effective_touch_timeout = effective.touch_timeout;
 
     let data = &data[..];
     let mut i = 0;
@@ -931,6 +960,12 @@ fn read_rskey_physical_config(transport: &HidTransport, mut config: AppConfig) -
                     .unwrap_or("")
                     .trim_matches(char::from(0));
                 config.product_name = product_str.to_string();
+            }
+            RSKEY_PHY_TAG_USB_MANUFACTURER => {
+                let mfr = std::str::from_utf8(field_data)
+                    .unwrap_or("")
+                    .trim_matches(char::from(0));
+                config.manufacturer_name = mfr.to_string();
             }
             RSKEY_PHY_TAG_OPTS if field_data.len() >= 2 => {
                 let opts = u16::from_be_bytes([field_data[0], field_data[1]]);
@@ -1041,6 +1076,19 @@ fn build_rskey_phy_tlv(config: &AppConfigInput) -> Result<Vec<u8>, PFError> {
         tlv.push(0x00);
     }
 
+    if let Some(mfr) = config.manufacturer_name.as_deref().filter(|n| !n.is_empty()) {
+        let bytes = mfr.as_bytes();
+        if bytes.len() + 1 > 33 {
+            return Err(PFError::Device(
+                "Manufacturer name too long (max 32 bytes).".into(),
+            ));
+        }
+        tlv.push(RSKEY_PHY_TAG_USB_MANUFACTURER);
+        tlv.push((bytes.len() + 1) as u8);
+        tlv.extend_from_slice(bytes);
+        tlv.push(0x00);
+    }
+
     if config.enable_secp256k1.is_some() || config.raw_curves_mask.is_some() {
         let mut mask = config.raw_curves_mask.unwrap_or(0);
         if let Some(enabled) = config.enable_secp256k1 {
@@ -1120,10 +1168,15 @@ fn write_rskey_config(
 
     transport.rs_key_config_write(&pin_token, RSKEY_CFG_TARGET_PHY, &tlv)?;
 
-    Ok(
+    // RS-Key v0.3.x (bcd 0x083A+) warm-reboots and re-enumerates itself after a
+    // PHY write, unless the user disabled power-cycle-on-reset (OPT_DISABLE_
+    // POWER_RESET), in which case a manual re-plug is still required.
+    let msg = if config.power_cycle_on_reset == Some(false) {
         "Configuration updated successfully! Unplug and re-plug the device to apply changes."
-            .to_string(),
-    )
+    } else {
+        "Configuration updated successfully! The device is re-enumerating to apply the changes."
+    };
+    Ok(msg.to_string())
 }
 
 /// Write device configuration over the FIDO HID transport.
@@ -1189,6 +1242,7 @@ fn is_empty_config_input(config: &AppConfigInput) -> bool {
     config.vid.is_none()
         && config.pid.is_none()
         && config.product_name.is_none()
+        && config.manufacturer_name.is_none()
         && config.led_gpio.is_none()
         && config.led_brightness.is_none()
         && config.touch_timeout.is_none()
@@ -1215,6 +1269,7 @@ fn validate_fido_config_changes(
         if config.vid.is_some()
             || config.pid.is_some()
             || config.product_name.is_some()
+            || config.manufacturer_name.is_some()
             || config.led_gpio.is_some()
             || config.led_brightness.is_some()
             || config.touch_timeout.is_some()
@@ -1452,6 +1507,481 @@ pub(crate) fn get_enterprise_attestation_csr() -> Result<String, String> {
     Ok(pem)
 }
 
+// ── RS-Key audit journal (0x41 vendor AUDIT_READ / AUDIT_CHECKPOINT) ─────
+
+/// Map a non-zero CTAP status from a gated vendor command to a message.
+fn vendor_error(status: u8, op: &str) -> String {
+    match status {
+        0x36 => "device requires a PIN — enter it".to_string(),
+        0x27 => "denied — no touch within the window (press the button when the LED blinks)".to_string(),
+        0x30 => format!("{op}: operation not allowed (already sealed, or no OTP DEVK provisioned)"),
+        0x3D => "device is not locked".to_string(),
+        other => format!("{op} failed: status 0x{other:02x}"),
+    }
+}
+
+/// Require a successful vendor response and unwrap its CBOR map.
+fn vendor_map(
+    status: u8,
+    map: Option<Value>,
+    op: &str,
+) -> Result<BTreeMap<Value, Value>, String> {
+    if status != 0 {
+        return Err(vendor_error(status, op));
+    }
+    match map {
+        Some(Value::Map(m)) => Ok(m),
+        _ => Err(format!("{op}: response is not a CBOR map")),
+    }
+}
+
+fn m_int(m: &BTreeMap<Value, Value>, k: i128) -> Option<i128> {
+    match m.get(&Value::Integer(k)) {
+        Some(Value::Integer(n)) => Some(*n),
+        _ => None,
+    }
+}
+
+fn m_bytes(m: &BTreeMap<Value, Value>, k: i128) -> Option<Vec<u8>> {
+    match m.get(&Value::Integer(k)) {
+        Some(Value::Bytes(b)) => Some(b.clone()),
+        _ => None,
+    }
+}
+
+/// Coerce a CBOR field to bool (accepts a CBOR bool or a non-zero integer).
+fn m_bool(m: &BTreeMap<Value, Value>, k: i128) -> bool {
+    match m.get(&Value::Integer(k)) {
+        Some(Value::Bool(b)) => *b,
+        Some(Value::Integer(n)) => *n != 0,
+        _ => false,
+    }
+}
+
+/// Read AUDIT_READ into a journal window (gated by PIN, or a touch if `pin` is None).
+fn read_journal(transport: &HidTransport, pin: Option<&str>) -> Result<audit::AuditJournal, String> {
+    let (status, map) = transport
+        .rs_key_vendor(RSKEY_VENDOR_AUDIT_READ, None, pin)
+        .map_err(|e| e.to_string())?;
+    let m = vendor_map(status, map, "audit read")?;
+    let start = m_int(&m, 1).ok_or("audit read: missing start")? as u32;
+    let seq_next = m_int(&m, 2).ok_or("audit read: missing seq_next")? as u32;
+    let epoch: [u8; 32] = m_bytes(&m, 3)
+        .ok_or("audit read: missing epoch")?
+        .try_into()
+        .map_err(|_| "audit read: epoch is not 32 bytes")?;
+    let entries = m_bytes(&m, 4).ok_or("audit read: missing entries")?;
+    audit::build_journal(start, seq_next, epoch, &entries)
+}
+
+/// Export the audit journal (PIN or touch gated).
+pub(crate) fn audit_log(pin: Option<String>) -> Result<audit::AuditJournal, String> {
+    let transport =
+        HidTransport::open().map_err(|e| format!("Could not open HID transport: {}", e))?;
+    read_journal(&transport, pin.as_deref())
+}
+
+/// Export the journal, then verify a fresh DEVK-signed checkpoint over it.
+/// `expect_key` (16-hex fingerprint or full SEC1 pubkey hex) pins the identity.
+pub(crate) fn audit_verify(
+    pin: Option<String>,
+    expect_key: Option<String>,
+) -> Result<audit::AuditVerification, String> {
+    let transport =
+        HidTransport::open().map_err(|e| format!("Could not open HID transport: {}", e))?;
+    let journal = read_journal(&transport, pin.as_deref())?;
+
+    let mut challenge = [0u8; 16];
+    ring::rand::SecureRandom::fill(&ring::rand::SystemRandom::new(), &mut challenge)
+        .map_err(|_| "RNG failure".to_string())?;
+
+    let mut params = BTreeMap::new();
+    params.insert(Value::Integer(1), Value::Bytes(challenge.to_vec()));
+    let (status, map) = transport
+        .rs_key_vendor(RSKEY_VENDOR_AUDIT_CHECKPOINT, Some(Value::Map(params)), pin.as_deref())
+        .map_err(|e| e.to_string())?;
+    let m = vendor_map(status, map, "checkpoint")?;
+
+    let head_signed = m_bytes(&m, 1).ok_or("checkpoint: missing head")?;
+    let seq_signed = m_int(&m, 2).ok_or("checkpoint: missing seq")? as u32;
+    let sig = m_bytes(&m, 3).ok_or("checkpoint: missing signature")?;
+    let pubkey = m_bytes(&m, 4).ok_or("checkpoint: missing public key")?;
+
+    let signature_ok = audit::verify_checkpoint(&head_signed, seq_signed, &sig, &pubkey, &challenge);
+    let head_matches = head_signed == journal.head;
+    let fingerprint = audit::fingerprint(&pubkey);
+    let pubkey_hex = hex::encode(&pubkey);
+    let expected_match = expect_key.map(|k| {
+        let k = k.trim().to_lowercase();
+        !k.is_empty() && (k == pubkey_hex || k == fingerprint)
+    });
+
+    Ok(audit::AuditVerification {
+        journal,
+        signature_ok,
+        head_matches,
+        pubkey_hex,
+        fingerprint,
+        seq_signed,
+        signed_head_hex: hex::encode(&head_signed),
+        signature_hex: hex::encode(&sig),
+        expected_match,
+    })
+}
+
+/// Whether the audit journal is currently on (ungated status query, no touch).
+pub(crate) fn audit_status() -> Result<bool, String> {
+    let transport =
+        HidTransport::open().map_err(|e| format!("Could not open HID transport: {}", e))?;
+    let mut params = BTreeMap::new();
+    params.insert(Value::Integer(1), Value::Integer(2)); // target 2 = read-only status
+    let (status, map) = transport
+        .rs_key_vendor(RSKEY_VENDOR_AUDIT_CONFIG, Some(Value::Map(params)), None)
+        .map_err(|e| e.to_string())?;
+    let m = vendor_map(status, map, "audit status")?;
+    Ok(m_bool(&m, 1))
+}
+
+/// Turn the audit journal on/off (PIN + touch); returns the resulting state.
+/// Journalling is opt-in, so nothing is written to flash until it is enabled.
+pub(crate) fn audit_set_enabled(on: bool, pin: Option<String>) -> Result<bool, String> {
+    let transport =
+        HidTransport::open().map_err(|e| format!("Could not open HID transport: {}", e))?;
+    let mut params = BTreeMap::new();
+    params.insert(Value::Integer(1), Value::Integer(if on { 1 } else { 0 }));
+    let (status, map) = transport
+        .rs_key_vendor(
+            RSKEY_VENDOR_AUDIT_CONFIG,
+            Some(Value::Map(params)),
+            pin.as_deref(),
+        )
+        .map_err(|e| e.to_string())?;
+    let m = vendor_map(status, map, "audit config")?;
+    Ok(m_bool(&m, 1))
+}
+
+// ── RS-Key seed backup (0x41 vendor MSE / EXPORT / LOAD / FINALIZE / STATE) ──
+
+/// Ephemeral ECDH (classical P-256) handshake → `(channel_key, aad)`.
+///
+/// Sends the host's P-256 public point as a COSE key; the device replies with
+/// its point, and both sides derive the same ChaCha20-Poly1305 key. The device
+/// falls back to this classical channel when no ML-KEM key is offered.
+fn mse_handshake(transport: &HidTransport) -> Result<([u8; 32], Vec<u8>), String> {
+    use ring::{agreement, rand::SystemRandom};
+
+    let rng = SystemRandom::new();
+    let priv_key = agreement::EphemeralPrivateKey::generate(&agreement::ECDH_P256, &rng)
+        .map_err(|_| "ECDH keygen failed".to_string())?;
+    let pub_bytes = priv_key
+        .compute_public_key()
+        .map_err(|_| "ECDH pubkey failed".to_string())?;
+    let pk = pub_bytes.as_ref();
+    if pk.len() != 65 {
+        return Err("unexpected ECDH public key length".into());
+    }
+
+    // COSE_Key {1: EC2, 3: ECDH-ES+HKDF-256, -1: P-256, -2: x, -3: y}.
+    let mut cose = BTreeMap::new();
+    cose.insert(Value::Integer(1), Value::Integer(2));
+    cose.insert(Value::Integer(3), Value::Integer(-25));
+    cose.insert(Value::Integer(-1), Value::Integer(1));
+    cose.insert(Value::Integer(-2), Value::Bytes(pk[1..33].to_vec()));
+    cose.insert(Value::Integer(-3), Value::Bytes(pk[33..65].to_vec()));
+    let mut subpara = BTreeMap::new();
+    subpara.insert(Value::Integer(1), Value::Map(cose));
+
+    let (status, map) = transport
+        .rs_key_vendor(RSKEY_VENDOR_MSE, Some(Value::Map(subpara)), None)
+        .map_err(|e| e.to_string())?;
+    let m = vendor_map(status, map, "MSE")?;
+
+    let dev = match m.get(&Value::Integer(1)) {
+        Some(Value::Map(dm)) => dm,
+        _ => return Err("MSE: no device key in response".into()),
+    };
+    let dx = m_bytes(dev, -2).ok_or("MSE: device key missing x")?;
+    let dy = m_bytes(dev, -3).ok_or("MSE: device key missing y")?;
+
+    let mut peer = Vec::with_capacity(65);
+    peer.push(0x04);
+    peer.extend_from_slice(&dx);
+    peer.extend_from_slice(&dy);
+    let aad = peer.clone(); // AAD = the device's uncompressed point.
+
+    let peer_pub = agreement::UnparsedPublicKey::new(&agreement::ECDH_P256, &peer);
+    let aad_kdf = aad.clone();
+    let key = agreement::agree_ephemeral(priv_key, &peer_pub, |z| {
+        backup::derive_channel_key(z, &aad_kdf)
+    })
+    .map_err(|_| "ECDH agreement failed".to_string())?;
+
+    Ok((key, aad))
+}
+
+/// Read `{sealed, has_seed, locked, unlocked}` (ungated).
+pub(crate) fn backup_status() -> Result<backup::BackupStatus, String> {
+    let transport =
+        HidTransport::open().map_err(|e| format!("Could not open HID transport: {}", e))?;
+    let (status, map) = transport
+        .rs_key_vendor(RSKEY_VENDOR_STATE, None, None)
+        .map_err(|e| e.to_string())?;
+    let m = vendor_map(status, map, "state")?;
+    Ok(backup::BackupStatus {
+        sealed: m_bool(&m, 1),
+        has_seed: m_bool(&m, 2),
+        locked: m_bool(&m, 3),
+        unlocked: m_bool(&m, 4),
+    })
+}
+
+/// Seal the one-time export window (touch-gated).
+pub(crate) fn backup_finalize() -> Result<(), String> {
+    let transport =
+        HidTransport::open().map_err(|e| format!("Could not open HID transport: {}", e))?;
+    let (status, _) = transport
+        .rs_key_vendor(RSKEY_VENDOR_FINALIZE, None, None)
+        .map_err(|e| e.to_string())?;
+    if status != 0 {
+        return Err(vendor_error(status, "finalize"));
+    }
+    Ok(())
+}
+
+/// Export the master seed as a 24-word BIP-39 phrase (PIN or touch gated).
+pub(crate) fn backup_export(pin: Option<String>) -> Result<String, String> {
+    let transport =
+        HidTransport::open().map_err(|e| format!("Could not open HID transport: {}", e))?;
+    let (key, aad) = mse_handshake(&transport)?;
+    let (status, map) = transport
+        .rs_key_vendor(RSKEY_VENDOR_EXPORT, None, pin.as_deref())
+        .map_err(|e| e.to_string())?;
+    let m = vendor_map(status, map, "export (already sealed?)")?;
+    let enc = m_bytes(&m, 1).ok_or("export: missing sealed seed")?;
+    let seed = backup::chacha_open(&key, &enc, &aad)?;
+    let seed: [u8; 32] = seed
+        .try_into()
+        .map_err(|_| "exported seed is not 32 bytes".to_string())?;
+    backup::seed_to_mnemonic(&seed)
+}
+
+/// Restore a seed from a 24-word BIP-39 phrase (PIN or touch gated).
+pub(crate) fn backup_restore(pin: Option<String>, mnemonic: String) -> Result<(), String> {
+    let seed = backup::mnemonic_to_seed(&mnemonic)?;
+    let transport =
+        HidTransport::open().map_err(|e| format!("Could not open HID transport: {}", e))?;
+    let (key, aad) = mse_handshake(&transport)?;
+
+    let mut nonce = [0u8; 12];
+    ring::rand::SecureRandom::fill(&ring::rand::SystemRandom::new(), &mut nonce)
+        .map_err(|_| "RNG failure".to_string())?;
+    let blob = backup::chacha_seal(&key, &nonce, &seed, &aad)?;
+
+    let mut params = BTreeMap::new();
+    params.insert(Value::Integer(1), Value::Bytes(blob));
+    let (status, _) = transport
+        .rs_key_vendor(RSKEY_VENDOR_LOAD, Some(Value::Map(params)), pin.as_deref())
+        .map_err(|e| e.to_string())?;
+    if status != 0 {
+        return Err(vendor_error(status, "restore"));
+    }
+    Ok(())
+}
+
+// ── RS-Key at-rest soft lock (0x41 UNLOCK + authConfig AUT_ENABLE/DISABLE) ──
+
+/// MSE-wrap a 32-byte secret for the vendor channel: `nonce(12) ‖ ct‖tag`.
+fn wrap_secret(transport: &HidTransport, secret: &[u8; 32]) -> Result<Vec<u8>, String> {
+    let (key, aad) = mse_handshake(transport)?;
+    let mut nonce = [0u8; 12];
+    ring::rand::SecureRandom::fill(&ring::rand::SystemRandom::new(), &mut nonce)
+        .map_err(|_| "RNG failure".to_string())?;
+    backup::chacha_seal(&key, &nonce, secret, &aad)
+}
+
+/// Load the soft-locked seed into RAM for this power cycle (the lock key comes
+/// as a BIP-39 phrase). Ungated over the 0x41 channel.
+pub(crate) fn lock_unlock(mnemonic: String) -> Result<(), String> {
+    let key = backup::mnemonic_to_seed(&mnemonic)?;
+    let transport =
+        HidTransport::open().map_err(|e| format!("Could not open HID transport: {}", e))?;
+    let blob = wrap_secret(&transport, &key)?;
+    let mut params = BTreeMap::new();
+    params.insert(Value::Integer(1), Value::Bytes(blob));
+    let (status, _) = transport
+        .rs_key_vendor(RSKEY_VENDOR_UNLOCK, Some(Value::Map(params)), None)
+        .map_err(|e| e.to_string())?;
+    if status == 0x3D {
+        return Err("device is not locked".into());
+    }
+    if status != 0 {
+        return Err(vendor_error(status, "unlock (wrong key?)"));
+    }
+    Ok(())
+}
+
+/// Engage the lock: generate a random 32-byte key, wrap the seed under it, erase
+/// the plaintext, and return the key as a 24-word phrase to record. PIN required.
+pub(crate) fn lock_enable(pin: String) -> Result<String, String> {
+    let mut key = [0u8; 32];
+    ring::rand::SecureRandom::fill(&ring::rand::SystemRandom::new(), &mut key)
+        .map_err(|_| "RNG failure".to_string())?;
+    let transport =
+        HidTransport::open().map_err(|e| format!("Could not open HID transport: {}", e))?;
+    let blob = wrap_secret(&transport, &key)?;
+    let token = transport
+        .get_pin_token_with_permission(
+            &pin,
+            PinUvAuthTokenPermissions::AUTHENTICATOR_CONFIG,
+            None,
+        )
+        .map_err(|e| e.to_string())?;
+    transport
+        .authconfig_vendor(&token, RSKEY_AUT_ENABLE, Some(Value::Bytes(blob)))
+        .map_err(|e| format!("engage lock failed: {e}"))?;
+    backup::seed_to_mnemonic(&key)
+}
+
+/// Disable the lock: unlock with the phrase, then restore the plaintext seed.
+/// PIN required.
+pub(crate) fn lock_disable(pin: String, mnemonic: String) -> Result<(), String> {
+    let key = backup::mnemonic_to_seed(&mnemonic)?;
+    let transport =
+        HidTransport::open().map_err(|e| format!("Could not open HID transport: {}", e))?;
+
+    // Unlock first (loads the seed into RAM); tolerate "already unlocked".
+    let blob = wrap_secret(&transport, &key)?;
+    let mut params = BTreeMap::new();
+    params.insert(Value::Integer(1), Value::Bytes(blob));
+    let (status, _) = transport
+        .rs_key_vendor(RSKEY_VENDOR_UNLOCK, Some(Value::Map(params)), None)
+        .map_err(|e| e.to_string())?;
+    if status != 0 && status != 0x3D {
+        return Err(vendor_error(status, "unlock (wrong key?)"));
+    }
+
+    let token = transport
+        .get_pin_token_with_permission(
+            &pin,
+            PinUvAuthTokenPermissions::AUTHENTICATOR_CONFIG,
+            None,
+        )
+        .map_err(|e| e.to_string())?;
+    transport
+        .authconfig_vendor(&token, RSKEY_AUT_DISABLE, None)
+        .map_err(|e| format!("disable lock failed: {e}"))
+}
+
+// ── RS-Key org attestation (0x41 vendor ATT_STATE / ATT_CLEAR / ATT_IMPORT) ──
+
+/// Org-attestation state.
+#[derive(Debug, Clone)]
+pub struct AttStatus {
+    pub installed: bool,
+    pub chain_hash: Option<String>,
+}
+
+/// Read `{installed, chain_hash}` (ungated).
+pub(crate) fn att_status() -> Result<AttStatus, String> {
+    let transport =
+        HidTransport::open().map_err(|e| format!("Could not open HID transport: {}", e))?;
+    let (status, map) = transport
+        .rs_key_vendor(RSKEY_VENDOR_ATT_STATE, None, None)
+        .map_err(|e| e.to_string())?;
+    let m = vendor_map(status, map, "attestation status")?;
+    let installed = m_bool(&m, 1);
+    let chain_hash = if installed {
+        m_bytes(&m, 2).map(hex::encode)
+    } else {
+        None
+    };
+    Ok(AttStatus {
+        installed,
+        chain_hash,
+    })
+}
+
+/// Remove the org attestation (needs an MSE channel, then PIN/touch).
+pub(crate) fn att_clear(pin: Option<String>) -> Result<(), String> {
+    let transport =
+        HidTransport::open().map_err(|e| format!("Could not open HID transport: {}", e))?;
+    mse_handshake(&transport)?;
+    let (status, _) = transport
+        .rs_key_vendor(RSKEY_VENDOR_ATT_CLEAR, None, pin.as_deref())
+        .map_err(|e| e.to_string())?;
+    if status != 0 {
+        return Err(vendor_error(status, "attestation clear"));
+    }
+    Ok(())
+}
+
+/// Concatenate the DER of every PEM certificate, or pass raw DER through.
+fn certs_pem_to_der(input: &[u8]) -> Result<Vec<u8>, String> {
+    let text = std::str::from_utf8(input).unwrap_or("");
+    if !text.contains("-----BEGIN CERTIFICATE-----") {
+        return if input.first() == Some(&0x30) {
+            Ok(input.to_vec())
+        } else {
+            Err("chain is neither PEM nor DER".into())
+        };
+    }
+    use base64::{engine::general_purpose, Engine as _};
+    let mut out = Vec::new();
+    let mut rest = text;
+    while let Some(b) = rest.find("-----BEGIN CERTIFICATE-----") {
+        let after = &rest[b + 27..];
+        let e = after.find("-----END").ok_or("truncated PEM certificate")?;
+        let b64: String = after[..e].chars().filter(|c| !c.is_whitespace()).collect();
+        let der = general_purpose::STANDARD
+            .decode(b64.as_bytes())
+            .map_err(|_| "bad base64 in certificate".to_string())?;
+        out.extend(der);
+        rest = &after[e..];
+    }
+    Ok(out)
+}
+
+/// Install an org attestation P-256 key (PEM/DER) + cert chain (PEM/DER).
+pub(crate) fn att_import(
+    pin: Option<String>,
+    key_file: Vec<u8>,
+    chain_file: Vec<u8>,
+) -> Result<(), String> {
+    use crate::hal::applets::piv;
+
+    let (algo, material) = piv::parse_private_key(&key_file)?;
+    if algo != piv::ALGO_ECCP256 {
+        return Err("attestation key must be P-256".into());
+    }
+    // material = `06 20 <32-byte scalar>`; take the value.
+    if material.len() < 2 + 32 {
+        return Err("could not read the P-256 scalar".into());
+    }
+    let scalar: [u8; 32] = material[2..2 + 32]
+        .try_into()
+        .map_err(|_| "P-256 scalar is not 32 bytes".to_string())?;
+
+    let chain = certs_pem_to_der(&chain_file)?;
+    if chain.is_empty() || chain.len() > 2048 {
+        return Err(format!("cert chain must be 1..=2048 bytes (got {})", chain.len()));
+    }
+
+    let transport =
+        HidTransport::open().map_err(|e| format!("Could not open HID transport: {}", e))?;
+    let blob = wrap_secret(&transport, &scalar)?;
+
+    let mut params = BTreeMap::new();
+    params.insert(Value::Integer(1), Value::Bytes(blob));
+    params.insert(Value::Integer(2), Value::Bytes(chain));
+    let (status, _) = transport
+        .rs_key_vendor(RSKEY_VENDOR_ATT_IMPORT, Some(Value::Map(params)), pin.as_deref())
+        .map_err(|e| e.to_string())?;
+    if status != 0 {
+        return Err(vendor_error(status, "attestation import"));
+    }
+    Ok(())
+}
+
 // ── RS-Key FIDO LED config (CONFIG_READ/WRITE target 0x02) ──────────────
 
 /// RS-Key LED config block length: `[steady(1), (effect, color, brightness, speed) × 4]`
@@ -1467,7 +1997,7 @@ const RSKEY_LED_CONF_LEN: usize = 17;
 pub(crate) fn read_rskey_led_config(transport: &HidTransport) -> Result<LedStatusConfig, PFError> {
     // `rs_key_config_read` unwraps the CBOR `{1: blob}`, so `data` is the raw
     // `EF_LED_CONF` block. `parse_led_block` handles the 17/13/9-byte layouts.
-    let data = transport.rs_key_config_read(RSKEY_CFG_TARGET_LED)?;
+    let (data, _) = transport.rs_key_config_read(RSKEY_CFG_TARGET_LED)?;
     let (steady, statuses) = crate::hal::common::parse_led_block(&data).ok_or_else(|| {
         PFError::Device(format!(
             "LED config response too short: {} bytes",
@@ -1499,7 +2029,7 @@ pub(crate) fn write_rskey_led_config(
     // + speed set out-of-band (e.g. `rsk led`) survives a colour change. Fall back
     // to a fresh solid block (effect/speed = 0) if the current one can't be read.
     let mut block = [0u8; RSKEY_LED_CONF_LEN];
-    if let Ok(current) = transport.rs_key_config_read(RSKEY_CFG_TARGET_LED)
+    if let Ok((current, _)) = transport.rs_key_config_read(RSKEY_CFG_TARGET_LED)
         && current.len() >= RSKEY_LED_CONF_LEN
     {
         block.copy_from_slice(&current[..RSKEY_LED_CONF_LEN]);
@@ -1569,6 +2099,7 @@ mod tests {
             vid: None,
             pid: None,
             product_name: None,
+            manufacturer_name: None,
             led_gpio: None,
             led_brightness: None,
             touch_timeout: None,
@@ -1694,7 +2225,7 @@ mod tests {
     fn test_parse_management_info_length_prefixed_tlv() {
         let tlv = vec![
             0x01, 0x02, 0x02, 0x23, // TAG_USB_SUPPORTED
-            0x02, 0x04, 0x12, 0x34, 0x56, 0x78, // TAG_SERIAL
+            0x02, 0x04, 0x02, 0x39, 0x2F, 0x25, // TAG_SERIAL (big-endian 0x02392F25)
             0x03, 0x01, 0x03, // TAG_USB_ENABLED
             0x05, 0x03, 0x07, 0x06, 0x00, // TAG_VERSION
             0x0A, 0x01, 0x01, // TAG_CONFIG_LOCK
@@ -1705,7 +2236,8 @@ mod tests {
         let info = parse_management_info(&raw).unwrap();
 
         assert_eq!(info.usb_supported, Some(0x0223));
-        assert_eq!(info.serial.as_deref(), Some("12345678"));
+        // TAG_SERIAL renders as the big-endian decimal (0x02392F25 = 37302053).
+        assert_eq!(info.serial.as_deref(), Some("37302053"));
         assert_eq!(info.usb_enabled, Some(0x0003));
         assert_eq!(info.firmware_version.as_deref(), Some("7.6"));
         assert_eq!(info.config_locked, Some(true));
