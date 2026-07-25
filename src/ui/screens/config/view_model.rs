@@ -12,11 +12,18 @@ use gpui::*;
 use gpui_component::input::InputState;
 use gpui_component::select::{SelectItem, SelectState};
 use gpui_component::slider::SliderState;
+use std::time::Duration;
 
 /// Slider position shown for LED brightness when the device has no phy override.
 /// Purely cosmetic: an unmoved slider is treated as "no override" on save, so this
 /// value is never written unless the user actually drags the slider.
 const DEFAULT_BRIGHTNESS: u8 = 8;
+
+/// After a PHY config write, RS-Key firmware warm-reboots and re-enumerates on
+/// its own, so the confirmation read must wait for the device to re-appear
+/// instead of racing the disconnect (which would leave the form stale).
+const POST_WRITE_READ_ATTEMPTS: u32 = 20;
+const POST_WRITE_READ_INTERVAL: Duration = Duration::from_millis(250);
 
 /// Known USB vendor/product identity presets for various security keys.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -163,6 +170,34 @@ impl LedDriverType {
     }
 }
 
+/// LED colour ordering (RS-Key phy tag 0x0D). The firmware treats any non-zero
+/// value as "swap red/green" for GRB panels; 0 is straight RGB.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LedColorOrder {
+    Rgb,
+    Grb,
+}
+
+impl LedColorOrder {
+    pub fn label(&self) -> SharedString {
+        match self {
+            Self::Rgb => "RGB".into(),
+            Self::Grb => "GRB (swap red/green)".into(),
+        }
+    }
+
+    pub fn value(&self) -> u8 {
+        match self {
+            Self::Rgb => 0,
+            Self::Grb => 1,
+        }
+    }
+
+    pub fn all() -> &'static [Self] {
+        &[Self::Rgb, Self::Grb]
+    }
+}
+
 #[derive(Clone, PartialEq)]
 pub(super) struct VendorSelectOption {
     preset: UsbIdentityPreset,
@@ -183,12 +218,13 @@ impl SelectItem for VendorSelectOption {
 
 #[derive(Clone, PartialEq)]
 pub(super) struct DriverSelectOption {
-    driver_type: LedDriverType,
+    /// `None` is the "Firmware default" sentinel (row 0); real drivers follow.
+    driver_type: Option<LedDriverType>,
     label: SharedString,
 }
 
 impl SelectItem for DriverSelectOption {
-    type Value = LedDriverType;
+    type Value = Option<LedDriverType>;
 
     fn title(&self) -> SharedString {
         self.label.clone()
@@ -196,6 +232,24 @@ impl SelectItem for DriverSelectOption {
 
     fn value(&self) -> &Self::Value {
         &self.driver_type
+    }
+}
+
+#[derive(Clone, PartialEq)]
+pub(super) struct OrderSelectOption {
+    order: LedColorOrder,
+    label: SharedString,
+}
+
+impl SelectItem for OrderSelectOption {
+    type Value = LedColorOrder;
+
+    fn title(&self) -> SharedString {
+        self.label.clone()
+    }
+
+    fn value(&self) -> &Self::Value {
+        &self.order
     }
 }
 
@@ -211,8 +265,10 @@ pub struct ConfigViewModel {
     pub(super) vid_input: Entity<InputState>,
     pub(super) pid_input: Entity<InputState>,
     pub(super) product_name_input: Entity<InputState>,
+    pub(super) manufacturer_input: Entity<InputState>,
     pub(super) led_gpio_input: Entity<InputState>,
     pub(super) led_driver_select: Entity<SelectState<Vec<DriverSelectOption>>>,
+    pub(super) led_order_select: Entity<SelectState<Vec<OrderSelectOption>>>,
     pub(super) led_brightness_slider: Entity<SliderState>,
     pub(super) led_dimmable: bool,
     pub(super) led_steady: bool,
@@ -255,6 +311,11 @@ impl ConfigViewModel {
 
         let device_read = device.read(cx);
         let config = device_read.status.as_ref().map(|s| &s.config);
+        let is_rskey = device_read
+            .status
+            .as_ref()
+            .map(|s| s.firmware_type == crate::ui::models::device::FirmwareType::RSKey)
+            .unwrap_or(false);
 
         let current_vid: SharedString = config
             .map(|c| c.vid.clone().into())
@@ -265,6 +326,11 @@ impl ConfigViewModel {
         let current_product_name: SharedString = config
             .map(|c| c.product_name.clone().into())
             .unwrap_or_else(|| "My Key".into());
+        // Blank when there is no phy override — the field then reads as "use the
+        // VID-derived default" and isn't written back on save.
+        let current_manufacturer: SharedString = config
+            .map(|c| c.manufacturer_name.clone().into())
+            .unwrap_or_default();
         // `None` (no phy override) → blank input, so it reads as "firmware default"
         // rather than a bogus "0" and isn't written back on save.
         let current_led_gpio: SharedString = config
@@ -288,7 +354,30 @@ impl ConfigViewModel {
             .and_then(|c| c.raw_curves_mask)
             .map(RescueCurves::from_bits_truncate)
             .unwrap_or(RescueCurves::empty());
-        let current_driver_val = config.and_then(|c| c.led_driver).unwrap_or(0);
+        let current_led_driver = config.and_then(|c| c.led_driver);
+        let current_led_order = config.and_then(|c| c.led_order);
+
+        // Effective values the device reports (CONFIG_READ key 2) — shown as
+        // placeholders / the driver-default label so an unset field displays the
+        // real value, not a bare "firmware default". Computed here into owned
+        // strings so `config`'s borrow of `cx` ends before the `cx.new` widgets.
+        let led_gpio_placeholder = config
+            .and_then(|c| c.effective_led_gpio)
+            .map(|g| format!("Firmware default (GPIO {g})"))
+            .unwrap_or_else(|| "Firmware default".to_string());
+        let touch_placeholder = config
+            .and_then(|c| c.effective_touch_timeout)
+            .map(|t| format!("Firmware default ({t}s)"))
+            .unwrap_or_else(|| "Firmware default (30s)".to_string());
+        let default_driver_label = config
+            .and_then(|c| c.effective_led_driver)
+            .and_then(|d| {
+                LedDriverType::all()
+                    .iter()
+                    .find(|x| x.value() == d)
+                    .map(|x| format!("Firmware default — {}", x.label()))
+            })
+            .unwrap_or_else(|| "Firmware default".to_string());
 
         let mut led_status_steady = false;
         let mut led_status_colors = [0; 4];
@@ -319,11 +408,32 @@ impl ConfigViewModel {
             })
             .collect();
 
-        let drivers: Vec<DriverSelectOption> = LedDriverType::all()
+        // Row 0 is the "Firmware default" sentinel so a virgin phy (led_driver =
+        // None) doesn't masquerade as an explicitly-picked GPIO driver — and so
+        // an explicit pick of any real driver differs from that row and is written.
+        let mut drivers = vec![DriverSelectOption {
+            driver_type: None,
+            label: default_driver_label.into(),
+        }];
+        drivers.extend(
+            LedDriverType::all()
+                .iter()
+                // RS-Key firmware only instantiates drivers 1..=3 (gpio / pimoroni /
+                // ws2812); ESP32 (5) is a different MCU it silently ignores, so don't
+                // offer it. The kept drivers are the prefix of `all()`, so the row
+                // indices `driver_row` / `apply_changes` compute stay aligned.
+                .filter(|driver| !is_rskey || driver.value() <= 3)
+                .map(|driver| DriverSelectOption {
+                    driver_type: Some(*driver),
+                    label: driver.label(),
+                }),
+        );
+
+        let orders: Vec<OrderSelectOption> = LedColorOrder::all()
             .iter()
-            .map(|driver| DriverSelectOption {
-                driver_type: *driver,
-                label: driver.label(),
+            .map(|order| OrderSelectOption {
+                order: *order,
+                label: order.label(),
             })
             .collect();
 
@@ -348,22 +458,36 @@ impl ConfigViewModel {
         let pid_input = cx.new(|cx| InputState::new(window, cx).default_value(current_pid.clone()));
         let product_name_input =
             cx.new(|cx| InputState::new(window, cx).default_value(current_product_name.clone()));
+        let manufacturer_input = cx.new(|cx| {
+            InputState::new(window, cx)
+                .placeholder("VID-derived default")
+                .default_value(current_manufacturer.clone())
+        });
 
         let led_gpio_input = cx.new(|cx| {
             InputState::new(window, cx)
-                .placeholder("Firmware default")
+                .placeholder(led_gpio_placeholder)
                 .default_value(current_led_gpio.clone())
         });
 
-        let initial_driver_idx = LedDriverType::all()
-            .iter()
-            .position(|d| d.value() == current_driver_val)
-            .unwrap_or(0);
+        let initial_driver_idx = Self::driver_row(current_led_driver);
 
         let led_driver_select = cx.new(|cx| {
             SelectState::new(
                 drivers,
                 Some(gpui_component::IndexPath::default().row(initial_driver_idx)),
+                window,
+                cx,
+            )
+        });
+
+        // Firmware collapses colour order to a boolean, so map None/0 → RGB (row 0)
+        // and any non-zero → GRB (row 1).
+        let initial_order_idx = usize::from(current_led_order.unwrap_or(0) != 0);
+        let led_order_select = cx.new(|cx| {
+            SelectState::new(
+                orders,
+                Some(gpui_component::IndexPath::default().row(initial_order_idx)),
                 window,
                 cx,
             )
@@ -401,7 +525,7 @@ impl ConfigViewModel {
 
         let touch_timeout_input = cx.new(|cx| {
             InputState::new(window, cx)
-                .placeholder("Firmware default (30s)")
+                .placeholder(touch_placeholder)
                 .default_value(current_touch_timeout.clone())
         });
 
@@ -411,8 +535,10 @@ impl ConfigViewModel {
             vid_input,
             pid_input,
             product_name_input,
+            manufacturer_input,
             led_gpio_input,
             led_driver_select,
+            led_order_select,
             led_brightness_slider,
             led_dimmable,
             led_steady,
@@ -443,7 +569,9 @@ impl ConfigViewModel {
 
     pub(super) fn write_config_to_device(
         &mut self,
-        changes: AppConfigInput,
+        phy: Option<AppConfigInput>,
+        led: Option<LedStatusConfig>,
+        apps: Option<u16>,
         method: DeviceMethod,
         pin: Option<String>,
         dialog_handle: StatusDialogHandle,
@@ -523,16 +651,30 @@ impl ConfigViewModel {
             let result = cx
                 .background_executor()
                 .spawn(async move {
-                    DeviceRepo::write_config_blocking(changes, method_clone, pin)
+                    DeviceRepo::write_all_config_blocking(method_clone, phy, led, apps, pin)
                 })
                 .await;
 
             let dialog_handle = dialog;
 
+            // A PHY config write makes RS-Key firmware warm-reboot and re-enumerate
+            // on its own, so the device is briefly off the USB bus. Retry the
+            // confirmation read until it re-appears rather than racing the drop and
+            // silently discarding the refresh.
             let fresh_state = if result.is_ok() {
-                cx.background_executor()
-                    .spawn(async move { DeviceRepo::read_device_state_blocking().ok() })
-                    .await
+                let mut state = None;
+                for _ in 0..POST_WRITE_READ_ATTEMPTS {
+                    if let Some(s) = cx
+                        .background_executor()
+                        .spawn(async { DeviceRepo::read_device_state_blocking().ok() })
+                        .await
+                    {
+                        state = Some(s);
+                        break;
+                    }
+                    cx.background_executor().timer(POST_WRITE_READ_INTERVAL).await;
+                }
+                state
             } else {
                 None
             };
@@ -620,7 +762,9 @@ impl ConfigViewModel {
 
     fn open_pin_dialog(
         &mut self,
-        changes: AppConfigInput,
+        phy: Option<AppConfigInput>,
+        led: Option<LedStatusConfig>,
+        apps: Option<u16>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
@@ -636,7 +780,9 @@ impl ConfigViewModel {
             move |pin, dialog_handle, cx| {
                 let _ = view_handle.update(cx, |this, cx| {
                     this.write_config_to_device(
-                        changes.clone(),
+                        phy.clone(),
+                        led.clone(),
+                        apps,
                         DeviceMethod::Fido,
                         Some(pin),
                         StatusDialogHandle::Pin(dialog_handle),
@@ -654,6 +800,9 @@ impl ConfigViewModel {
         let current_vid = status.config.vid.clone();
         let current_pid = status.config.pid.clone();
         let current_product_name = status.config.product_name.clone();
+        let current_manufacturer = status.config.manufacturer_name.clone();
+        let current_led = device.led_status.clone();
+        let current_apps_enabled = device.management_apps.as_ref().map(|a| a.usb_enabled);
         let current_led_gpio = status.config.led_gpio;
         let current_led_driver = status.config.led_driver;
         let current_led_brightness = status.config.led_brightness;
@@ -663,7 +812,8 @@ impl ConfigViewModel {
         let current_power_cycle = status.config.power_cycle_on_reset;
         let current_enabled_usb_itf = status.config.enabled_usb_itf;
         let raw_curves_mask = status.config.raw_curves_mask;
-        let led_order = status.config.led_order;
+        let current_led_order = status.config.led_order;
+        let led_num = status.config.led_num;
         let method = status.method.clone();
         let is_rskey = status.firmware_type == crate::ui::models::device::FirmwareType::RSKey;
 
@@ -684,6 +834,11 @@ impl ConfigViewModel {
             has_changes = true;
         }
 
+        let manufacturer_name = self.manufacturer_input.read(cx).text().to_string();
+        if manufacturer_name != current_manufacturer {
+            has_changes = true;
+        }
+
         // LED GPIO: an empty input means "no phy override" (firmware default) and
         // is not written; a value is written only when the user typed one.
         let led_gpio_str = self.led_gpio_input.read(cx).text().to_string();
@@ -697,25 +852,41 @@ impl ConfigViewModel {
             has_changes = true;
         }
 
-        // LED driver: preserve the device's value (None = firmware default) unless
-        // the user picks a different entry than the one it booted with — an
-        // untouched select must not clobber a virgin phy with a bogus driver.
-        let init_driver_idx = LedDriverType::all()
-            .iter()
-            .position(|d| Some(d.value()) == current_led_driver)
-            .unwrap_or(0);
+        // LED driver: row 0 is the "Firmware default" sentinel (led_driver = None);
+        // real drivers follow. An unmoved select stays on the device's row, so a
+        // virgin phy isn't clobbered — while an explicit pick of any real driver
+        // (GPIO included) differs from the sentinel row and is written.
+        let init_driver_idx = Self::driver_row(current_led_driver);
         let sel_driver_idx = self
             .led_driver_select
             .read(cx)
             .selected_index(cx)
             .map(|p| p.row)
             .unwrap_or(init_driver_idx);
-        let final_led_driver = if sel_driver_idx != init_driver_idx {
-            LedDriverType::all().get(sel_driver_idx).map(|d| d.value())
+        let final_led_driver = if sel_driver_idx == 0 {
+            None
         } else {
-            current_led_driver
+            LedDriverType::all().get(sel_driver_idx - 1).map(|d| d.value())
         };
         if final_led_driver != current_led_driver {
+            has_changes = true;
+        }
+
+        // LED colour order: an untouched select preserves the device's value;
+        // firmware treats any non-zero value as GRB, so map by RGB(0)/GRB(1).
+        let init_order_idx = usize::from(current_led_order.unwrap_or(0) != 0);
+        let sel_order_idx = self
+            .led_order_select
+            .read(cx)
+            .selected_index(cx)
+            .map(|p| p.row)
+            .unwrap_or(init_order_idx);
+        let final_led_order = if sel_order_idx != init_order_idx {
+            LedColorOrder::all().get(sel_order_idx).map(|o| o.value())
+        } else {
+            current_led_order
+        };
+        if final_led_order != current_led_order {
             has_changes = true;
         }
 
@@ -780,15 +951,11 @@ impl ConfigViewModel {
             final_enabled_usb_itf = self.enabled_usb_itf;
         }
 
-        if !has_changes {
-            log::info!("No changes detected");
-            return;
-        }
-
         let changes = AppConfigInput {
             vid: Some(vid),
             pid: Some(pid),
             product_name: Some(product_name),
+            manufacturer_name: Some(manufacturer_name),
             led_gpio: final_led_gpio,
             led_brightness: final_led_brightness,
             touch_timeout: final_touch_timeout,
@@ -798,19 +965,53 @@ impl ConfigViewModel {
             led_steady: Some(self.led_steady),
             enable_secp256k1: None,
             raw_curves_mask: built_curves_mask,
-            led_order,
+            led_order: final_led_order,
             enabled_usb_itf: final_enabled_usb_itf,
-            led_num: None,
+            led_num,
         };
+
+        // The Status LED Colors and USB Applications cards write their own device
+        // targets (EF_LED_CONF / the management mask); fold them into this one Save
+        // so the screen has a single Apply, not a mix of per-card buttons.
+        let led_changed = match &current_led {
+            Some(led) => {
+                led.steady != self.led_status_steady
+                    || (0..4).any(|i| {
+                        led.statuses[i]
+                            != (self.led_status_colors[i], self.led_status_brightness[i])
+                    })
+            }
+            None => false,
+        };
+        let apps_changed = current_apps_enabled.is_some_and(|e| e != self.usb_apps_enabled);
+
+        if !has_changes && !led_changed && !apps_changed {
+            log::info!("No changes detected");
+            return;
+        }
+
+        let phy = has_changes.then_some(changes);
+        let led = led_changed.then(|| LedStatusConfig {
+            steady: self.led_status_steady,
+            statuses: [
+                (self.led_status_colors[0], self.led_status_brightness[0]),
+                (self.led_status_colors[1], self.led_status_brightness[1]),
+                (self.led_status_colors[2], self.led_status_brightness[2]),
+                (self.led_status_colors[3], self.led_status_brightness[3]),
+            ],
+        });
+        let apps = apps_changed.then_some(self.usb_apps_enabled);
 
         if method == DeviceMethod::Fido {
             if Self::status_supports_legacy_fido_config(status) || is_rskey {
-                self.open_pin_dialog(changes, window, cx);
+                self.open_pin_dialog(phy, led, apps, window, cx);
             } else {
                 let handle =
                     dialog::open_status_dialog("Configuration Requires Rescue Mode", window, cx);
                 self.write_config_to_device(
-                    changes,
+                    phy,
+                    led,
+                    apps,
                     method,
                     None,
                     StatusDialogHandle::Status(handle),
@@ -820,12 +1021,28 @@ impl ConfigViewModel {
         } else {
             let handle = dialog::open_status_dialog("Applying Configuration", window, cx);
             self.write_config_to_device(
-                changes,
+                phy,
+                led,
+                apps,
                 method,
                 None,
                 StatusDialogHandle::Status(handle),
                 cx,
             );
+        }
+    }
+
+    /// Row of a phy `led_driver` value in the driver select. Row 0 is the
+    /// "Firmware default" sentinel (`None`); real drivers follow in
+    /// `LedDriverType::all()` order.
+    fn driver_row(current: Option<u8>) -> usize {
+        match current {
+            Some(v) => LedDriverType::all()
+                .iter()
+                .position(|d| d.value() == v)
+                .map(|i| i + 1)
+                .unwrap_or(0),
+            None => 0,
         }
     }
 
@@ -906,8 +1123,6 @@ impl ConfigViewModel {
             .map(|b| b as f32)
             .unwrap_or(DEFAULT_BRIGHTNESS as f32);
 
-        let new_driver_val = config.and_then(|c| c.led_driver).unwrap_or(1);
-
         if let Some(led) = &device.led_status {
             self.led_status_steady = led.steady;
             for i in 0..4 {
@@ -922,6 +1137,11 @@ impl ConfigViewModel {
         }
 
         self.enabled_usb_itf = config.and_then(|c| c.enabled_usb_itf);
+
+        // Resolve the select rows while `config` is still borrowed — all the
+        // `.update()` calls below need `cx` mutably, so no config read may outlive them.
+        let new_driver_idx = Self::driver_row(config.and_then(|c| c.led_driver));
+        let new_order_idx = usize::from(config.and_then(|c| c.led_order).unwrap_or(0) != 0);
 
         let preset = UsbIdentityPreset::from_vid_pid(&new_vid, &new_pid);
         self.is_custom_vendor = preset == UsbIdentityPreset::Custom;
@@ -950,10 +1170,6 @@ impl ConfigViewModel {
         self.led_brightness_slider
             .update(cx, |slider, cx| slider.set_value(brightness, window, cx));
 
-        let new_driver_idx = LedDriverType::all()
-            .iter()
-            .position(|d| d.value() == new_driver_val)
-            .unwrap_or(0);
         self.led_driver_select.update(cx, |select, cx| {
             select.set_selected_index(
                 Some(gpui_component::IndexPath::default().row(new_driver_idx)),
@@ -962,254 +1178,35 @@ impl ConfigViewModel {
             );
         });
 
-        cx.notify();
-    }
-
-    pub(super) fn apply_rskey_led_settings(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let config = LedStatusConfig {
-            steady: self.led_status_steady,
-            statuses: [
-                (self.led_status_colors[0], self.led_status_brightness[0]),
-                (self.led_status_colors[1], self.led_status_brightness[1]),
-                (self.led_status_colors[2], self.led_status_brightness[2]),
-                (self.led_status_colors[3], self.led_status_brightness[3]),
-            ],
-        };
-
-        let method = self
-            .device
-            .read(cx)
-            .status
-            .as_ref()
-            .map(|s| s.method.clone());
-
-        if method == Some(DeviceMethod::Fido) {
-            let view_handle = cx.entity().downgrade();
-            dialog::open_pin_prompt(
-                "Authentication Required",
-                "Enter your device PIN to update LED configuration.",
-                None,
-                "Confirm",
+        self.led_order_select.update(cx, |select, cx| {
+            select.set_selected_index(
+                Some(gpui_component::IndexPath::default().row(new_order_idx)),
                 window,
                 cx,
-                move |pin, dialog_handle, cx| {
-                    let _ = view_handle.update(cx, |this, cx| {
-                        this.do_write_led_config(
-                            config.clone(),
-                            DeviceMethod::Fido,
-                            Some(pin),
-                            StatusDialogHandle::Pin(dialog_handle),
-                            cx,
-                        );
-                    });
-                },
             );
-        } else {
-            let handle = dialog::open_status_dialog("Applying LED Configuration...", window, cx);
-            self.do_write_led_config(
-                config,
-                DeviceMethod::Rescue,
-                None,
-                StatusDialogHandle::Status(handle),
-                cx,
-            );
-        }
-    }
+        });
 
-    fn do_write_led_config(
-        &mut self,
-        config: LedStatusConfig,
-        method: DeviceMethod,
-        pin: Option<String>,
-        dialog_handle: StatusDialogHandle,
-        cx: &mut Context<Self>,
-    ) {
-        self.loading = true;
         cx.notify();
-
-        let weak_self = cx.entity().downgrade();
-
-        self._task = Some(cx.spawn(async move |_, cx| {
-            let result = cx
-                .background_executor()
-                .spawn(async move { DeviceRepo::write_led_config_blocking(method, config, pin) })
-                .await;
-
-            let fresh_state = if result.is_ok() {
-                cx.background_executor()
-                    .spawn(async move { DeviceRepo::read_device_state_blocking().ok() })
-                    .await
-            } else {
-                None
-            };
-
-            let _ = weak_self.update(cx, |this, cx| {
-                this.loading = false;
-                match result {
-                    Ok(_) => {
-                        if let Some(fs) = fresh_state {
-                            this.device.update(cx, |repo, repo_cx| {
-                                repo.apply_fresh_state(fs, repo_cx);
-                            });
-                        }
-                        match &dialog_handle {
-                            StatusDialogHandle::Pin(dh) => {
-                                let _ = dh.update(cx, |d, cx| {
-                                    d.set_success(
-                                        "LED configuration applied successfully.".to_string(),
-                                        cx,
-                                    );
-                                });
-                            }
-                            StatusDialogHandle::Status(dh) => {
-                                let _ = dh.update(cx, |d, cx| {
-                                    d.set_success(
-                                        "LED configuration applied successfully.".to_string(),
-                                        cx,
-                                    );
-                                });
-                            }
-                        }
-                    }
-                    Err(e) => match &dialog_handle {
-                        StatusDialogHandle::Pin(dh) => {
-                            let _ = dh.update(cx, |d, cx| {
-                                d.set_error(format!("Failed to apply LED config: {}", e), cx);
-                            });
-                        }
-                        StatusDialogHandle::Status(dh) => {
-                            let _ = dh.update(cx, |d, cx| {
-                                d.set_error(format!("Failed to apply LED config: {}", e), cx);
-                            });
-                        }
-                    },
-                }
-                cx.notify();
-            });
-        }));
     }
 
-    pub(super) fn apply_rskey_apps_settings(
-        &mut self,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let mask = self.usb_apps_enabled;
+}
 
-        let method = self
-            .device
-            .read(cx)
-            .status
-            .as_ref()
-            .map(|s| s.method.clone());
+#[cfg(test)]
+mod tests {
+    use super::ConfigViewModel;
 
-        if method == Some(DeviceMethod::Fido) {
-            let view_handle = cx.entity().downgrade();
-            dialog::open_pin_prompt(
-                "Authentication Required",
-                "Enter your device PIN to update USB application configuration.",
-                None,
-                "Confirm",
-                window,
-                cx,
-                move |pin, dialog_handle, cx| {
-                    let _ = view_handle.update(cx, |this, cx| {
-                        this.do_write_management_config(
-                            mask,
-                            DeviceMethod::Fido,
-                            Some(pin),
-                            StatusDialogHandle::Pin(dialog_handle),
-                            cx,
-                        );
-                    });
-                },
-            );
-        } else {
-            let handle = dialog::open_status_dialog("Applying USB Applications...", window, cx);
-            self.do_write_management_config(
-                mask,
-                DeviceMethod::Rescue,
-                None,
-                StatusDialogHandle::Status(handle),
-                cx,
-            );
-        }
-    }
-
-    fn do_write_management_config(
-        &mut self,
-        mask: u16,
-        method: DeviceMethod,
-        pin: Option<String>,
-        dialog_handle: StatusDialogHandle,
-        cx: &mut Context<Self>,
-    ) {
-        self.loading = true;
-        cx.notify();
-
-        let weak_self = cx.entity().downgrade();
-
-        self._task = Some(cx.spawn(async move |_, cx| {
-            let result = cx
-                .background_executor()
-                .spawn(async move {
-                    DeviceRepo::write_management_config_blocking(method, mask, pin)
-                })
-                .await;
-
-            let fresh_state = if result.is_ok() {
-                cx.background_executor()
-                    .spawn(async move { DeviceRepo::read_device_state_blocking().ok() })
-                    .await
-            } else {
-                None
-            };
-
-            let _ = weak_self.update(cx, |this, cx| {
-                this.loading = false;
-                match result {
-                    Ok(_) => {
-                        if let Some(fs) = fresh_state {
-                            this.device.update(cx, |repo, repo_cx| {
-                                repo.apply_fresh_state(fs, repo_cx);
-                            });
-                        }
-                        match &dialog_handle {
-                            StatusDialogHandle::Pin(dh) => {
-                                let _ = dh.update(cx, |d, cx| {
-                                    d.set_success(
-                                        "USB applications updated successfully. Please re-plug the device.".to_string(),
-                                        cx,
-                                    );
-                                });
-                            }
-                            StatusDialogHandle::Status(dh) => {
-                                let _ = dh.update(cx, |d, cx| {
-                                    d.set_success(
-                                        "USB applications updated successfully. Please re-plug the device.".to_string(),
-                                        cx,
-                                    );
-                                });
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        match &dialog_handle {
-                            StatusDialogHandle::Pin(dh) => {
-                                let _ = dh.update(cx, |d, cx| {
-                                    d.set_error(format!("Failed to apply USB applications: {}", e), cx);
-                                });
-                            }
-                            StatusDialogHandle::Status(dh) => {
-                                let _ = dh.update(cx, |d, cx| {
-                                    d.set_error(format!("Failed to apply USB applications: {}", e), cx);
-                                });
-                            }
-                        }
-                    }
-                }
-                cx.notify();
-            });
-        }));
+    #[test]
+    fn driver_row_maps_none_to_sentinel_and_drivers_after() {
+        // A virgin phy (led_driver = None) selects the "Firmware default" sentinel
+        // at row 0 — so an explicit pick of any real driver differs from it and is
+        // written (the fix for GPIO being unreachable on a ws2812-default board).
+        assert_eq!(ConfigViewModel::driver_row(None), 0);
+        // Real drivers follow LedDriverType::all() order, offset past the sentinel.
+        assert_eq!(ConfigViewModel::driver_row(Some(1)), 1); // PicoGpio
+        assert_eq!(ConfigViewModel::driver_row(Some(2)), 2); // PimoroniRgb
+        assert_eq!(ConfigViewModel::driver_row(Some(3)), 3); // Ws2812Neopixel
+        assert_eq!(ConfigViewModel::driver_row(Some(5)), 4); // Esp32Neopixel
+        // An unrecognised value falls back to the sentinel, never a bogus index.
+        assert_eq!(ConfigViewModel::driver_row(Some(99)), 0);
     }
 }

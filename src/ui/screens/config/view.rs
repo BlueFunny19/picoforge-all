@@ -7,6 +7,12 @@ use crate::ui::screens::config::view_model::ConfigViewModel;
 use gpui::*;
 use gpui_component::{button::*, input::*, select::*, slider::*, switch::*, *};
 
+/// Per-status LED brightness is a full u8 on the device (0-255, 0 = off). The
+/// +/- steppers move in coarse steps (15 divides 255 evenly) so the whole range
+/// stays reachable without hundreds of clicks.
+const LED_BRIGHTNESS_MAX: u8 = 255;
+const LED_BRIGHTNESS_STEP: u8 = 15;
+
 impl ConfigViewModel {
     fn render_identity_card(
         &self,
@@ -48,11 +54,24 @@ impl ConfigViewModel {
             )
             .child(div().h_px().bg(theme.border))
             .child(
-                v_flex().gap_2().child("Product Name").child(
-                    Input::new(&self.product_name_input)
-                        .bg(rgb(0x222225))
-                        .disabled(is_fido),
-                ),
+                div()
+                    .grid()
+                    .grid_cols(2)
+                    .gap_4()
+                    .child(
+                        v_flex().gap_2().child("Product Name").child(
+                            Input::new(&self.product_name_input)
+                                .bg(rgb(0x222225))
+                                .disabled(is_fido),
+                        ),
+                    )
+                    .child(
+                        v_flex().gap_2().child("Manufacturer").child(
+                            Input::new(&self.manufacturer_input)
+                                .bg(rgb(0x222225))
+                                .disabled(is_fido),
+                        ),
+                    ),
             );
 
         Card::new()
@@ -66,101 +85,118 @@ impl ConfigViewModel {
         &mut self,
         cx: &mut Context<Self>,
         is_fido: bool,
+        is_rskey: bool,
         hardware_config_disabled: bool,
     ) -> impl IntoElement {
-        let dim_listener = cx.listener(|this, checked, _, cx| {
-            this.led_dimmable = *checked;
-            cx.notify();
-        });
-
-        let steady_listener = cx.listener(|this, checked, _, cx| {
-            this.led_steady = *checked;
-            cx.notify();
-        });
-
-        let theme = cx.theme();
-
-        let brightness = self.led_brightness_slider.read(cx).value().start() as i32;
-
-        let content = v_flex()
-            .gap_4()
-            .child(
-                h_flex()
-                    .gap_4()
-                    .flex_wrap()
-                    .child(
-                        v_flex().gap_2().flex_1().child("LED GPIO Pin").child(
-                            Input::new(&self.led_gpio_input)
-                                .bg(rgb(0x222225))
-                                .disabled(hardware_config_disabled),
-                        ),
-                    )
-                    .child(
-                        v_flex().gap_2().flex_1().child("LED Driver").child(
-                            Select::new(&self.led_driver_select)
-                                .w_full()
-                                .bg(rgb(0x222225))
-                                .disabled(is_fido),
-                        ),
+        // GPIO pin + driver are the LED hardware topology — always shown.
+        let mut content = v_flex().gap_4().child(
+            h_flex()
+                .gap_4()
+                .flex_wrap()
+                .child(
+                    v_flex().gap_2().flex_1().child("LED GPIO Pin").child(
+                        Input::new(&self.led_gpio_input)
+                            .bg(rgb(0x222225))
+                            .disabled(hardware_config_disabled),
                     ),
-            )
-            .child(div().h_px().bg(theme.border))
-            .child(
-                v_flex().gap_2().child("Brightness (0-15)").child(
+                )
+                .child(
+                    v_flex().gap_2().flex_1().child("LED Driver").child(
+                        Select::new(&self.led_driver_select)
+                            .w_full()
+                            .bg(rgb(0x222225))
+                            .disabled(is_fido),
+                    ),
+                ),
+        );
+
+        // Colour order is an RS-Key extension (phy tag 0x0D); pico-fido ignores
+        // it, so only surface it for RS-Key. Fixes red/green swap on GRB panels.
+        if is_rskey {
+            content = content.child(
+                v_flex().gap_2().child("LED Colour Order").child(
+                    Select::new(&self.led_order_select)
+                        .w_full()
+                        .bg(rgb(0x222225))
+                        .disabled(hardware_config_disabled),
+                ),
+            );
+        }
+
+        // Global brightness / dimmable / steady live in the phy record. On RS-Key
+        // the per-status EF_LED_CONF (Status LED Colors card) overrides them at
+        // boot, so showing them here too would be duplicate, dead controls.
+        if !is_rskey {
+            let dim_listener = cx.listener(|this, checked, _, cx| {
+                this.led_dimmable = *checked;
+                cx.notify();
+            });
+            let steady_listener = cx.listener(|this, checked, _, cx| {
+                this.led_steady = *checked;
+                cx.notify();
+            });
+            let theme = cx.theme();
+            let brightness = self.led_brightness_slider.read(cx).value().start() as i32;
+
+            content = content
+                .child(div().h_px().bg(theme.border))
+                .child(
+                    v_flex().gap_2().child("Brightness (0-15)").child(
+                        h_flex()
+                            .items_center()
+                            .gap_4()
+                            .child(
+                                Slider::new(&self.led_brightness_slider)
+                                    .flex_1()
+                                    .disabled(hardware_config_disabled),
+                            )
+                            .child(
+                                div()
+                                    .text_xs()
+                                    .text_color(theme.muted_foreground)
+                                    .child(format!("Level {}", brightness)),
+                            ),
+                    ),
+                )
+                .child(
                     h_flex()
                         .items_center()
-                        .gap_4()
+                        .justify_between()
                         .child(
-                            Slider::new(&self.led_brightness_slider)
-                                .flex_1()
-                                .disabled(hardware_config_disabled),
+                            v_flex().gap_0p5().child("LED Dimmable").child(
+                                div()
+                                    .text_sm()
+                                    .text_color(theme.muted_foreground)
+                                    .child("Allow brightness adjustment"),
+                            ),
                         )
                         .child(
-                            div()
-                                .text_xs()
-                                .text_color(theme.muted_foreground)
-                                .child(format!("Level {}", brightness)),
+                            Switch::new("led-dimmable")
+                                .checked(self.led_dimmable)
+                                .disabled(hardware_config_disabled)
+                                .on_click(dim_listener),
                         ),
-                ),
-            )
-            .child(
-                h_flex()
-                    .items_center()
-                    .justify_between()
-                    .child(
-                        v_flex().gap_0p5().child("LED Dimmable").child(
-                            div()
-                                .text_sm()
-                                .text_color(theme.muted_foreground)
-                                .child("Allow brightness adjustment"),
+                )
+                .child(
+                    h_flex()
+                        .items_center()
+                        .justify_between()
+                        .child(
+                            v_flex().gap_0p5().child("LED Steady Mode").child(
+                                div()
+                                    .text_sm()
+                                    .text_color(theme.muted_foreground)
+                                    .child("Keep LED on constantly"),
+                            ),
+                        )
+                        .child(
+                            Switch::new("led-steady")
+                                .checked(self.led_steady)
+                                .disabled(hardware_config_disabled)
+                                .on_click(steady_listener),
                         ),
-                    )
-                    .child(
-                        Switch::new("led-dimmable")
-                            .checked(self.led_dimmable)
-                            .disabled(hardware_config_disabled)
-                            .on_click(dim_listener),
-                    ),
-            )
-            .child(
-                h_flex()
-                    .items_center()
-                    .justify_between()
-                    .child(
-                        v_flex().gap_0p5().child("LED Steady Mode").child(
-                            div()
-                                .text_sm()
-                                .text_color(theme.muted_foreground)
-                                .child("Keep LED on constantly"),
-                        ),
-                    )
-                    .child(
-                        Switch::new("led-steady")
-                            .checked(self.led_steady)
-                            .disabled(hardware_config_disabled)
-                            .on_click(steady_listener),
-                    ),
-            );
+                );
+        }
 
         Card::new()
             .title("LED Settings")
@@ -267,18 +303,15 @@ impl ConfigViewModel {
             });
 
             let dec_bright_listener = cx.listener(move |this, _, _, cx| {
-                let mut b = this.led_status_brightness[i];
-                b = b.saturating_sub(1);
-                this.led_status_brightness[i] = b;
+                let b = this.led_status_brightness[i];
+                this.led_status_brightness[i] = b.saturating_sub(LED_BRIGHTNESS_STEP);
                 cx.notify();
             });
 
             let inc_bright_listener = cx.listener(move |this, _, _, cx| {
-                let mut b = this.led_status_brightness[i];
-                if b < 15 {
-                    b += 1;
-                }
-                this.led_status_brightness[i] = b;
+                let b = this.led_status_brightness[i];
+                this.led_status_brightness[i] =
+                    b.saturating_add(LED_BRIGHTNESS_STEP).min(LED_BRIGHTNESS_MAX);
                 cx.notify();
             });
 
@@ -339,31 +372,12 @@ impl ConfigViewModel {
                                             .active(rgb(0x3f3f46).into())
                                             .border(theme.border),
                                     )
-                                    .disabled(is_fido || brightness_val >= 15)
+                                    .disabled(is_fido || brightness_val >= LED_BRIGHTNESS_MAX)
                                     .on_click(inc_bright_listener),
                             ),
                     ),
             );
         }
-
-        rows = rows.child(div().h_px().bg(theme.border));
-        rows = rows.child(
-            h_flex().justify_end().child(
-                Button::new("apply-rskey-leds")
-                    .child("Save LED Status")
-                    .custom(
-                        ButtonCustomVariant::new(cx)
-                            .color(rgb(0xe3e3e6).into())
-                            .hover(rgb(0xcfcfd1).into())
-                            .active(rgb(0xe3e3e6).into())
-                            .foreground(rgb(0x4b4b4e).into()),
-                    )
-                    .disabled(is_fido || self.loading)
-                    .on_click(cx.listener(|this, _, window, cx| {
-                        this.apply_rskey_led_settings(window, cx);
-                    })),
-            ),
-        );
 
         Card::new()
             .title("Status LED Colors")
@@ -425,25 +439,6 @@ impl ConfigViewModel {
                 );
         }
 
-        rows = rows.child(div().h_px().bg(theme.border));
-        rows = rows.child(
-            h_flex().justify_end().child(
-                Button::new("apply-rskey-apps")
-                    .child("Save USB Applications")
-                    .custom(
-                        ButtonCustomVariant::new(cx)
-                            .color(rgb(0xe3e3e6).into())
-                            .hover(rgb(0xcfcfd1).into())
-                            .active(rgb(0xe3e3e6).into())
-                            .foreground(rgb(0x4b4b4e).into()),
-                    )
-                    .disabled(is_fido || self.loading)
-                    .on_click(cx.listener(|this, _, window, cx| {
-                        this.apply_rskey_apps_settings(window, cx);
-                    })),
-            ),
-        );
-
         Card::new()
             .title("USB Applications")
             .description("Enable or disable specific USB features")
@@ -457,19 +452,37 @@ impl ConfigViewModel {
         is_fido: bool,
     ) -> impl IntoElement {
         let theme = cx.theme();
-        let mut rows = v_flex().gap_4();
+        // Only the interfaces the firmware actually instantiates (USB_ITF_SUPPORTED
+        // = CCID | HID | KB). WCID (WebUSB) and LWIP are pico-fido concepts RS-Key
+        // never builds, so toggling them would be a no-op — don't offer them.
+        let mut rows = v_flex().gap_4().child(
+            div()
+                .text_sm()
+                .text_color(rgb(0xf59e0b))
+                .child("Advanced. HID off disables all FIDO2/U2F; CCID off disables every smart-card app (and the rescue applet). The firmware always keeps one of them, so you can't lock yourself out here."),
+        );
 
         let interfaces = [
-            ("CCID (Smart Card)", 0x01u8),
-            ("WCID (WebUSB)", 0x02u8),
-            ("HID (FIDO)", 0x04u8),
-            ("KB (Keyboard)", 0x08u8),
-            ("LWIP", 0x10u8),
+            (
+                "CCID (Smart Card)",
+                0x01u8,
+                "Required for the rescue applet and all smart-card apps",
+            ),
+            (
+                "HID (FIDO)",
+                0x04u8,
+                "FIDO/CTAP transport — off disables all FIDO2 and U2F",
+            ),
+            (
+                "KB (Keyboard)",
+                0x08u8,
+                "OTP keyboard — Yubico OTP and static-password typing",
+            ),
         ];
 
         let current_mask = self.enabled_usb_itf.unwrap_or(0x1F);
 
-        for (name, bit) in interfaces {
+        for (name, bit, desc) in interfaces {
             let is_enabled = (current_mask & bit) != 0;
             let is_ccid = bit == 0x01;
 
@@ -498,11 +511,7 @@ impl ConfigViewModel {
                             div()
                                 .text_sm()
                                 .text_color(theme.muted_foreground)
-                                .child(if is_ccid {
-                                    "Required for Rescue Applet"
-                                } else {
-                                    "USB Endpoint"
-                                }),
+                                .child(desc),
                         ),
                     )
                     .child(
@@ -566,7 +575,7 @@ impl Render for ConfigViewModel {
         let is_fido_no_rskey = is_fido && !is_rskey;
 
         let led_card = self
-            .render_led_card(cx, is_fido_no_rskey, hardware_config_disabled)
+            .render_led_card(cx, is_fido_no_rskey, is_rskey, hardware_config_disabled)
             .into_any_element();
         let options_card = self
             .render_options_card(cx, hardware_config_disabled)
@@ -579,21 +588,26 @@ impl Render for ConfigViewModel {
             .render_touch_card(cx.theme(), is_fido_no_rskey)
             .into_any_element();
 
-        let mut inner = v_flex()
-            .gap_6()
-            .child(identity_card)
-            .child(led_card)
-            .child(touch_card)
-            .child(options_card);
+        let mut inner = v_flex().gap_6().child(identity_card);
 
+        // RS-Key: put the functional config (which apps + transports are on)
+        // right after Identity, before appearance/misc, so the panel reads
+        // top-down by importance rather than burying it under the LED cards.
+        // No curves card: the firmware ignores the phy ENABLED_CURVES tag
+        // (curve support is compile-time), so exposing it would only mislead.
         if is_rskey {
-            // No curves card: RS-Key's firmware ignores the phy ENABLED_CURVES
-            // tag (curve support is compile-time), so exposing it would only mislead.
             inner = inner
-                .child(self.render_rskey_led_card(cx, false))
                 .child(self.render_rskey_apps_card(cx, false))
                 .child(self.render_rskey_usb_itf_card(cx, false));
         }
+
+        inner = inner.child(led_card);
+
+        if is_rskey {
+            inner = inner.child(self.render_rskey_led_card(cx, false));
+        }
+
+        inner = inner.child(touch_card).child(options_card);
 
         inner = inner.child(
             h_flex().justify_end().pt_4().child(

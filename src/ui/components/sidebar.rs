@@ -174,16 +174,77 @@ impl Render for AppSidebar {
             .flex_grow()
             .bg(sidebar_bg)
             .border_color(gpui::transparent_white())
+            // Grouped so the panel reads as sections, not one long list: the
+            // device overview, the credential applets, RS-Key's protection
+            // features, then device-wide system actions (Offboard sits just
+            // above About as a bottom-of-list decommission action).
             .child(
-                SidebarGroup::new("Menu").child(
+                SidebarGroup::new("Device").child(
+                    SidebarMenu::new().child(self.menu_item(
+                        cx,
+                        "Home",
+                        "icons/house.svg",
+                        Destination::Home,
+                    )),
+                ),
+            )
+            .child(
+                SidebarGroup::new("Credentials").child(
                     SidebarMenu::new()
-                        .child(self.menu_item(cx, "Home", "icons/house.svg", Destination::Home))
                         .child(self.menu_item(
                             cx,
                             "Passkeys",
                             "icons/key-round.svg",
                             Destination::Passkeys,
                         ))
+                        .child(self.menu_item(
+                            cx,
+                            "Accounts",
+                            "icons/key.svg",
+                            Destination::Accounts,
+                        ))
+                        .child(self.menu_item(
+                            cx,
+                            "Slots",
+                            "icons/asterisk.svg",
+                            Destination::Slots,
+                        ))
+                        .child(self.menu_item(cx, "PIV", "icons/shield.svg", Destination::Piv))
+                        .child(self.menu_item(
+                            cx,
+                            "OpenPGP",
+                            "icons/scroll-text.svg",
+                            Destination::OpenPgp,
+                        )),
+                ),
+            )
+            .child(
+                SidebarGroup::new("Protection").child(
+                    SidebarMenu::new()
+                        .child(self.menu_item(
+                            cx,
+                            "Audit",
+                            "icons/book-open.svg",
+                            Destination::Audit,
+                        ))
+                        .child(self.menu_item(
+                            cx,
+                            "Backup",
+                            "icons/save.svg",
+                            Destination::Backup,
+                        ))
+                        .child(self.menu_item(cx, "Lock", "icons/lock.svg", Destination::Lock))
+                        .child(self.menu_item(
+                            cx,
+                            "Attestation",
+                            "icons/building-2.svg",
+                            Destination::Attestation,
+                        )),
+                ),
+            )
+            .child(
+                SidebarGroup::new("System").child(
+                    SidebarMenu::new()
                         .child(self.menu_item(
                             cx,
                             "Configuration",
@@ -195,6 +256,12 @@ impl Render for AppSidebar {
                             "Security",
                             "icons/shield-check.svg",
                             Destination::Security,
+                        ))
+                        .child(self.menu_item(
+                            cx,
+                            "Offboard",
+                            "icons/trash-2.svg",
+                            Destination::Offboard,
                         ))
                         .child(self.menu_item_icon_name(
                             cx,
