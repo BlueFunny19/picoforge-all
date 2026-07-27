@@ -13,9 +13,8 @@ use crate::ui::screens::{
     attestation::AttestationEvent, attestation::AttestationViewModel, audit::AuditViewModel,
     backup::BackupViewModel, config::ConfigViewModel, home::HomeViewModel, lock::LockViewModel,
     offboard::OffboardEvent, offboard::OffboardViewModel, openpgp::OpenPgpEvent,
-    openpgp::OpenPgpViewModel, passkeys::PasskeysEvent,
-    passkeys::PasskeysViewModel, piv::PivEvent, piv::PivViewModel, security::SecurityViewModel,
-    slots::SlotsEvent, slots::SlotsViewModel,
+    openpgp::OpenPgpViewModel, passkeys::PasskeysEvent, passkeys::PasskeysViewModel, piv::PivEvent,
+    piv::PivViewModel, security::SecurityViewModel, slots::SlotsEvent, slots::SlotsViewModel,
 };
 use gpui::prelude::*;
 use gpui::*;
@@ -239,15 +238,13 @@ impl Render for ApplicationRoot {
                 Destination::Slots => {
                     let view = self.views_store.slots.get_or_insert_with(|| {
                         let view = cx.new(|cx| SlotsViewModel::new(window, cx, &self.models));
-                        cx.subscribe_in(
-                            &view,
-                            window,
-                            |_, _, event: &SlotsEvent, window, cx| match event {
+                        cx.subscribe_in(&view, window, |_, _, event: &SlotsEvent, window, cx| {
+                            match event {
                                 SlotsEvent::Notification(msg) => {
                                     window.push_notification(msg.to_string(), cx);
                                 }
-                            },
-                        )
+                            }
+                        })
                         .detach();
                         view
                     });
@@ -271,15 +268,13 @@ impl Render for ApplicationRoot {
                 Destination::OpenPgp => {
                     let view = self.views_store.openpgp.get_or_insert_with(|| {
                         let view = cx.new(|cx| OpenPgpViewModel::new(window, cx, &self.models));
-                        cx.subscribe_in(
-                            &view,
-                            window,
-                            |_, _, event: &OpenPgpEvent, window, cx| match event {
+                        cx.subscribe_in(&view, window, |_, _, event: &OpenPgpEvent, window, cx| {
+                            match event {
                                 OpenPgpEvent::Notification(msg) => {
                                     window.push_notification(msg.to_string(), cx);
                                 }
-                            },
-                        )
+                            }
+                        })
                         .detach();
                         view
                     });

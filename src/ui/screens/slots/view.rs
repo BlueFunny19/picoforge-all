@@ -6,7 +6,7 @@ use crate::ui::models::device::otp;
 use crate::ui::screens::slots::view_model::SlotsViewModel;
 use gpui::*;
 use gpui_component::button::{Button, ButtonVariants};
-use gpui_component::{h_flex, v_flex, ActiveTheme, Disableable, Icon, StyledExt, Theme};
+use gpui_component::{ActiveTheme, Disableable, Icon, StyledExt, Theme, h_flex, v_flex};
 
 fn empty_state(heading: &str, body: String, theme: &Theme) -> AnyElement {
     v_flex()

@@ -6,12 +6,12 @@ use crate::ui::app::AppModels;
 use crate::ui::components::applet_gate::AppletGate;
 use crate::ui::components::dialog;
 use crate::ui::components::dialog::StatusContent;
-use crate::ui::components::form::{select_state, selected_key, LabeledU8};
-use crate::ui::models::device::{piv, DeviceEvent, DeviceRepo, MgmAuth, USB_CAP_PIV};
+use crate::ui::components::form::{LabeledU8, select_state, selected_key};
+use crate::ui::models::device::{DeviceEvent, DeviceRepo, MgmAuth, USB_CAP_PIV, piv};
 use gpui::*;
+use gpui_component::WindowExt;
 use gpui_component::button::ButtonVariants;
 use gpui_component::select::SelectState;
-use gpui_component::WindowExt;
 
 const OPT_ALGO: &[(&str, u8)] = &[
     ("ECC P-256", 0x11),
@@ -22,8 +22,7 @@ const OPT_ALGO: &[(&str, u8)] = &[
     ("RSA-3072", 0x05),
     ("RSA-4096", 0x16),
 ];
-const OPT_PIN_POLICY: &[(&str, u8)] =
-    &[("Default", 0), ("Never", 1), ("Once", 2), ("Always", 3)];
+const OPT_PIN_POLICY: &[(&str, u8)] = &[("Default", 0), ("Never", 1), ("Once", 2), ("Always", 3)];
 const OPT_TOUCH_POLICY: &[(&str, u8)] =
     &[("Default", 0), ("Never", 1), ("Always", 2), ("Cached", 3)];
 const OPT_TRIES: &[(&str, u8)] = &[("3", 3), ("5", 5), ("8", 8), ("10", 10)];
@@ -142,7 +141,10 @@ impl PivViewModel {
 
     /// The stored management-key algorithm (default AES-192).
     fn mgm_algo(&self) -> u8 {
-        self.info.as_ref().map(|i| i.mgm_algo).unwrap_or(piv::ALGO_AES192)
+        self.info
+            .as_ref()
+            .map(|i| i.mgm_algo)
+            .unwrap_or(piv::ALGO_AES192)
     }
 
     /// Whether this card's management key is PIN-protected (ykman `--protect`).
@@ -275,10 +277,8 @@ impl PivViewModel {
                 let _ = view.update(cx, |this, cx| {
                     this.run(
                         move || {
-                            DeviceRepo::piv_generate_blocking(
-                                slot, algo, pin_pol, touch_pol, auth,
-                            )
-                            .map(|_| ())
+                            DeviceRepo::piv_generate_blocking(slot, algo, pin_pol, touch_pol, auth)
+                                .map(|_| ())
                         },
                         "Key generated.",
                         status,
@@ -296,9 +296,15 @@ impl PivViewModel {
             let ok = submit.clone();
             let btn = submit.clone();
             let field = |label: &str, sel: &Entity<SelectState<Vec<LabeledU8>>>| {
-                gpui_component::v_flex().gap_1().flex_1().child(label.to_string()).child(
-                    gpui_component::select::Select::new(sel).w_full().bg(rgb(0x222225)),
-                )
+                gpui_component::v_flex()
+                    .gap_1()
+                    .flex_1()
+                    .child(label.to_string())
+                    .child(
+                        gpui_component::select::Select::new(sel)
+                            .w_full()
+                            .bg(rgb(0x222225)),
+                    )
             };
             dialog
                 .title(format!("Generate — {}", piv::slot_label(slot)))
@@ -338,10 +344,16 @@ impl PivViewModel {
 
     // ── Export certificate (DER → PEM file) ─────────────────────────────────
 
-    pub(super) fn open_export_cert(&mut self, slot: u8, _window: &mut Window, cx: &mut Context<Self>) {
-        let default_dir = std::env::var("HOME").map(std::path::PathBuf::from).unwrap_or_default();
-        let receiver =
-            cx.prompt_for_new_path(&default_dir, Some(&format!("piv-{slot:02x}.pem")));
+    pub(super) fn open_export_cert(
+        &mut self,
+        slot: u8,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let default_dir = std::env::var("HOME")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_default();
+        let receiver = cx.prompt_for_new_path(&default_dir, Some(&format!("piv-{slot:02x}.pem")));
         let view = cx.entity().downgrade();
         self._task = Some(cx.spawn(async move |_, cx| {
             let Ok(Ok(Some(path))) = receiver.await else {
@@ -369,7 +381,12 @@ impl PivViewModel {
 
     // ── PIN / PUK ───────────────────────────────────────────────────────────
 
-    pub(super) fn open_change_pin(&mut self, is_puk: bool, window: &mut Window, cx: &mut Context<Self>) {
+    pub(super) fn open_change_pin(
+        &mut self,
+        is_puk: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let title = if is_puk { "Change PUK" } else { "Change PIN" };
         self.two_secret_dialog(
             title,
@@ -384,7 +401,11 @@ impl PivViewModel {
                     DeviceRepo::piv_change_pin_blocking(cur, new)
                 }
             },
-            if is_puk { "PUK changed." } else { "PIN changed." },
+            if is_puk {
+                "PUK changed."
+            } else {
+                "PIN changed."
+            },
         );
     }
 
@@ -469,7 +490,12 @@ impl PivViewModel {
 
     // ── Delete certificate (mgmt-gated) ─────────────────────────────────────
 
-    pub(super) fn open_delete_cert(&mut self, slot: u8, window: &mut Window, cx: &mut Context<Self>) {
+    pub(super) fn open_delete_cert(
+        &mut self,
+        slot: u8,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let mgm_algo = self.mgm_algo();
         let mgm = self.mgm_input(window, cx);
         let protected = self.mgm_protected();
@@ -500,7 +526,9 @@ impl PivViewModel {
             let btn = submit.clone();
             dialog
                 .title(format!("Delete certificate — {}", piv::slot_label(slot)))
-                .child("Clears this slot's certificate (the key stays). Requires the management key.")
+                .child(
+                    "Clears this slot's certificate (the key stays). Requires the management key.",
+                )
                 .child(
                     gpui_component::v_flex()
                         .gap_2()
@@ -574,9 +602,15 @@ impl PivViewModel {
             let ok = submit.clone();
             let btn = submit.clone();
             let field = |label: &str, sel: &Entity<SelectState<Vec<LabeledU8>>>| {
-                gpui_component::v_flex().gap_1().flex_1().child(label.to_string()).child(
-                    gpui_component::select::Select::new(sel).w_full().bg(rgb(0x222225)),
-                )
+                gpui_component::v_flex()
+                    .gap_1()
+                    .flex_1()
+                    .child(label.to_string())
+                    .child(
+                        gpui_component::select::Select::new(sel)
+                            .w_full()
+                            .bg(rgb(0x222225)),
+                    )
             };
             dialog
                 .title("Set PIN Retries")
@@ -649,7 +683,8 @@ impl PivViewModel {
             let view = view.clone();
             std::rc::Rc::new(move |window: &mut Window, cx: &mut App| {
                 let notify = |cx: &mut App, msg: &str| {
-                    let _ = view.update(cx, |_, cx| cx.emit(PivEvent::Notification(msg.to_string())));
+                    let _ =
+                        view.update(cx, |_, cx| cx.emit(PivEvent::Notification(msg.to_string())));
                 };
                 let Some(current) = resolve_mgm_auth(&cur, protected, cur_algo, &view, cx) else {
                     return;
@@ -657,16 +692,19 @@ impl PivViewModel {
                 let new_algo = selected_key(&algo_sel, OPT_MGM_ALGO, cx);
                 let new_key = match hex::decode(new.read(cx).text().to_string().trim()) {
                     Ok(k) if piv_key_len_ok(new_algo, k.len()) => k,
-                    _ => return notify(cx, "New key length must match the algorithm (16/24/32 bytes)"),
+                    _ => {
+                        return notify(
+                            cx,
+                            "New key length must match the algorithm (16/24/32 bytes)",
+                        );
+                    }
                 };
                 let touch = selected_key(&touch_sel, OPT_MGM_TOUCH, cx) == 1;
                 window.close_dialog(cx);
                 let status = dialog::open_status_dialog("Changing Management Key", window, cx);
                 let _ = view.update(cx, |this, cx| {
                     this.run(
-                        move || {
-                            DeviceRepo::piv_set_mgm_blocking(current, new_algo, new_key, touch)
-                        },
+                        move || DeviceRepo::piv_set_mgm_blocking(current, new_algo, new_key, touch),
                         "Management key changed.",
                         status,
                         cx,
@@ -741,7 +779,12 @@ impl PivViewModel {
 
     // ── Import certificate / key (file → management-key dialog) ──────────────
 
-    pub(super) fn open_import_cert(&mut self, slot: u8, window: &mut Window, cx: &mut Context<Self>) {
+    pub(super) fn open_import_cert(
+        &mut self,
+        slot: u8,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let handle = window.window_handle();
         let receiver = cx.prompt_for_paths(PathPromptOptions {
             files: true,
@@ -758,22 +801,33 @@ impl PivViewModel {
                 return;
             };
             let Ok(bytes) = std::fs::read(&path) else {
-                let _ = view.update(cx, |_, cx| cx.emit(PivEvent::Notification("Could not read file".into())));
+                let _ = view.update(cx, |_, cx| {
+                    cx.emit(PivEvent::Notification("Could not read file".into()))
+                });
                 return;
             };
             let Some(der) = cert_pem_to_der(&bytes) else {
                 let _ = view.update(cx, |_, cx| {
-                    cx.emit(PivEvent::Notification("Not a valid PEM/DER certificate".into()))
+                    cx.emit(PivEvent::Notification(
+                        "Not a valid PEM/DER certificate".into(),
+                    ))
                 });
                 return;
             };
             let _ = cx.update_window(handle, |_, window, cx| {
-                let _ = view.update(cx, |this, cx| this.open_mgm_import(slot, der, false, window, cx));
+                let _ = view.update(cx, |this, cx| {
+                    this.open_mgm_import(slot, der, false, window, cx)
+                });
             });
         }));
     }
 
-    pub(super) fn open_import_key(&mut self, slot: u8, window: &mut Window, cx: &mut Context<Self>) {
+    pub(super) fn open_import_key(
+        &mut self,
+        slot: u8,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let handle = window.window_handle();
         let receiver = cx.prompt_for_paths(PathPromptOptions {
             files: true,
@@ -790,11 +844,15 @@ impl PivViewModel {
                 return;
             };
             let Ok(bytes) = std::fs::read(&path) else {
-                let _ = view.update(cx, |_, cx| cx.emit(PivEvent::Notification("Could not read file".into())));
+                let _ = view.update(cx, |_, cx| {
+                    cx.emit(PivEvent::Notification("Could not read file".into()))
+                });
                 return;
             };
             let _ = cx.update_window(handle, |_, window, cx| {
-                let _ = view.update(cx, |this, cx| this.open_mgm_import(slot, bytes, true, window, cx));
+                let _ = view.update(cx, |this, cx| {
+                    this.open_mgm_import(slot, bytes, true, window, cx)
+                });
             });
         }));
     }
@@ -822,7 +880,11 @@ impl PivViewModel {
                 let file = file.clone();
                 window.close_dialog(cx);
                 let status = dialog::open_status_dialog(
-                    if is_key { "Importing Key" } else { "Importing Certificate" },
+                    if is_key {
+                        "Importing Key"
+                    } else {
+                        "Importing Certificate"
+                    },
                     window,
                     cx,
                 );
@@ -850,7 +912,11 @@ impl PivViewModel {
             let ok = submit.clone();
             let btn = submit.clone();
             dialog
-                .title(if is_key { "Import Key" } else { "Import Certificate" })
+                .title(if is_key {
+                    "Import Key"
+                } else {
+                    "Import Certificate"
+                })
                 .child("Enter the management key to authorise the import.")
                 .child(
                     gpui_component::v_flex()
@@ -881,9 +947,13 @@ impl PivViewModel {
     // ── Attestation (export the attestation cert of a generated key) ─────────
 
     pub(super) fn open_attest(&mut self, slot: u8, _window: &mut Window, cx: &mut Context<Self>) {
-        let default_dir = std::env::var("HOME").map(std::path::PathBuf::from).unwrap_or_default();
-        let receiver =
-            cx.prompt_for_new_path(&default_dir, Some(&format!("piv-{slot:02x}-attestation.pem")));
+        let default_dir = std::env::var("HOME")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_default();
+        let receiver = cx.prompt_for_new_path(
+            &default_dir,
+            Some(&format!("piv-{slot:02x}-attestation.pem")),
+        );
         let view = cx.entity().downgrade();
         self._task = Some(cx.spawn(async move |_, cx| {
             let Ok(Ok(Some(path))) = receiver.await else {
@@ -908,7 +978,12 @@ impl PivViewModel {
 
     // ── Delete key (mgmt-gated) ──────────────────────────────────────────────
 
-    pub(super) fn open_delete_key(&mut self, slot: u8, window: &mut Window, cx: &mut Context<Self>) {
+    pub(super) fn open_delete_key(
+        &mut self,
+        slot: u8,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let mgm_algo = self.mgm_algo();
         let mgm = self.mgm_input(window, cx);
         let protected = self.mgm_protected();
@@ -986,7 +1061,9 @@ impl PivViewModel {
                 let dst = selected_key(&dst_sel, OPT_SLOTS, cx);
                 if dst == src {
                     let _ = view.update(cx, |_, cx| {
-                        cx.emit(PivEvent::Notification("Choose a different destination slot".into()));
+                        cx.emit(PivEvent::Notification(
+                            "Choose a different destination slot".into(),
+                        ));
                     });
                     return;
                 }
@@ -1072,7 +1149,9 @@ fn cert_pem_to_der(input: &[u8]) -> Option<Vec<u8>> {
         let end = body.find("-----END")?;
         let b64: String = body[..end].chars().filter(|c| !c.is_whitespace()).collect();
         use base64::Engine;
-        base64::engine::general_purpose::STANDARD.decode(b64.as_bytes()).ok()
+        base64::engine::general_purpose::STANDARD
+            .decode(b64.as_bytes())
+            .ok()
     } else if input.first() == Some(&0x30) {
         Some(input.to_vec())
     } else {

@@ -5,7 +5,7 @@ use crate::ui::components::page_view::PageView;
 use crate::ui::screens::lock::view_model::LockViewModel;
 use gpui::*;
 use gpui_component::button::{Button, ButtonVariants};
-use gpui_component::{h_flex, v_flex, ActiveTheme, Disableable, Icon, StyledExt, Theme};
+use gpui_component::{ActiveTheme, Disableable, Icon, StyledExt, Theme, h_flex, v_flex};
 
 fn empty_state(heading: &str, body: String, theme: &Theme) -> AnyElement {
     v_flex()
@@ -17,7 +17,13 @@ fn empty_state(heading: &str, body: String, theme: &Theme) -> AnyElement {
         .border_color(theme.border)
         .rounded_xl()
         .child(div().font_semibold().child(heading.to_string()))
-        .child(div().text_sm().max_w(px(380.)).text_color(theme.muted_foreground).child(body))
+        .child(
+            div()
+                .text_sm()
+                .max_w(px(380.))
+                .text_color(theme.muted_foreground)
+                .child(body),
+        )
         .into_any_element()
 }
 
@@ -40,7 +46,12 @@ impl LockViewModel {
                 v_flex()
                     .gap_0p5()
                     .child(div().font_medium().child(title))
-                    .child(div().text_sm().text_color(theme.muted_foreground).child(subtitle)),
+                    .child(
+                        div()
+                            .text_sm()
+                            .text_color(theme.muted_foreground)
+                            .child(subtitle),
+                    ),
             )
             .child(btn)
     }
@@ -133,45 +144,45 @@ impl Render for LockViewModel {
         let theme = cx.theme();
 
         let status_card = {
-            let body = match status {
-                Some(s) => {
-                    let state = if s.locked {
-                        if s.unlocked {
-                            "locked, unlocked for this power-cycle"
+            let body =
+                match status {
+                    Some(s) => {
+                        let state = if s.locked {
+                            if s.unlocked {
+                                "locked, unlocked for this power-cycle"
+                            } else {
+                                "locked — unlock before any FIDO login"
+                            }
                         } else {
-                            "locked — unlock before any FIDO login"
-                        }
-                    } else {
-                        "not locked (plaintext seed)"
-                    };
-                    let (dot, color) = if s.locked && !s.unlocked {
-                        ("●", theme.danger)
-                    } else if s.locked {
-                        ("●", theme.green)
-                    } else {
-                        ("●", theme.muted_foreground)
-                    };
-                    v_flex()
-                        .gap_2()
-                        .child(
-                            h_flex()
-                                .gap_2()
-                                .items_center()
-                                .child(div().text_color(color).child(dot))
-                                .child(div().text_sm().child(format!("State: {state}"))),
-                        )
-                        .child(div().text_sm().text_color(theme.muted_foreground).child(format!(
-                            "Seed present: {}",
-                            if s.has_seed { "yes" } else { "no" }
-                        )))
-                        .into_any_element()
-                }
-                None => div()
-                    .text_sm()
-                    .text_color(theme.muted_foreground)
-                    .child("Reading lock state…")
-                    .into_any_element(),
-            };
+                            "not locked (plaintext seed)"
+                        };
+                        let (dot, color) = if s.locked && !s.unlocked {
+                            ("●", theme.danger)
+                        } else if s.locked {
+                            ("●", theme.green)
+                        } else {
+                            ("●", theme.muted_foreground)
+                        };
+                        v_flex()
+                            .gap_2()
+                            .child(
+                                h_flex()
+                                    .gap_2()
+                                    .items_center()
+                                    .child(div().text_color(color).child(dot))
+                                    .child(div().text_sm().child(format!("State: {state}"))),
+                            )
+                            .child(div().text_sm().text_color(theme.muted_foreground).child(
+                                format!("Seed present: {}", if s.has_seed { "yes" } else { "no" }),
+                            ))
+                            .into_any_element()
+                    }
+                    None => div()
+                        .text_sm()
+                        .text_color(theme.muted_foreground)
+                        .child("Reading lock state…")
+                        .into_any_element(),
+                };
             Card::new()
                 .title("Lock status")
                 .description("Whether the seed is wrapped at rest")

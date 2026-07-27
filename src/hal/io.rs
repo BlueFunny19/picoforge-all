@@ -9,7 +9,7 @@ use crate::{
     error::PFError,
     hal::{
         applets::oath, applets::openpgp, applets::otp, applets::piv, fido, rescue,
-        transport::ccid::CcidSession, transport::DeviceHandle, types::*,
+        transport::DeviceHandle, transport::ccid::CcidSession, types::*,
     },
 };
 
@@ -438,7 +438,11 @@ pub fn offboard(serial: String) -> Result<crate::hal::offboard::OffboardReport, 
                 break;
             }
         }
-        steps.push(OffboardStep { name: "otp".into(), ok, detail });
+        steps.push(OffboardStep {
+            name: "otp".into(),
+            ok,
+            detail,
+        });
     }
     steps.push(step("oath", oath_reset().map_err(|e| e.to_string())));
     steps.push(step("piv", piv_reset().map_err(|e| e.to_string())));
@@ -837,13 +841,12 @@ pub fn openpgp_set_touch(admin: String, slot: openpgp::PgpSlot, on: bool) -> Res
 }
 
 /// Generate a key in a slot with the given algorithm choice (see `GENERATE_ALGOS`).
-pub fn openpgp_generate(
-    admin: String,
-    slot: openpgp::PgpSlot,
-    choice: u8,
-) -> Result<(), PFError> {
+pub fn openpgp_generate(admin: String, slot: openpgp::PgpSlot, choice: u8) -> Result<(), PFError> {
     let attr = openpgp::algo_attr(slot, choice).ok_or_else(|| {
-        PFError::Device(format!("Algorithm not supported for the {} slot", slot.label()))
+        PFError::Device(format!(
+            "Algorithm not supported for the {} slot",
+            slot.label()
+        ))
     })?;
     let s = openpgp_admin(&admin)?;
     openpgp::generate(&s, slot, &attr).map(|_| ())

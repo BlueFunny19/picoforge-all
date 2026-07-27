@@ -40,12 +40,26 @@ pub struct Apdu {
 impl Apdu {
     /// A command that expects a response (`Le = 0` short form).
     pub fn read(cla: u8, ins: u8, p1: u8, p2: u8, data: &[u8]) -> Self {
-        Self { cla, ins, p1, p2, data: data.to_vec(), le: Some(0) }
+        Self {
+            cla,
+            ins,
+            p1,
+            p2,
+            data: data.to_vec(),
+            le: Some(0),
+        }
     }
 
     /// A pure write (no `Le`), for commands that answer with only a status word.
     pub fn write(cla: u8, ins: u8, p1: u8, p2: u8, data: &[u8]) -> Self {
-        Self { cla, ins, p1, p2, data: data.to_vec(), le: None }
+        Self {
+            cla,
+            ins,
+            p1,
+            p2,
+            data: data.to_vec(),
+            le: None,
+        }
     }
 
     /// Encode to the wire. Short-form Lc/Le when the body is ≤255 bytes,
@@ -135,7 +149,10 @@ mod tests {
     #[test]
     fn encodes_case2_no_data_with_le() {
         // LIST: header + single Le byte (0 = 256).
-        assert_eq!(Apdu::read(0x00, 0xA1, 0, 0, &[]).encode(), vec![0x00, 0xA1, 0, 0, 0x00]);
+        assert_eq!(
+            Apdu::read(0x00, 0xA1, 0, 0, &[]).encode(),
+            vec![0x00, 0xA1, 0, 0, 0x00]
+        );
     }
 
     #[test]

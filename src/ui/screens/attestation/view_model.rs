@@ -7,9 +7,9 @@ use crate::ui::components::dialog;
 use crate::ui::components::dialog::StatusContent;
 use crate::ui::models::device::{AttStatus, DeviceEvent, DeviceRepo, FirmwareType};
 use gpui::*;
+use gpui_component::WindowExt;
 use gpui_component::button::ButtonVariants;
 use gpui_component::input::InputState;
-use gpui_component::WindowExt;
 
 pub struct AttestationViewModel {
     pub(super) device: Entity<DeviceRepo>,

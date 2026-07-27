@@ -5,7 +5,7 @@ use crate::ui::components::page_view::PageView;
 use crate::ui::screens::backup::view_model::BackupViewModel;
 use gpui::*;
 use gpui_component::button::{Button, ButtonVariants};
-use gpui_component::{h_flex, v_flex, ActiveTheme, Disableable, Icon, StyledExt, Theme};
+use gpui_component::{ActiveTheme, Disableable, Icon, StyledExt, Theme, h_flex, v_flex};
 
 fn empty_state(heading: &str, body: String, theme: &Theme) -> AnyElement {
     v_flex()
@@ -46,7 +46,12 @@ impl BackupViewModel {
                 v_flex()
                     .gap_0p5()
                     .child(div().font_medium().child(title))
-                    .child(div().text_sm().text_color(theme.muted_foreground).child(subtitle)),
+                    .child(
+                        div()
+                            .text_sm()
+                            .text_color(theme.muted_foreground)
+                            .child(subtitle),
+                    ),
             )
             .child(btn)
     }
@@ -151,8 +156,16 @@ impl Render for BackupViewModel {
                     };
                     v_flex()
                         .gap_2()
-                        .child(div().text_sm().child(format!("Seed present: {}", yn(s.has_seed))))
-                        .child(div().text_sm().child(format!("Export window: {export_state}")))
+                        .child(
+                            div()
+                                .text_sm()
+                                .child(format!("Seed present: {}", yn(s.has_seed))),
+                        )
+                        .child(
+                            div()
+                                .text_sm()
+                                .child(format!("Export window: {export_state}")),
+                        )
                         .into_any_element()
                 }
                 None => div()

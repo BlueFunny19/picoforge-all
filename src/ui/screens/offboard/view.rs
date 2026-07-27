@@ -5,7 +5,7 @@ use crate::ui::components::page_view::PageView;
 use crate::ui::screens::offboard::view_model::OffboardViewModel;
 use gpui::*;
 use gpui_component::button::{Button, ButtonVariants};
-use gpui_component::{h_flex, v_flex, ActiveTheme, Disableable, Icon, StyledExt, Theme};
+use gpui_component::{ActiveTheme, Disableable, Icon, StyledExt, Theme, h_flex, v_flex};
 
 fn empty_state(heading: &str, body: String, theme: &Theme) -> AnyElement {
     v_flex()
@@ -17,7 +17,13 @@ fn empty_state(heading: &str, body: String, theme: &Theme) -> AnyElement {
         .border_color(theme.border)
         .rounded_xl()
         .child(div().font_semibold().child(heading.to_string()))
-        .child(div().text_sm().max_w(px(380.)).text_color(theme.muted_foreground).child(body))
+        .child(
+            div()
+                .text_sm()
+                .max_w(px(380.))
+                .text_color(theme.muted_foreground)
+                .child(body),
+        )
         .into_any_element()
 }
 
@@ -42,7 +48,13 @@ impl OffboardViewModel {
                     .items_center()
                     .child(div().w(px(16.)).text_color(color).child(mark))
                     .child(div().w(px(120.)).font_medium().child(s.name.clone()))
-                    .child(div().flex_1().text_sm().text_color(theme.muted_foreground).child(s.detail.clone()))
+                    .child(
+                        div()
+                            .flex_1()
+                            .text_sm()
+                            .text_color(theme.muted_foreground)
+                            .child(s.detail.clone()),
+                    )
                     .into_any_element(),
             );
         }
@@ -74,7 +86,12 @@ impl OffboardViewModel {
             col = col.child(
                 v_flex()
                     .gap_0p5()
-                    .child(div().text_xs().text_color(theme.muted_foreground).child("Attestation fingerprint (match against inventory)"))
+                    .child(
+                        div()
+                            .text_xs()
+                            .text_color(theme.muted_foreground)
+                            .child("Attestation fingerprint (match against inventory)"),
+                    )
                     .child(div().font_family("monospace").text_xs().child(fp.clone())),
             );
         }

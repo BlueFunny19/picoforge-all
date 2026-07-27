@@ -9,14 +9,14 @@
 
 use crate::error::PFError;
 use crate::ui::components::dialog;
-use crate::ui::components::form::{select_state, selected_key, LabeledU8};
-use crate::ui::models::device::{otp, DeviceRepo};
+use crate::ui::components::form::{LabeledU8, select_state, selected_key};
+use crate::ui::models::device::{DeviceRepo, otp};
 use crate::ui::screens::slots::view_model::{SlotsEvent, SlotsViewModel};
 use gpui::*;
 use gpui_component::button::{Button, ButtonVariants};
 use gpui_component::input::{Input, InputState};
 use gpui_component::select::{Select, SelectEvent, SelectState};
-use gpui_component::{h_flex, v_flex, WindowExt};
+use gpui_component::{WindowExt, h_flex, v_flex};
 
 const OPT_TYPE: &[(&str, u8)] = &[
     ("Challenge-response", 0),
@@ -129,9 +129,9 @@ pub(super) fn open(slot: u8, window: &mut Window, cx: &mut Context<SlotsViewMode
 
 impl ProgramSlotForm {
     fn notify(&self, cx: &mut Context<Self>, msg: &str) {
-        let _ = self
-            .view
-            .update(cx, |_, cx| cx.emit(SlotsEvent::Notification(msg.to_string())));
+        let _ = self.view.update(cx, |_, cx| {
+            cx.emit(SlotsEvent::Notification(msg.to_string()))
+        });
     }
 
     /// Close the form dialog, show a status dialog, and run the program op.
@@ -163,11 +163,11 @@ impl ProgramSlotForm {
             _ => return self.notify(cx, "Access codes must be hex, ≤ 6 bytes"),
         };
         let slot = self.slot;
-        let hex_secret = |s: &Entity<InputState>, cx: &mut Context<Self>| {
-            match hex::decode(s.read(cx).text().to_string().trim()) {
-                Ok(b) if !b.is_empty() && b.len() <= 20 => Some(b),
-                _ => None,
-            }
+        let hex_secret = |s: &Entity<InputState>, cx: &mut Context<Self>| match hex::decode(
+            s.read(cx).text().to_string().trim(),
+        ) {
+            Ok(b) if !b.is_empty() && b.len() <= 20 => Some(b),
+            _ => None,
         };
 
         match ty {
@@ -178,7 +178,9 @@ impl ProgramSlotForm {
                 self.dispatch(
                     window,
                     cx,
-                    move || DeviceRepo::otp_program_chalresp_blocking(slot, bytes, touch, new_a, cur_a),
+                    move || {
+                        DeviceRepo::otp_program_chalresp_blocking(slot, bytes, touch, new_a, cur_a)
+                    },
                     "Challenge-response programmed.".into(),
                 );
             }
@@ -199,7 +201,8 @@ impl ProgramSlotForm {
             }
             2 => {
                 let scancodes =
-                    match otp::ascii_to_scancodes(self.password.read(cx).text().to_string().trim()) {
+                    match otp::ascii_to_scancodes(self.password.read(cx).text().to_string().trim())
+                    {
                         Some(s) if !s.is_empty() => s,
                         _ => return self.notify(cx, "Password must be ASCII, 1–38 characters"),
                     };
@@ -218,17 +221,26 @@ impl ProgramSlotForm {
                 let public =
                     match otp::modhex_decode(self.yk_public.read(cx).text().to_string().trim()) {
                         Some(p) if !p.is_empty() && p.len() <= 16 => p,
-                        _ => return self.notify(cx, "Public ID must be modhex (≤ 16 bytes) — use Generate"),
+                        _ => {
+                            return self
+                                .notify(cx, "Public ID must be modhex (≤ 16 bytes) — use Generate");
+                        }
                     };
                 let private: [u8; 6] =
                     match hex::decode(self.yk_private.read(cx).text().to_string().trim()) {
                         Ok(b) if b.len() == 6 => b.try_into().unwrap(),
-                        _ => return self.notify(cx, "Private ID must be 6 bytes of hex — use Generate"),
+                        _ => {
+                            return self
+                                .notify(cx, "Private ID must be 6 bytes of hex — use Generate");
+                        }
                     };
                 let key: [u8; 16] =
                     match hex::decode(self.yk_key.read(cx).text().to_string().trim()) {
                         Ok(b) if b.len() == 16 => b.try_into().unwrap(),
-                        _ => return self.notify(cx, "Secret key must be 16 bytes of hex — use Generate"),
+                        _ => {
+                            return self
+                                .notify(cx, "Secret key must be 16 bytes of hex — use Generate");
+                        }
                     };
                 let msg = format!(
                     "Yubico OTP programmed. Register with a validation server:\nPublic ID: {}\nPrivate ID: {}\nKey: {}",
@@ -312,7 +324,8 @@ impl Render for ProgramSlotForm {
                         let secret = self.secret.clone();
                         move |window, cx| {
                             if let Ok(s) = otp::random_secret() {
-                                secret.update(cx, |st, cx| st.set_value(hex::encode(s), window, cx));
+                                secret
+                                    .update(cx, |st, cx| st.set_value(hex::encode(s), window, cx));
                             }
                         }
                     },
@@ -330,7 +343,8 @@ impl Render for ProgramSlotForm {
                         let secret = self.secret.clone();
                         move |window, cx| {
                             if let Ok(s) = otp::random_secret() {
-                                secret.update(cx, |st, cx| st.set_value(hex::encode(s), window, cx));
+                                secret
+                                    .update(cx, |st, cx| st.set_value(hex::encode(s), window, cx));
                             }
                         }
                     },
@@ -369,10 +383,10 @@ impl Render for ProgramSlotForm {
                 .child(labeled_input("Private ID (hex, 6 bytes)", &self.yk_private))
                 .child(labeled_input("Secret key (hex, 16 bytes)", &self.yk_key))
                 .child(
-                    h_flex().justify_between().items_center().child(labeled_select(
-                        "Append Enter",
-                        &self.append_sel,
-                    )),
+                    h_flex()
+                        .justify_between()
+                        .items_center()
+                        .child(labeled_select("Append Enter", &self.append_sel)),
                 )
                 .child(
                     Button::new("gen-yubico")

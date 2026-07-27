@@ -6,7 +6,7 @@ use crate::ui::models::device::piv;
 use crate::ui::screens::piv::view_model::PivViewModel;
 use gpui::*;
 use gpui_component::button::{Button, ButtonVariants};
-use gpui_component::{h_flex, v_flex, ActiveTheme, Disableable, Icon, StyledExt, Theme};
+use gpui_component::{ActiveTheme, Disableable, Icon, StyledExt, Theme, h_flex, v_flex};
 
 fn empty_state(heading: &str, body: String, theme: &Theme) -> AnyElement {
     v_flex()
@@ -31,7 +31,12 @@ fn empty_state(heading: &str, body: String, theme: &Theme) -> AnyElement {
 fn kv(label: &str, value: String, theme: &Theme) -> impl IntoElement {
     v_flex()
         .gap_1()
-        .child(div().text_sm().text_color(theme.muted_foreground).child(label.to_string()))
+        .child(
+            div()
+                .text_sm()
+                .text_color(theme.muted_foreground)
+                .child(label.to_string()),
+        )
         .child(div().text_sm().font_medium().child(value))
 }
 
@@ -48,7 +53,10 @@ impl PivViewModel {
         let theme = cx.theme();
         let slot = s.slot;
         let has_key = s.meta.is_some();
-        let is_generated = s.meta.map(|m| m.origin == piv::ORIGIN_GENERATED).unwrap_or(false);
+        let is_generated = s
+            .meta
+            .map(|m| m.origin == piv::ORIGIN_GENERATED)
+            .unwrap_or(false);
         let status_text = match s.meta {
             Some(m) => format!("{} · {}", piv::algo_label(m.algo), origin_label(m.origin)),
             None => "Empty".to_string(),
@@ -62,7 +70,9 @@ impl PivViewModel {
                     .label($label)
                     .ghost()
                     .disabled(d)
-                    .on_click(cx.listener(move |this, _, window, cx| this.$method(slot, window, cx)))
+                    .on_click(
+                        cx.listener(move |this, _, window, cx| this.$method(slot, window, cx)),
+                    )
                     .into_any_element()
             };
         }
@@ -148,7 +158,12 @@ impl PivViewModel {
                 v_flex()
                     .gap_0p5()
                     .child(div().font_medium().child(title))
-                    .child(div().text_sm().text_color(theme.muted_foreground).child(subtitle)),
+                    .child(
+                        div()
+                            .text_sm()
+                            .text_color(theme.muted_foreground)
+                            .child(subtitle),
+                    ),
             )
             .child(btn)
     }
@@ -214,11 +229,25 @@ impl Render for PivViewModel {
                 Some(i) => {
                     let pin = i
                         .pin
-                        .map(|p| format!("{}/{}{}", p.left, p.total, if p.is_default { " (default)" } else { "" }))
+                        .map(|p| {
+                            format!(
+                                "{}/{}{}",
+                                p.left,
+                                p.total,
+                                if p.is_default { " (default)" } else { "" }
+                            )
+                        })
                         .unwrap_or_else(|| "—".into());
                     let puk = i
                         .puk
-                        .map(|p| format!("{}/{}{}", p.left, p.total, if p.is_default { " (default)" } else { "" }))
+                        .map(|p| {
+                            format!(
+                                "{}/{}{}",
+                                p.left,
+                                p.total,
+                                if p.is_default { " (default)" } else { "" }
+                            )
+                        })
                         .unwrap_or_else(|| "—".into());
                     let mgm = format!(
                         "{}{}",
@@ -229,14 +258,22 @@ impl Render for PivViewModel {
                         .grid()
                         .grid_cols(2)
                         .gap_4()
-                        .child(kv("Firmware", format!("{}.{}.{}", i.version[0], i.version[1], i.version[2]), theme))
+                        .child(kv(
+                            "Firmware",
+                            format!("{}.{}.{}", i.version[0], i.version[1], i.version[2]),
+                            theme,
+                        ))
                         .child(kv("Serial", i.serial.to_string(), theme))
                         .child(kv("PIN tries", pin, theme))
                         .child(kv("PUK tries", puk, theme))
                         .child(kv("Management key", mgm, theme))
                         .into_any_element()
                 }
-                None => div().text_sm().text_color(theme.muted_foreground).child("Reading card…").into_any_element(),
+                None => div()
+                    .text_sm()
+                    .text_color(theme.muted_foreground)
+                    .child("Reading card…")
+                    .into_any_element(),
             };
             Card::new()
                 .title("Card information")
@@ -259,10 +296,30 @@ impl Render for PivViewModel {
             .child(
                 v_flex()
                     .gap_2()
-                    .child(self.action_row("PIN", "Change the 6–8 digit PIV PIN", change_pin_btn, theme))
-                    .child(self.action_row("PUK", "Change the PIN Unblock Key", change_puk_btn, theme))
-                    .child(self.action_row("Unblock", "Reset a blocked PIN using the PUK", unblock_btn, theme))
-                    .child(self.action_row("Retry limits", "Set PIN/PUK retries (resets both to defaults)", retries_btn, theme)),
+                    .child(self.action_row(
+                        "PIN",
+                        "Change the 6–8 digit PIV PIN",
+                        change_pin_btn,
+                        theme,
+                    ))
+                    .child(self.action_row(
+                        "PUK",
+                        "Change the PIN Unblock Key",
+                        change_puk_btn,
+                        theme,
+                    ))
+                    .child(self.action_row(
+                        "Unblock",
+                        "Reset a blocked PIN using the PUK",
+                        unblock_btn,
+                        theme,
+                    ))
+                    .child(self.action_row(
+                        "Retry limits",
+                        "Set PIN/PUK retries (resets both to defaults)",
+                        retries_btn,
+                        theme,
+                    )),
             );
 
         let mgm_card = Card::new()

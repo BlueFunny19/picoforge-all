@@ -179,14 +179,12 @@ impl Render for AppSidebar {
             // features, then device-wide system actions (Offboard sits just
             // above About as a bottom-of-list decommission action).
             .child(
-                SidebarGroup::new("Device").child(
-                    SidebarMenu::new().child(self.menu_item(
-                        cx,
-                        "Home",
-                        "icons/house.svg",
-                        Destination::Home,
-                    )),
-                ),
+                SidebarGroup::new("Device").child(SidebarMenu::new().child(self.menu_item(
+                    cx,
+                    "Home",
+                    "icons/house.svg",
+                    Destination::Home,
+                ))),
             )
             .child(
                 SidebarGroup::new("Credentials").child(
@@ -227,12 +225,7 @@ impl Render for AppSidebar {
                             "icons/book-open.svg",
                             Destination::Audit,
                         ))
-                        .child(self.menu_item(
-                            cx,
-                            "Backup",
-                            "icons/save.svg",
-                            Destination::Backup,
-                        ))
+                        .child(self.menu_item(cx, "Backup", "icons/save.svg", Destination::Backup))
                         .child(self.menu_item(cx, "Lock", "icons/lock.svg", Destination::Lock))
                         .child(self.menu_item(
                             cx,

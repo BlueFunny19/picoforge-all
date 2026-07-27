@@ -6,7 +6,7 @@ use crate::ui::models::device::oath;
 use crate::ui::screens::accounts::view_model::AccountsViewModel;
 use gpui::*;
 use gpui_component::button::{Button, ButtonVariants};
-use gpui_component::{h_flex, v_flex, ActiveTheme, Disableable, Icon, StyledExt, Theme};
+use gpui_component::{ActiveTheme, Disableable, Icon, StyledExt, Theme, h_flex, v_flex};
 
 /// Split a numeric code into two halves for readability ("123 456").
 fn format_code(code: &str) -> String {
@@ -192,7 +192,11 @@ impl Render for AccountsViewModel {
                         .justify_center()
                         .gap_3()
                         .py_6()
-                        .child(div().font_semibold().child("Accounts are password-protected"))
+                        .child(
+                            div()
+                                .font_semibold()
+                                .child("Accounts are password-protected"),
+                        )
                         .child(
                             div()
                                 .text_sm()

@@ -1594,7 +1594,8 @@ impl FidoOperations for HidTransport {
 
         // Touch-gated variants block until the button is pressed — allow ~30 s.
         const VENDOR_TOUCH_TIMEOUT_MS: i32 = 32_000;
-        let resp = self.send_raw_with_timeout(CTAPHID_CBOR, &full_payload, VENDOR_TOUCH_TIMEOUT_MS)?;
+        let resp =
+            self.send_raw_with_timeout(CTAPHID_CBOR, &full_payload, VENDOR_TOUCH_TIMEOUT_MS)?;
         if resp.is_empty() {
             return Err(PFError::Device("empty vendor response".into()));
         }
@@ -1627,16 +1628,25 @@ impl FidoOperations for HidTransport {
         let sub_val = Value::Map(sub);
         let sub_bytes = to_vec(&sub_val).map_err(|e| PFError::Io(e.to_string()))?;
 
-        let pin_auth =
-            self.sign_config_command(pin_token, ConfigSubCommand::VendorPrototype as u8, &sub_bytes);
+        let pin_auth = self.sign_config_command(
+            pin_token,
+            ConfigSubCommand::VendorPrototype as u8,
+            &sub_bytes,
+        );
 
         let mut cfg = BTreeMap::new();
         cfg.insert(
             Value::Integer(ConfigParam::SubCommand as i128),
             Value::Integer(ConfigSubCommand::VendorPrototype as i128),
         );
-        cfg.insert(Value::Integer(ConfigParam::SubCommandParams as i128), sub_val);
-        cfg.insert(Value::Integer(ConfigParam::PinUvAuthProtocol as i128), Value::Integer(1));
+        cfg.insert(
+            Value::Integer(ConfigParam::SubCommandParams as i128),
+            sub_val,
+        );
+        cfg.insert(
+            Value::Integer(ConfigParam::PinUvAuthProtocol as i128),
+            Value::Integer(1),
+        );
         cfg.insert(
             Value::Integer(ConfigParam::PinUvAuthParam as i128),
             Value::Bytes(pin_auth),

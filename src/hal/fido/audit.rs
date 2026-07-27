@@ -187,7 +187,7 @@ pub fn build_journal(
 mod tests {
     use super::*;
     use ring::rand::SystemRandom;
-    use ring::signature::{EcdsaKeyPair, KeyPair, ECDSA_P256_SHA256_ASN1_SIGNING};
+    use ring::signature::{ECDSA_P256_SHA256_ASN1_SIGNING, EcdsaKeyPair, KeyPair};
 
     fn entry(seq: u32, event: u8) -> Vec<u8> {
         let mut e = vec![0u8; ENTRY_LEN];
@@ -233,8 +233,8 @@ mod tests {
     fn checkpoint_roundtrip_verifies_and_rejects_tamper() {
         let rng = SystemRandom::new();
         let pkcs8 = EcdsaKeyPair::generate_pkcs8(&ECDSA_P256_SHA256_ASN1_SIGNING, &rng).unwrap();
-        let kp =
-            EcdsaKeyPair::from_pkcs8(&ECDSA_P256_SHA256_ASN1_SIGNING, pkcs8.as_ref(), &rng).unwrap();
+        let kp = EcdsaKeyPair::from_pkcs8(&ECDSA_P256_SHA256_ASN1_SIGNING, pkcs8.as_ref(), &rng)
+            .unwrap();
         let pubkey = kp.public_key().as_ref().to_vec();
 
         let head = [0x11u8; 32];
@@ -247,10 +247,28 @@ mod tests {
         msg.extend_from_slice(&challenge);
         let sig = kp.sign(&rng, &msg).unwrap();
 
-        assert!(verify_checkpoint(&head, seq, sig.as_ref(), &pubkey, &challenge));
+        assert!(verify_checkpoint(
+            &head,
+            seq,
+            sig.as_ref(),
+            &pubkey,
+            &challenge
+        ));
         // A different challenge must fail (freshness) and a bad key too.
-        assert!(!verify_checkpoint(&head, seq, sig.as_ref(), &pubkey, &[0x23u8; 16]));
-        assert!(!verify_checkpoint(&head, seq + 1, sig.as_ref(), &pubkey, &challenge));
+        assert!(!verify_checkpoint(
+            &head,
+            seq,
+            sig.as_ref(),
+            &pubkey,
+            &[0x23u8; 16]
+        ));
+        assert!(!verify_checkpoint(
+            &head,
+            seq + 1,
+            sig.as_ref(),
+            &pubkey,
+            &challenge
+        ));
     }
 
     #[test]

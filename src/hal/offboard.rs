@@ -48,7 +48,11 @@ impl OffboardReport {
 
     /// The names of the failed steps.
     pub fn failures(&self) -> Vec<&str> {
-        self.steps.iter().filter(|s| !s.ok).map(|s| s.name.as_str()).collect()
+        self.steps
+            .iter()
+            .filter(|s| !s.ok)
+            .map(|s| s.name.as_str())
+            .collect()
     }
 
     /// Render the receipt as pretty JSON. `timestamp` is supplied by the caller
@@ -59,7 +63,11 @@ impl OffboardReport {
             if i > 0 {
                 steps.push(',');
             }
-            steps.push_str(&format!("\n    {}: {}", json_str(&s.name), json_str(&s.detail)));
+            steps.push_str(&format!(
+                "\n    {}: {}",
+                json_str(&s.name),
+                json_str(&s.detail)
+            ));
         }
         steps.push_str("\n  }");
 
@@ -70,10 +78,22 @@ impl OffboardReport {
         out.push_str(&format!("  \"signed\": {}", self.signed));
         if self.signed {
             let f = |o: &Option<String>| o.clone().unwrap_or_default();
-            out.push_str(&format!(",\n  \"fingerprint\": {}", json_str(&f(&self.fingerprint))));
-            out.push_str(&format!(",\n  \"signed_head\": {}", json_str(&f(&self.signed_head))));
-            out.push_str(&format!(",\n  \"signature\": {}", json_str(&f(&self.signature))));
-            out.push_str(&format!(",\n  \"attestation_pubkey\": {}", json_str(&f(&self.pubkey))));
+            out.push_str(&format!(
+                ",\n  \"fingerprint\": {}",
+                json_str(&f(&self.fingerprint))
+            ));
+            out.push_str(&format!(
+                ",\n  \"signed_head\": {}",
+                json_str(&f(&self.signed_head))
+            ));
+            out.push_str(&format!(
+                ",\n  \"signature\": {}",
+                json_str(&f(&self.signature))
+            ));
+            out.push_str(&format!(
+                ",\n  \"attestation_pubkey\": {}",
+                json_str(&f(&self.pubkey))
+            ));
         }
         out.push_str("\n}\n");
         out
@@ -85,7 +105,11 @@ mod tests {
     use super::*;
 
     fn step(name: &str, ok: bool) -> OffboardStep {
-        OffboardStep { name: name.into(), ok, detail: if ok { "ok".into() } else { "boom".into() } }
+        OffboardStep {
+            name: name.into(),
+            ok,
+            detail: if ok { "ok".into() } else { "boom".into() },
+        }
     }
 
     #[test]
@@ -120,8 +144,15 @@ mod tests {
         assert!(j.contains("\"fingerprint\": \"abcd\""));
         assert!(j.contains("\"attestation_pubkey\": \"04aa\""));
         // A quote in a detail string must be escaped.
-        let bad = OffboardStep { name: "x".into(), ok: false, detail: "a\"b".into() };
-        let r2 = OffboardReport { steps: vec![bad], ..r };
+        let bad = OffboardStep {
+            name: "x".into(),
+            ok: false,
+            detail: "a\"b".into(),
+        };
+        let r2 = OffboardReport {
+            steps: vec![bad],
+            ..r
+        };
         assert!(r2.to_json("t").contains("a\\\"b"));
     }
 }

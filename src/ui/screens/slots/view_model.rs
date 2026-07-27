@@ -5,10 +5,10 @@ use crate::ui::app::AppModels;
 use crate::ui::components::applet_gate::AppletGate;
 use crate::ui::components::dialog;
 use crate::ui::components::dialog::StatusContent;
-use crate::ui::models::device::{otp, DeviceEvent, DeviceRepo, USB_CAP_OTP};
+use crate::ui::models::device::{DeviceEvent, DeviceRepo, USB_CAP_OTP, otp};
 use gpui::*;
-use gpui_component::button::ButtonVariants;
 use gpui_component::WindowExt;
+use gpui_component::button::ButtonVariants;
 
 /// Slots screen state and OTP slot operations.
 pub struct SlotsViewModel {
@@ -151,7 +151,9 @@ impl SlotsViewModel {
             let acc_input = acc_input.clone();
             let view = view.clone();
             std::rc::Rc::new(move |window: &mut Window, cx: &mut App| {
-                let Some(acc) = current_acc(&acc_input, &view, cx) else { return };
+                let Some(acc) = current_acc(&acc_input, &view, cx) else {
+                    return;
+                };
                 window.close_dialog(cx);
                 let status = dialog::open_status_dialog("Swap Slots", window, cx);
                 let _ = view.update(cx, |this, cx| this.execute_swap(acc, status, cx));
@@ -212,7 +214,12 @@ impl SlotsViewModel {
         );
     }
 
-    pub(super) fn open_delete_dialog(&mut self, slot: u8, window: &mut Window, cx: &mut Context<Self>) {
+    pub(super) fn open_delete_dialog(
+        &mut self,
+        slot: u8,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let acc_input = cx.new(|cx| {
             gpui_component::input::InputState::new(window, cx)
                 .placeholder("Access code (hex, if the slot is protected)")
@@ -222,7 +229,9 @@ impl SlotsViewModel {
             let acc_input = acc_input.clone();
             let view = view.clone();
             std::rc::Rc::new(move |window: &mut Window, cx: &mut App| {
-                let Some(acc) = current_acc(&acc_input, &view, cx) else { return };
+                let Some(acc) = current_acc(&acc_input, &view, cx) else {
+                    return;
+                };
                 window.close_dialog(cx);
                 let status = dialog::open_status_dialog("Delete Slot", window, cx);
                 let _ = view.update(cx, |this, cx| this.execute_delete(slot, acc, status, cx));
@@ -326,7 +335,12 @@ impl SlotsViewModel {
         }));
     }
 
-    pub(super) fn open_test_dialog(&mut self, slot: u8, window: &mut Window, cx: &mut Context<Self>) {
+    pub(super) fn open_test_dialog(
+        &mut self,
+        slot: u8,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let challenge = cx.new(|cx| {
             gpui_component::input::InputState::new(window, cx).placeholder("Challenge (hex)")
         });
@@ -339,7 +353,9 @@ impl SlotsViewModel {
                     Ok(b) if !b.is_empty() => b,
                     _ => {
                         let _ = view.update(cx, |_, cx| {
-                            cx.emit(SlotsEvent::Notification("Enter a valid hex challenge".into()));
+                            cx.emit(SlotsEvent::Notification(
+                                "Enter a valid hex challenge".into(),
+                            ));
                         });
                         return;
                     }

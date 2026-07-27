@@ -5,11 +5,11 @@ use crate::ui::app::AppModels;
 use crate::ui::components::applet_gate::AppletGate;
 use crate::ui::components::dialog;
 use crate::ui::components::dialog::StatusContent;
-use crate::ui::models::device::{audit, DeviceEvent, DeviceRepo, FirmwareType};
+use crate::ui::models::device::{DeviceEvent, DeviceRepo, FirmwareType, audit};
 use gpui::*;
+use gpui_component::WindowExt;
 use gpui_component::button::ButtonVariants;
 use gpui_component::input::InputState;
-use gpui_component::WindowExt;
 
 pub struct AuditViewModel {
     pub(super) device: Entity<DeviceRepo>,
@@ -67,7 +67,12 @@ impl AuditViewModel {
 
     // ── Enable / disable journalling (PIN + touch) ──────────────────────────
 
-    pub(super) fn open_toggle(&mut self, enable: bool, window: &mut Window, cx: &mut Context<Self>) {
+    pub(super) fn open_toggle(
+        &mut self,
+        enable: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let pin = Self::pin_input(window, cx);
         let view = cx.entity().downgrade();
         let submit = {
@@ -77,7 +82,11 @@ impl AuditViewModel {
                 let p = (!p.is_empty()).then_some(p);
                 window.close_dialog(cx);
                 let status = dialog::open_status_dialog(
-                    if enable { "Enabling Journalling" } else { "Disabling Journalling" },
+                    if enable {
+                        "Enabling Journalling"
+                    } else {
+                        "Disabling Journalling"
+                    },
                     window,
                     cx,
                 );

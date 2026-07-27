@@ -12,7 +12,7 @@
 #![allow(dead_code)]
 
 use crate::error::PFError;
-use crate::hal::apdu::{tlv, Apdu, CLA_ISO};
+use crate::hal::apdu::{Apdu, CLA_ISO, tlv};
 use crate::hal::transport::ccid::CcidSession;
 use ring::rand::{SecureRandom, SystemRandom};
 use ring::{hmac, pbkdf2};
@@ -245,7 +245,12 @@ pub fn clear_code(session: &CcidSession) -> Result<(), PFError> {
 
 /// Add or overwrite a credential.
 pub fn put(session: &CcidSession, cred: &NewCredential) -> Result<(), PFError> {
-    let id = build_cred_id(cred.issuer.as_deref(), &cred.account, cred.oath_type, cred.period);
+    let id = build_cred_id(
+        cred.issuer.as_deref(),
+        &cred.account,
+        cred.oath_type,
+        cred.period,
+    );
     let mut key_tlv = vec![cred.oath_type.wire() | cred.algorithm.wire(), cred.digits];
     key_tlv.extend_from_slice(&cred.secret);
 
@@ -318,7 +323,9 @@ pub fn calculate_all(session: &CcidSession) -> Result<Vec<Account>, PFError> {
             pending = Some((id, OathType::Totp));
             continue;
         }
-        let Some((id, _)) = pending.take() else { continue };
+        let Some((id, _)) = pending.take() else {
+            continue;
+        };
         let (issuer, account, period) = parse_cred_id(&id);
         let (oath_type, state) = match tag {
             TAG_NO_RESPONSE => (OathType::Hotp, CodeState::Hotp),
@@ -327,7 +334,10 @@ pub fn calculate_all(session: &CcidSession) -> Result<Vec<Account>, PFError> {
                 let value_str = format_response(value)?;
                 (
                     OathType::Totp,
-                    CodeState::Code { value: value_str, period },
+                    CodeState::Code {
+                        value: value_str,
+                        period,
+                    },
                 )
             }
             _ => continue,
@@ -380,7 +390,9 @@ fn time_counter(period: u32) -> u64 {
 /// Handles both truncated (`0x76`: `[digits, 4-byte int]`) and full
 /// (`0x75`: `[digits, full HMAC]`, truncated host-side) forms.
 fn format_response(value: &[u8]) -> Result<String, PFError> {
-    let digits = *value.first().ok_or_else(|| PFError::Device("Short code response".into()))?;
+    let digits = *value
+        .first()
+        .ok_or_else(|| PFError::Device("Short code response".into()))?;
     let body = &value[1..];
     let num = if body.len() == 4 {
         u32::from_be_bytes([body[0], body[1], body[2], body[3]]) & 0x7FFF_FFFF
@@ -402,7 +414,12 @@ fn format_response(value: &[u8]) -> Result<String, PFError> {
 
 /// Build the Yubico credential id: `[<period>/]<issuer>:<account>`, with the
 /// period prefix only for non-30 s TOTP credentials.
-pub fn build_cred_id(issuer: Option<&str>, account: &str, oath_type: OathType, period: u32) -> String {
+pub fn build_cred_id(
+    issuer: Option<&str>,
+    account: &str,
+    oath_type: OathType,
+    period: u32,
+) -> String {
     let base = match issuer {
         Some(i) if !i.is_empty() => format!("{i}:{account}"),
         _ => account.to_string(),
@@ -476,8 +493,8 @@ pub fn parse_otpauth(uri: &str) -> Result<NewCredential, String> {
         }
     }
 
-    let secret = base32_decode(&secret_b32.ok_or("Missing secret")?)
-        .ok_or("Invalid base32 secret")?;
+    let secret =
+        base32_decode(&secret_b32.ok_or("Missing secret")?).ok_or("Invalid base32 secret")?;
     if secret.is_empty() {
         return Err("Empty secret".into());
     }
@@ -576,7 +593,10 @@ mod tests {
 
     #[test]
     fn base32_decodes_known_vectors() {
-        assert_eq!(base32_decode("JBSWY3DPEHPK3PXP").unwrap(), b"Hello!\xde\xad\xbe\xef");
+        assert_eq!(
+            base32_decode("JBSWY3DPEHPK3PXP").unwrap(),
+            b"Hello!\xde\xad\xbe\xef"
+        );
         assert_eq!(base32_decode("").unwrap(), Vec::<u8>::new());
         // Lowercase, spaces and padding tolerated.
         assert_eq!(base32_decode("nb sw y3=dp").unwrap(), b"hello");
@@ -585,15 +605,24 @@ mod tests {
 
     #[test]
     fn cred_id_roundtrips() {
-        assert_eq!(build_cred_id(Some("GitHub"), "alice", OathType::Totp, 30), "GitHub:alice");
-        assert_eq!(build_cred_id(Some("AWS"), "bob", OathType::Totp, 60), "60/AWS:bob");
+        assert_eq!(
+            build_cred_id(Some("GitHub"), "alice", OathType::Totp, 30),
+            "GitHub:alice"
+        );
+        assert_eq!(
+            build_cred_id(Some("AWS"), "bob", OathType::Totp, 60),
+            "60/AWS:bob"
+        );
         assert_eq!(build_cred_id(None, "solo", OathType::Hotp, 30), "solo");
 
         assert_eq!(
             parse_cred_id("GitHub:alice"),
             (Some("GitHub".into()), "alice".into(), 30)
         );
-        assert_eq!(parse_cred_id("60/AWS:bob"), (Some("AWS".into()), "bob".into(), 60));
+        assert_eq!(
+            parse_cred_id("60/AWS:bob"),
+            (Some("AWS".into()), "bob".into(), 60)
+        );
         assert_eq!(parse_cred_id("solo"), (None, "solo".into(), 30));
         // A slash that isn't a period prefix stays part of the account.
         assert_eq!(parse_cred_id("a/b:c"), (Some("a/b".into()), "c".into(), 30));

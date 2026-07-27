@@ -14,7 +14,7 @@
 #![allow(dead_code)]
 
 use crate::error::PFError;
-use crate::hal::apdu::{tlv, Apdu, CLA_ISO};
+use crate::hal::apdu::{Apdu, CLA_ISO, tlv};
 use crate::hal::transport::ccid::CcidSession;
 use ring::rand::{SecureRandom, SystemRandom};
 
@@ -94,7 +94,11 @@ pub struct SlotInfo {
 
 impl SlotInfo {
     fn empty(slot: u8) -> Self {
-        Self { slot, kind: SlotType::Empty, touch: false }
+        Self {
+            slot,
+            kind: SlotType::Empty,
+            touch: false,
+        }
     }
     pub fn configured(&self) -> bool {
         self.kind != SlotType::Empty
@@ -263,8 +267,12 @@ pub fn modhex_decode(s: &str) -> Option<Vec<u8>> {
     let bytes = s.as_bytes();
     let mut out = Vec::with_capacity(s.len() / 2);
     for pair in bytes.chunks(2) {
-        let hi = MODHEX.iter().position(|&c| c == pair[0].to_ascii_lowercase())? as u8;
-        let lo = MODHEX.iter().position(|&c| c == pair[1].to_ascii_lowercase())? as u8;
+        let hi = MODHEX
+            .iter()
+            .position(|&c| c == pair[0].to_ascii_lowercase())? as u8;
+        let lo = MODHEX
+            .iter()
+            .position(|&c| c == pair[1].to_ascii_lowercase())? as u8;
         out.push((hi << 4) | lo);
     }
     Some(out)
@@ -447,7 +455,11 @@ fn pad_challenge(challenge: &[u8]) -> Result<[u8; CHALLENGE_FRAME], PFError> {
     let mut frame = [0u8; CHALLENGE_FRAME];
     frame[..challenge.len()].copy_from_slice(challenge);
     if challenge.len() < CHALLENGE_FRAME {
-        let pad = if *challenge.last().unwrap() == 0x7F { 0x00 } else { 0x7F };
+        let pad = if *challenge.last().unwrap() == 0x7F {
+            0x00
+        } else {
+            0x7F
+        };
         frame[challenge.len()..].fill(pad);
     }
     Ok(frame)
@@ -475,8 +487,16 @@ mod tests {
         // Every builder must produce a frame that CRCs to the X.25 residual.
         assert_eq!(crc16(&build_chalresp(&[0x11; 20], false, &NO_ACC)), 0xF0B8);
         assert_eq!(crc16(&build_hotp(&[0xAB; 20], true, true, &NO_ACC)), 0xF0B8);
-        assert_eq!(crc16(&build_static(&[0x04, 0x05, 0x06], false, &NO_ACC)), 0xF0B8);
-        assert_eq!(crc16(&build_yubico_otp(&[1; 6], &[2; 6], &[3; 16], false, &NO_ACC)), 0xF0B8);
+        assert_eq!(
+            crc16(&build_static(&[0x04, 0x05, 0x06], false, &NO_ACC)),
+            0xF0B8
+        );
+        assert_eq!(
+            crc16(&build_yubico_otp(
+                &[1; 6], &[2; 6], &[3; 16], false, &NO_ACC
+            )),
+            0xF0B8
+        );
     }
 
     #[test]
@@ -589,6 +609,9 @@ mod tests {
         assert!(pad_challenge(&[]).is_err());
         assert!(pad_challenge(&[0u8; CHALLENGE_FRAME + 1]).is_err());
         assert!(pad_challenge(&[0u8; CHALLENGE_FRAME]).is_ok());
-        assert_eq!(pad_challenge(&[9u8; CHALLENGE_FRAME]).unwrap().len(), CHALLENGE_FRAME);
+        assert_eq!(
+            pad_challenge(&[9u8; CHALLENGE_FRAME]).unwrap().len(),
+            CHALLENGE_FRAME
+        );
     }
 }

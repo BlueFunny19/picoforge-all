@@ -12,7 +12,7 @@
 
 use crate::error::PFError;
 use crate::hal::apdu::{
-    Apdu, StatusWord, CLA_CHAIN, CLA_ISO, INS_GET_RESPONSE, INS_SELECT, INS_SEND_REMAINING,
+    Apdu, CLA_CHAIN, CLA_ISO, INS_GET_RESPONSE, INS_SELECT, INS_SEND_REMAINING, StatusWord,
 };
 use pcsc::{Context, Protocols, Scope, ShareMode};
 
@@ -42,7 +42,10 @@ impl CcidSession {
             .ok_or(PFError::NoDevice)?;
         let card = ctx.connect(reader, ShareMode::Shared, Protocols::ANY)?;
 
-        let mut session = Self { card, select_resp: Vec::new() };
+        let mut session = Self {
+            card,
+            select_resp: Vec::new(),
+        };
         let select = Apdu::read(CLA_ISO, INS_SELECT, 0x04, 0x00, aid);
         session.select_resp = session.transceive_full(&select).map_err(|e| {
             PFError::Device(format!(
@@ -61,7 +64,10 @@ impl CcidSession {
             return Err(PFError::Device("Truncated APDU response".into()));
         }
         let (data, sw) = resp.split_at(resp.len() - 2);
-        Ok((data.to_vec(), StatusWord(u16::from_be_bytes([sw[0], sw[1]]))))
+        Ok((
+            data.to_vec(),
+            StatusWord(u16::from_be_bytes([sw[0], sw[1]])),
+        ))
     }
 
     /// Send an APDU and assemble the full response across `61xx` continuations,

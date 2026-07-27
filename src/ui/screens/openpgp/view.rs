@@ -6,7 +6,7 @@ use crate::ui::models::device::openpgp;
 use crate::ui::screens::openpgp::view_model::OpenPgpViewModel;
 use gpui::*;
 use gpui_component::button::{Button, ButtonVariants};
-use gpui_component::{h_flex, v_flex, ActiveTheme, Disableable, Icon, StyledExt, Theme};
+use gpui_component::{ActiveTheme, Disableable, Icon, StyledExt, Theme, h_flex, v_flex};
 
 fn empty_state(heading: &str, body: String, theme: &Theme) -> AnyElement {
     v_flex()
@@ -31,7 +31,12 @@ fn empty_state(heading: &str, body: String, theme: &Theme) -> AnyElement {
 fn kv(label: &str, value: String, theme: &Theme) -> impl IntoElement {
     v_flex()
         .gap_1()
-        .child(div().text_sm().text_color(theme.muted_foreground).child(label.to_string()))
+        .child(
+            div()
+                .text_sm()
+                .text_color(theme.muted_foreground)
+                .child(label.to_string()),
+        )
         .child(div().text_sm().font_medium().child(value))
 }
 
@@ -63,7 +68,11 @@ impl OpenPgpViewModel {
             .child(
                 div()
                     .text_sm()
-                    .text_color(if k.present { theme.foreground } else { theme.muted_foreground })
+                    .text_color(if k.present {
+                        theme.foreground
+                    } else {
+                        theme.muted_foreground
+                    })
                     .child(status),
             );
         if has_fp {
@@ -127,7 +136,12 @@ impl OpenPgpViewModel {
                 v_flex()
                     .gap_0p5()
                     .child(div().font_medium().child(title))
-                    .child(div().text_sm().text_color(theme.muted_foreground).child(subtitle)),
+                    .child(
+                        div()
+                            .text_sm()
+                            .text_color(theme.muted_foreground)
+                            .child(subtitle),
+                    ),
             )
             .child(btn)
     }
@@ -192,8 +206,18 @@ impl Render for OpenPgpViewModel {
         let info_card = {
             let body = match &info {
                 Some(i) => {
-                    let serial = if i.serial != 0 { i.serial.to_string() } else { "—".into() };
-                    let field = |s: &str| if s.is_empty() { "—".to_string() } else { s.to_string() };
+                    let serial = if i.serial != 0 {
+                        i.serial.to_string()
+                    } else {
+                        "—".into()
+                    };
+                    let field = |s: &str| {
+                        if s.is_empty() {
+                            "—".to_string()
+                        } else {
+                            s.to_string()
+                        }
+                    };
                     div()
                         .grid()
                         .grid_cols(2)
@@ -241,8 +265,18 @@ impl Render for OpenPgpViewModel {
             .child(
                 v_flex()
                     .gap_2()
-                    .child(self.action_row("User PIN", "Change the user PIN (PW1)", change_user_btn, theme))
-                    .child(self.action_row("Admin PIN", "Change the admin PIN (PW3)", change_admin_btn, theme))
+                    .child(self.action_row(
+                        "User PIN",
+                        "Change the user PIN (PW1)",
+                        change_user_btn,
+                        theme,
+                    ))
+                    .child(self.action_row(
+                        "Admin PIN",
+                        "Change the admin PIN (PW3)",
+                        change_admin_btn,
+                        theme,
+                    ))
                     .child(self.action_row(
                         "Unblock user PIN",
                         "Reset a blocked user PIN with the reset code",

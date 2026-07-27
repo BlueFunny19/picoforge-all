@@ -26,14 +26,14 @@ const HOTPLUG_POLL_MS: u64 = 1000;
 
 pub use crate::hal::applets::oath;
 pub use crate::hal::applets::openpgp;
-pub use crate::hal::fido::audit;
-pub use crate::hal::fido::backup;
-pub use crate::hal::fido::AttStatus;
-pub use crate::hal::offboard::OffboardReport;
 pub use crate::hal::applets::otp;
-pub use crate::hal::io::MgmAuth;
 pub use crate::hal::applets::piv;
 pub use crate::hal::applets::{OathFeatures, OpenPgpFeatures, OtpFeatures, PivFeatures};
+pub use crate::hal::fido::AttStatus;
+pub use crate::hal::fido::audit;
+pub use crate::hal::fido::backup;
+pub use crate::hal::io::MgmAuth;
+pub use crate::hal::offboard::OffboardReport;
 pub use crate::hal::rescue::constants::{
     LedColor, LedStatus, USB_CAP_FIDO2, USB_CAP_OATH, USB_CAP_OPENPGP, USB_CAP_OTP, USB_CAP_PIV,
     USB_CAP_U2F,
@@ -204,10 +204,21 @@ impl DeviceRepo {
         new_acc: [u8; 6],
         current_acc: [u8; 6],
     ) -> Result<(), crate::error::PFError> {
-        io::otp_program_yubico(slot, public_id, private_id, key, append_cr, new_acc, current_acc)
+        io::otp_program_yubico(
+            slot,
+            public_id,
+            private_id,
+            key,
+            append_cr,
+            new_acc,
+            current_acc,
+        )
     }
 
-    pub fn otp_delete_blocking(slot: u8, current_acc: [u8; 6]) -> Result<(), crate::error::PFError> {
+    pub fn otp_delete_blocking(
+        slot: u8,
+        current_acc: [u8; 6],
+    ) -> Result<(), crate::error::PFError> {
         io::otp_delete(slot, current_acc)
     }
 
@@ -290,10 +301,7 @@ impl DeviceRepo {
         io::piv_import_key(slot, key_file, auth)
     }
 
-    pub fn piv_delete_cert_blocking(
-        slot: u8,
-        auth: MgmAuth,
-    ) -> Result<(), crate::error::PFError> {
+    pub fn piv_delete_cert_blocking(slot: u8, auth: MgmAuth) -> Result<(), crate::error::PFError> {
         io::piv_delete_cert(slot, auth)
     }
 
@@ -396,7 +404,8 @@ impl DeviceRepo {
     /// OATH feature profile of the connected firmware, if it exposes the applet.
     pub fn oath_features(&self) -> Option<OathFeatures> {
         let status = self.status.as_ref()?;
-        AnyFirmware::new(status.firmware_type.clone(), &status.info.firmware_version).oath_features()
+        AnyFirmware::new(status.firmware_type.clone(), &status.info.firmware_version)
+            .oath_features()
     }
 
     /// OTP feature profile of the connected firmware, if it exposes the applet.

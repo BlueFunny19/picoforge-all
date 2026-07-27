@@ -798,8 +798,12 @@ fn parse_management_info(raw: &[u8]) -> Result<ManagementInfo, String> {
             0x02 if field_data.len() == 4 => {
                 // TAG_SERIAL is the 8-digit Yubico decimal (already serial4-masked
                 // by the firmware), big-endian — render it as ykman does, not hex.
-                let n =
-                    u32::from_be_bytes([field_data[0], field_data[1], field_data[2], field_data[3]]);
+                let n = u32::from_be_bytes([
+                    field_data[0],
+                    field_data[1],
+                    field_data[2],
+                    field_data[3],
+                ]);
                 info.serial = Some(n.to_string());
             }
             0x03 => info.usb_enabled = parse_management_u16(field_data),
@@ -1076,7 +1080,11 @@ fn build_rskey_phy_tlv(config: &AppConfigInput) -> Result<Vec<u8>, PFError> {
         tlv.push(0x00);
     }
 
-    if let Some(mfr) = config.manufacturer_name.as_deref().filter(|n| !n.is_empty()) {
+    if let Some(mfr) = config
+        .manufacturer_name
+        .as_deref()
+        .filter(|n| !n.is_empty())
+    {
         let bytes = mfr.as_bytes();
         if bytes.len() + 1 > 33 {
             return Err(PFError::Device(
@@ -1513,7 +1521,9 @@ pub(crate) fn get_enterprise_attestation_csr() -> Result<String, String> {
 fn vendor_error(status: u8, op: &str) -> String {
     match status {
         0x36 => "device requires a PIN — enter it".to_string(),
-        0x27 => "denied — no touch within the window (press the button when the LED blinks)".to_string(),
+        0x27 => {
+            "denied — no touch within the window (press the button when the LED blinks)".to_string()
+        }
         0x30 => format!("{op}: operation not allowed (already sealed, or no OTP DEVK provisioned)"),
         0x3D => "device is not locked".to_string(),
         other => format!("{op} failed: status 0x{other:02x}"),
@@ -1521,11 +1531,7 @@ fn vendor_error(status: u8, op: &str) -> String {
 }
 
 /// Require a successful vendor response and unwrap its CBOR map.
-fn vendor_map(
-    status: u8,
-    map: Option<Value>,
-    op: &str,
-) -> Result<BTreeMap<Value, Value>, String> {
+fn vendor_map(status: u8, map: Option<Value>, op: &str) -> Result<BTreeMap<Value, Value>, String> {
     if status != 0 {
         return Err(vendor_error(status, op));
     }
@@ -1559,7 +1565,10 @@ fn m_bool(m: &BTreeMap<Value, Value>, k: i128) -> bool {
 }
 
 /// Read AUDIT_READ into a journal window (gated by PIN, or a touch if `pin` is None).
-fn read_journal(transport: &HidTransport, pin: Option<&str>) -> Result<audit::AuditJournal, String> {
+fn read_journal(
+    transport: &HidTransport,
+    pin: Option<&str>,
+) -> Result<audit::AuditJournal, String> {
     let (status, map) = transport
         .rs_key_vendor(RSKEY_VENDOR_AUDIT_READ, None, pin)
         .map_err(|e| e.to_string())?;
@@ -1598,7 +1607,11 @@ pub(crate) fn audit_verify(
     let mut params = BTreeMap::new();
     params.insert(Value::Integer(1), Value::Bytes(challenge.to_vec()));
     let (status, map) = transport
-        .rs_key_vendor(RSKEY_VENDOR_AUDIT_CHECKPOINT, Some(Value::Map(params)), pin.as_deref())
+        .rs_key_vendor(
+            RSKEY_VENDOR_AUDIT_CHECKPOINT,
+            Some(Value::Map(params)),
+            pin.as_deref(),
+        )
         .map_err(|e| e.to_string())?;
     let m = vendor_map(status, map, "checkpoint")?;
 
@@ -1607,7 +1620,8 @@ pub(crate) fn audit_verify(
     let sig = m_bytes(&m, 3).ok_or("checkpoint: missing signature")?;
     let pubkey = m_bytes(&m, 4).ok_or("checkpoint: missing public key")?;
 
-    let signature_ok = audit::verify_checkpoint(&head_signed, seq_signed, &sig, &pubkey, &challenge);
+    let signature_ok =
+        audit::verify_checkpoint(&head_signed, seq_signed, &sig, &pubkey, &challenge);
     let head_matches = head_signed == journal.head;
     let fingerprint = audit::fingerprint(&pubkey);
     let pubkey_hex = hex::encode(&pubkey);
@@ -1830,11 +1844,7 @@ pub(crate) fn lock_enable(pin: String) -> Result<String, String> {
         HidTransport::open().map_err(|e| format!("Could not open HID transport: {}", e))?;
     let blob = wrap_secret(&transport, &key)?;
     let token = transport
-        .get_pin_token_with_permission(
-            &pin,
-            PinUvAuthTokenPermissions::AUTHENTICATOR_CONFIG,
-            None,
-        )
+        .get_pin_token_with_permission(&pin, PinUvAuthTokenPermissions::AUTHENTICATOR_CONFIG, None)
         .map_err(|e| e.to_string())?;
     transport
         .authconfig_vendor(&token, RSKEY_AUT_ENABLE, Some(Value::Bytes(blob)))
@@ -1861,11 +1871,7 @@ pub(crate) fn lock_disable(pin: String, mnemonic: String) -> Result<(), String> 
     }
 
     let token = transport
-        .get_pin_token_with_permission(
-            &pin,
-            PinUvAuthTokenPermissions::AUTHENTICATOR_CONFIG,
-            None,
-        )
+        .get_pin_token_with_permission(&pin, PinUvAuthTokenPermissions::AUTHENTICATOR_CONFIG, None)
         .map_err(|e| e.to_string())?;
     transport
         .authconfig_vendor(&token, RSKEY_AUT_DISABLE, None)
@@ -1925,7 +1931,7 @@ fn certs_pem_to_der(input: &[u8]) -> Result<Vec<u8>, String> {
             Err("chain is neither PEM nor DER".into())
         };
     }
-    use base64::{engine::general_purpose, Engine as _};
+    use base64::{Engine as _, engine::general_purpose};
     let mut out = Vec::new();
     let mut rest = text;
     while let Some(b) = rest.find("-----BEGIN CERTIFICATE-----") {
@@ -1963,7 +1969,10 @@ pub(crate) fn att_import(
 
     let chain = certs_pem_to_der(&chain_file)?;
     if chain.is_empty() || chain.len() > 2048 {
-        return Err(format!("cert chain must be 1..=2048 bytes (got {})", chain.len()));
+        return Err(format!(
+            "cert chain must be 1..=2048 bytes (got {})",
+            chain.len()
+        ));
     }
 
     let transport =
@@ -1974,7 +1983,11 @@ pub(crate) fn att_import(
     params.insert(Value::Integer(1), Value::Bytes(blob));
     params.insert(Value::Integer(2), Value::Bytes(chain));
     let (status, _) = transport
-        .rs_key_vendor(RSKEY_VENDOR_ATT_IMPORT, Some(Value::Map(params)), pin.as_deref())
+        .rs_key_vendor(
+            RSKEY_VENDOR_ATT_IMPORT,
+            Some(Value::Map(params)),
+            pin.as_deref(),
+        )
         .map_err(|e| e.to_string())?;
     if status != 0 {
         return Err(vendor_error(status, "attestation import"));

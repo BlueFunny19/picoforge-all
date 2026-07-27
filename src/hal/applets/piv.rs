@@ -14,7 +14,7 @@
 #![allow(dead_code)]
 
 use crate::error::PFError;
-use crate::hal::apdu::{tlv, Apdu, CLA_CHAIN, CLA_ISO};
+use crate::hal::apdu::{Apdu, CLA_CHAIN, CLA_ISO, tlv};
 use crate::hal::transport::ccid::CcidSession;
 use cbc::cipher::{Block, BlockModeDecrypt, BlockModeEncrypt, KeyIvInit};
 use ring::rand::{SecureRandom, SystemRandom};
@@ -223,18 +223,26 @@ fn get_metadata(session: &CcidSession, slot: u8) -> Result<Vec<u8>, PFError> {
 }
 
 pub fn parse_ref_status(resp: &[u8]) -> Option<RefStatus> {
-    let is_default = tlv::find(resp, 0x05).map(|v| v.first() == Some(&1)).unwrap_or(false);
+    let is_default = tlv::find(resp, 0x05)
+        .map(|v| v.first() == Some(&1))
+        .unwrap_or(false);
     let retry = tlv::find(resp, 0x06)?;
     if retry.len() < 2 {
         return None;
     }
-    Some(RefStatus { is_default, total: retry[0], left: retry[1] })
+    Some(RefStatus {
+        is_default,
+        total: retry[0],
+        left: retry[1],
+    })
 }
 
 pub fn parse_slot_meta(resp: &[u8]) -> Option<SlotMeta> {
     let algo = *tlv::find(resp, 0x01)?.first()?;
     let policy = tlv::find(resp, 0x02)?;
-    let origin = tlv::find(resp, 0x03).and_then(|v| v.first().copied()).unwrap_or(0);
+    let origin = tlv::find(resp, 0x03)
+        .and_then(|v| v.first().copied())
+        .unwrap_or(0);
     Some(SlotMeta {
         algo,
         pin_policy: *policy.first().unwrap_or(&0),
@@ -248,7 +256,9 @@ fn get_data(session: &CcidSession, object_id: &[u8]) -> Result<Vec<u8>, PFError>
     let mut body = Vec::new();
     tlv::write(&mut body, TAG_DATA_PATH, object_id);
     let resp = session.transceive_full(&Apdu::read(CLA_ISO, INS_GET_DATA, 0x3F, 0xFF, &body))?;
-    Ok(tlv::find(&resp, TAG_DATA_OBJECT).map(|v| v.to_vec()).unwrap_or(resp))
+    Ok(tlv::find(&resp, TAG_DATA_OBJECT)
+        .map(|v| v.to_vec())
+        .unwrap_or(resp))
 }
 
 /// Extract the bare DER certificate from a slot's data object (`53{70 …}`).
@@ -260,31 +270,54 @@ pub fn cert_der(object: &[u8]) -> Option<Vec<u8>> {
 pub fn read_info(session: &CcidSession) -> Result<PivInfo, PFError> {
     let version = get_version(session).unwrap_or([0; 3]);
     let serial = get_serial(session).unwrap_or(0);
-    let pin = get_metadata(session, REF_PIN).ok().and_then(|r| parse_ref_status(&r));
-    let puk = get_metadata(session, REF_PUK).ok().and_then(|r| parse_ref_status(&r));
+    let pin = get_metadata(session, REF_PIN)
+        .ok()
+        .and_then(|r| parse_ref_status(&r));
+    let puk = get_metadata(session, REF_PUK)
+        .ok()
+        .and_then(|r| parse_ref_status(&r));
 
     let (mgm_algo, mgm_default) = match get_metadata(session, SLOT_MGM) {
         Ok(r) => (
-            tlv::find(&r, 0x01).and_then(|v| v.first().copied()).unwrap_or(ALGO_AES192),
-            tlv::find(&r, 0x05).map(|v| v.first() == Some(&1)).unwrap_or(false),
+            tlv::find(&r, 0x01)
+                .and_then(|v| v.first().copied())
+                .unwrap_or(ALGO_AES192),
+            tlv::find(&r, 0x05)
+                .map(|v| v.first() == Some(&1))
+                .unwrap_or(false),
         ),
         Err(_) => (ALGO_AES192, false),
     };
 
     let mut slots = Vec::new();
     for &slot in &PRIMARY_SLOTS {
-        let meta = get_metadata(session, slot).ok().and_then(|r| parse_slot_meta(&r));
+        let meta = get_metadata(session, slot)
+            .ok()
+            .and_then(|r| parse_slot_meta(&r));
         let has_cert = get_data(session, &cert_object_id(slot))
             .ok()
             .and_then(|o| cert_der(&o))
             .map(|d| !d.is_empty())
             .unwrap_or(false);
-        slots.push(SlotStatus { slot, meta, has_cert });
+        slots.push(SlotStatus {
+            slot,
+            meta,
+            has_cert,
+        });
     }
 
     let mgm_protected = mgm_is_protected(session);
 
-    Ok(PivInfo { version, serial, pin, puk, mgm_algo, mgm_default, mgm_protected, slots })
+    Ok(PivInfo {
+        version,
+        serial,
+        pin,
+        puk,
+        mgm_algo,
+        mgm_default,
+        mgm_protected,
+        slots,
+    })
 }
 
 // ── PIN-protected management key (ykman --protect) ───────────────────────────
@@ -385,7 +418,13 @@ pub fn change_ref(
     new: &str,
 ) -> Result<(), PFError> {
     let body = change_ref_body(old, new);
-    session.transceive_full(&Apdu::write(CLA_ISO, INS_CHANGE_REF, 0x00, reference, &body))?;
+    session.transceive_full(&Apdu::write(
+        CLA_ISO,
+        INS_CHANGE_REF,
+        0x00,
+        reference,
+        &body,
+    ))?;
     Ok(())
 }
 
@@ -422,7 +461,11 @@ fn aes_ecb(key: &[u8], block: &mut [u8; 16], encrypt: bool) -> Result<(), PFErro
         16 => run!(aes::Aes128),
         24 => run!(aes::Aes192),
         32 => run!(aes::Aes256),
-        _ => return Err(PFError::Device("Management key must be AES (16/24/32 bytes)".into())),
+        _ => {
+            return Err(PFError::Device(
+                "Management key must be AES (16/24/32 bytes)".into(),
+            ));
+        }
     }
     Ok(())
 }
@@ -445,8 +488,15 @@ pub fn authenticate_mgm(session: &CcidSession, key: &[u8], algo: u8) -> Result<(
         tlv::write(&mut inner, TAG_WITNESS, &[]);
         inner
     });
-    let r1 = session.transceive_full(&Apdu::read(CLA_ISO, INS_GENERAL_AUTH, algo, SLOT_MGM, &req1))?;
-    let outer = tlv::find(&r1, TAG_DYN_AUTH).ok_or_else(|| PFError::Device("No 7C in auth".into()))?;
+    let r1 = session.transceive_full(&Apdu::read(
+        CLA_ISO,
+        INS_GENERAL_AUTH,
+        algo,
+        SLOT_MGM,
+        &req1,
+    ))?;
+    let outer =
+        tlv::find(&r1, TAG_DYN_AUTH).ok_or_else(|| PFError::Device("No 7C in auth".into()))?;
     let enc_witness = tlv::find(outer, TAG_WITNESS)
         .filter(|w| w.len() == 16)
         .ok_or_else(|| PFError::Device("Bad witness".into()))?;
@@ -464,17 +514,26 @@ pub fn authenticate_mgm(session: &CcidSession, key: &[u8], algo: u8) -> Result<(
     tlv::write(&mut inner, TAG_CHALLENGE, &challenge);
     let mut req2 = Vec::new();
     tlv::write(&mut req2, TAG_DYN_AUTH, &inner);
-    let r2 = session.transceive_full(&Apdu::read(CLA_ISO, INS_GENERAL_AUTH, algo, SLOT_MGM, &req2))?;
+    let r2 = session.transceive_full(&Apdu::read(
+        CLA_ISO,
+        INS_GENERAL_AUTH,
+        algo,
+        SLOT_MGM,
+        &req2,
+    ))?;
 
     // Verify the card's response encrypts our challenge (mutual auth).
-    let outer2 = tlv::find(&r2, TAG_DYN_AUTH).ok_or_else(|| PFError::Device("No 7C in auth-2".into()))?;
+    let outer2 =
+        tlv::find(&r2, TAG_DYN_AUTH).ok_or_else(|| PFError::Device("No 7C in auth-2".into()))?;
     let resp = tlv::find(outer2, TAG_RESPONSE)
         .filter(|r| r.len() == 16)
         .ok_or_else(|| PFError::Device("Bad auth response".into()))?;
     let mut expect = challenge;
     aes_ecb(key, &mut expect, true)?;
     if expect.as_slice() != resp {
-        return Err(PFError::Device("Management-key authentication failed".into()));
+        return Err(PFError::Device(
+            "Management-key authentication failed".into(),
+        ));
     }
     Ok(())
 }
@@ -569,7 +628,13 @@ pub fn set_mgm(session: &CcidSession, algo: u8, key: &[u8], touch: bool) -> Resu
 
 /// Set PIN/PUK retry counts (requires mgmt AND PIN; resets PIN/PUK to defaults).
 pub fn set_retries(session: &CcidSession, pin_tries: u8, puk_tries: u8) -> Result<(), PFError> {
-    session.transceive_full(&Apdu::read(CLA_ISO, INS_SET_RETRIES, pin_tries, puk_tries, &[]))?;
+    session.transceive_full(&Apdu::read(
+        CLA_ISO,
+        INS_SET_RETRIES,
+        pin_tries,
+        puk_tries,
+        &[],
+    ))?;
     Ok(())
 }
 
@@ -591,7 +656,12 @@ pub fn delete_key(session: &CcidSession, slot: u8) -> Result<(), PFError> {
 }
 
 /// Import pre-built key-material TLVs into a slot (mgmt-gated). `algo` is P1.
-pub fn import_key(session: &CcidSession, slot: u8, algo: u8, material: &[u8]) -> Result<(), PFError> {
+pub fn import_key(
+    session: &CcidSession,
+    slot: u8,
+    algo: u8,
+    material: &[u8],
+) -> Result<(), PFError> {
     let apdu = Apdu {
         cla: CLA_ISO,
         ins: INS_IMPORT,
@@ -860,7 +930,10 @@ mod tests {
         // Also accepts a bare (un-53-wrapped) body.
         assert_eq!(parse_protected_mgm(&protected), Some(key.to_vec()));
         // A 7-byte "key" is neither 16/24/32 → rejected.
-        assert_eq!(parse_protected_mgm(&[0x88, 0x09, 0x89, 0x07, 0, 0, 0, 0, 0, 0, 0]), None);
+        assert_eq!(
+            parse_protected_mgm(&[0x88, 0x09, 0x89, 0x07, 0, 0, 0, 0, 0, 0, 0]),
+            None
+        );
         assert_eq!(mgm_algo_for_len(16), ALGO_AES128);
         assert_eq!(mgm_algo_for_len(24), ALGO_AES192);
         assert_eq!(mgm_algo_for_len(32), ALGO_AES256);
@@ -874,15 +947,26 @@ mod tests {
         // mis-verify and burn a retry.
         let body = change_ref_body("123456", "87654321");
         assert_eq!(body.len(), 16);
-        assert_eq!(&body[..8], &[0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0xFF, 0xFF]);
-        assert_eq!(&body[8..], &[0x38, 0x37, 0x36, 0x35, 0x34, 0x33, 0x32, 0x31]);
+        assert_eq!(
+            &body[..8],
+            &[0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0xFF, 0xFF]
+        );
+        assert_eq!(
+            &body[8..],
+            &[0x38, 0x37, 0x36, 0x35, 0x34, 0x33, 0x32, 0x31]
+        );
     }
 
     #[test]
     fn generate_template_bytes() {
         // AC { 80 01 11 AA 01 03 AB 01 02 } for P-256, PIN-always, touch-always.
         let t = generate_template(ALGO_ECCP256, PIN_POLICY_ALWAYS, TOUCH_POLICY_ALWAYS);
-        assert_eq!(t, vec![0xAC, 0x09, 0x80, 0x01, 0x11, 0xAA, 0x01, 0x03, 0xAB, 0x01, 0x02]);
+        assert_eq!(
+            t,
+            vec![
+                0xAC, 0x09, 0x80, 0x01, 0x11, 0xAA, 0x01, 0x03, 0xAB, 0x01, 0x02
+            ]
+        );
         // Default policies are omitted.
         let t2 = generate_template(ALGO_RSA2048, PIN_POLICY_DEFAULT, TOUCH_POLICY_DEFAULT);
         assert_eq!(t2, vec![0xAC, 0x03, 0x80, 0x01, 0x07]);
@@ -919,8 +1003,14 @@ mod tests {
 
     #[test]
     fn pin_padding() {
-        assert_eq!(pad8(b"123456"), [0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0xFF, 0xFF]);
-        assert_eq!(pad8(b"12345678"), [0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38]);
+        assert_eq!(
+            pad8(b"123456"),
+            [0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0xFF, 0xFF]
+        );
+        assert_eq!(
+            pad8(b"12345678"),
+            [0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38]
+        );
     }
 
     #[test]

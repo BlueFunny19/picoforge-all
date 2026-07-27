@@ -866,7 +866,9 @@ impl ConfigViewModel {
         let final_led_driver = if sel_driver_idx == 0 {
             None
         } else {
-            LedDriverType::all().get(sel_driver_idx - 1).map(|d| d.value())
+            LedDriverType::all()
+                .get(sel_driver_idx - 1)
+                .map(|d| d.value())
         };
         if final_led_driver != current_led_driver {
             has_changes = true;
@@ -1188,7 +1190,6 @@ impl ConfigViewModel {
 
         cx.notify();
     }
-
 }
 
 #[cfg(test)]

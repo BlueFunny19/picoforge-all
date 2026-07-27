@@ -5,7 +5,7 @@ use crate::ui::components::page_view::PageView;
 use crate::ui::screens::attestation::view_model::AttestationViewModel;
 use gpui::*;
 use gpui_component::button::{Button, ButtonVariants};
-use gpui_component::{h_flex, v_flex, ActiveTheme, Disableable, Icon, StyledExt, Theme};
+use gpui_component::{ActiveTheme, Disableable, Icon, StyledExt, Theme, h_flex, v_flex};
 
 fn empty_state(heading: &str, body: String, theme: &Theme) -> AnyElement {
     v_flex()
@@ -17,7 +17,13 @@ fn empty_state(heading: &str, body: String, theme: &Theme) -> AnyElement {
         .border_color(theme.border)
         .rounded_xl()
         .child(div().font_semibold().child(heading.to_string()))
-        .child(div().text_sm().max_w(px(380.)).text_color(theme.muted_foreground).child(body))
+        .child(
+            div()
+                .text_sm()
+                .max_w(px(380.))
+                .text_color(theme.muted_foreground)
+                .child(body),
+        )
         .into_any_element()
 }
 
@@ -40,7 +46,12 @@ impl AttestationViewModel {
                 v_flex()
                     .gap_0p5()
                     .child(div().font_medium().child(title))
-                    .child(div().text_sm().text_color(theme.muted_foreground).child(subtitle)),
+                    .child(
+                        div()
+                            .text_sm()
+                            .text_color(theme.muted_foreground)
+                            .child(subtitle),
+                    ),
             )
             .child(btn)
     }
@@ -85,7 +96,15 @@ impl Render for AttestationViewModel {
                         h_flex()
                             .gap_2()
                             .items_center()
-                            .child(div().text_color(if s.installed { theme.green } else { theme.muted_foreground }).child("●"))
+                            .child(
+                                div()
+                                    .text_color(if s.installed {
+                                        theme.green
+                                    } else {
+                                        theme.muted_foreground
+                                    })
+                                    .child("●"),
+                            )
                             .child(div().text_sm().child(if s.installed {
                                 "Org attestation installed"
                             } else {
@@ -96,7 +115,12 @@ impl Render for AttestationViewModel {
                         col = col.child(
                             v_flex()
                                 .gap_0p5()
-                                .child(div().text_xs().text_color(theme.muted_foreground).child("Chain hash"))
+                                .child(
+                                    div()
+                                        .text_xs()
+                                        .text_color(theme.muted_foreground)
+                                        .child("Chain hash"),
+                                )
                                 .child(div().font_family("monospace").text_xs().child(h.clone())),
                         );
                     }

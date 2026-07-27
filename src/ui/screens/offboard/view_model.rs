@@ -6,9 +6,9 @@ use crate::ui::components::dialog;
 use crate::ui::components::dialog::StatusContent;
 use crate::ui::models::device::{DeviceEvent, DeviceRepo, FirmwareType, OffboardReport};
 use gpui::*;
+use gpui_component::WindowExt;
 use gpui_component::button::ButtonVariants;
 use gpui_component::input::InputState;
-use gpui_component::WindowExt;
 
 pub struct OffboardViewModel {
     pub(super) device: Entity<DeviceRepo>,
@@ -63,9 +63,8 @@ impl OffboardViewModel {
 
     pub(super) fn open_confirm(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let serial = self.serial(cx);
-        let confirm = cx.new(|cx| {
-            InputState::new(window, cx).placeholder("Type OFFBOARD to confirm")
-        });
+        let confirm =
+            cx.new(|cx| InputState::new(window, cx).placeholder("Type OFFBOARD to confirm"));
         let view = cx.entity().downgrade();
         let submit = {
             let confirm = confirm.clone();
@@ -73,7 +72,9 @@ impl OffboardViewModel {
             std::rc::Rc::new(move |window: &mut Window, cx: &mut App| {
                 if confirm.read(cx).text().to_string().trim() != "OFFBOARD" {
                     let _ = view.update(cx, |_, cx| {
-                        cx.emit(OffboardEvent::Notification("Type OFFBOARD exactly to confirm".into()))
+                        cx.emit(OffboardEvent::Notification(
+                            "Type OFFBOARD exactly to confirm".into(),
+                        ))
                     });
                     return;
                 }
@@ -130,7 +131,10 @@ impl OffboardViewModel {
         }
         self.loading = true;
         let _ = status.update(cx, |d, cx| {
-            d.set_loading("Wiping… touch the device (BOOTSEL) when it blinks (several times).", cx)
+            d.set_loading(
+                "Wiping… touch the device (BOOTSEL) when it blinks (several times).",
+                cx,
+            )
         });
         cx.notify();
         let weak = cx.entity().downgrade();
@@ -147,7 +151,8 @@ impl OffboardViewModel {
                             if report.signed {
                                 "Offboarded — all applets wiped, receipt signed.".to_string()
                             } else {
-                                "Offboarded — all applets wiped (receipt UNSIGNED: no OTP DEVK).".to_string()
+                                "Offboarded — all applets wiped (receipt UNSIGNED: no OTP DEVK)."
+                                    .to_string()
                             }
                         } else {
                             format!("Offboard finished WITH FAILURES: {:?}", report.failures())
@@ -170,7 +175,9 @@ impl OffboardViewModel {
         let Some(report) = self.report.clone() else {
             return;
         };
-        let default_dir = std::env::var("HOME").map(std::path::PathBuf::from).unwrap_or_default();
+        let default_dir = std::env::var("HOME")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_default();
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_secs())

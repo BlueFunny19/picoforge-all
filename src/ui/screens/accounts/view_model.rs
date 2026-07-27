@@ -6,12 +6,12 @@ use crate::ui::app::AppModels;
 use crate::ui::components::applet_gate::AppletGate;
 use crate::ui::components::dialog;
 use crate::ui::components::dialog::{ConfirmContent, PinPromptContent};
-use crate::ui::models::device::{oath, DeviceEvent, DeviceRepo, USB_CAP_OATH};
+use crate::ui::components::form::{LabeledU8, select_state, selected_key};
+use crate::ui::models::device::{DeviceEvent, DeviceRepo, USB_CAP_OATH, oath};
 use gpui::*;
-use gpui_component::button::ButtonVariants;
-use crate::ui::components::form::{select_state, selected_key, LabeledU8};
-use gpui_component::select::SelectState;
 use gpui_component::WindowExt;
+use gpui_component::button::ButtonVariants;
+use gpui_component::select::SelectState;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 // Add-form dropdown options (label, key). The key is the wire value where one
@@ -94,17 +94,19 @@ impl AccountsViewModel {
     }
 
     fn start_ticker(&mut self, cx: &mut Context<Self>) {
-        self._ticker = Some(cx.spawn(async move |weak, cx| loop {
-            cx.background_executor().timer(Duration::from_secs(1)).await;
-            let alive = weak.update(cx, |this, cx| {
-                this.now = now_unix();
-                if this.loaded && !this.loading && this.now / 30 != this.last_window {
-                    this.reload(cx);
+        self._ticker = Some(cx.spawn(async move |weak, cx| {
+            loop {
+                cx.background_executor().timer(Duration::from_secs(1)).await;
+                let alive = weak.update(cx, |this, cx| {
+                    this.now = now_unix();
+                    if this.loaded && !this.loading && this.now / 30 != this.last_window {
+                        this.reload(cx);
+                    }
+                    cx.notify();
+                });
+                if alive.is_err() {
+                    break;
                 }
-                cx.notify();
-            });
-            if alive.is_err() {
-                break;
             }
         }));
     }
@@ -346,7 +348,10 @@ impl AccountsViewModel {
                 match res {
                     Ok(code) => {
                         if let Some(acc) = this.accounts.iter_mut().find(|a| a.id == id) {
-                            acc.state = oath::CodeState::Code { value: code, period };
+                            acc.state = oath::CodeState::Code {
+                                value: code,
+                                period,
+                            };
                         }
                     }
                     Err(e) => cx.emit(AccountsEvent::Notification(format!("Calculate: {e}"))),
@@ -361,7 +366,8 @@ impl AccountsViewModel {
             gpui_component::input::InputState::new(window, cx).placeholder("Issuer (e.g. GitHub)")
         });
         let account = cx.new(|cx| {
-            gpui_component::input::InputState::new(window, cx).placeholder("Account (e.g. you@example.com)")
+            gpui_component::input::InputState::new(window, cx)
+                .placeholder("Account (e.g. you@example.com)")
         });
         let secret = cx.new(|cx| {
             gpui_component::input::InputState::new(window, cx)
@@ -430,8 +436,7 @@ impl AccountsViewModel {
                 match parsed {
                     Ok(cred) => {
                         window.close_dialog(cx);
-                        let status =
-                            dialog::open_status_dialog("Adding Account", window, cx);
+                        let status = dialog::open_status_dialog("Adding Account", window, cx);
                         let _ = view.update(cx, |this, cx| this.execute_add(cred, status, cx));
                     }
                     Err(e) => {
@@ -530,7 +535,8 @@ impl AccountsViewModel {
                 this.loading = false;
                 match res {
                     Ok(_) => {
-                        let _ = status.update(cx, |d, cx| d.set_success("Account added.".into(), cx));
+                        let _ =
+                            status.update(cx, |d, cx| d.set_success("Account added.".into(), cx));
                         this.reload(cx);
                     }
                     Err(e) => {
@@ -643,7 +649,8 @@ impl AccountsViewModel {
                 this.loading = false;
                 match res {
                     Ok(_) => {
-                        let _ = status.update(cx, |d, cx| d.set_success("Account renamed.".into(), cx));
+                        let _ =
+                            status.update(cx, |d, cx| d.set_success("Account renamed.".into(), cx));
                         this.reload(cx);
                     }
                     Err(e) => {
@@ -744,9 +751,8 @@ impl AccountsViewModel {
                 this.loading = false;
                 match res {
                     Ok(_) => {
-                        let _ = status.update(cx, |d, cx| {
-                            d.set_success("OATH applet reset.".into(), cx)
-                        });
+                        let _ = status
+                            .update(cx, |d, cx| d.set_success("OATH applet reset.".into(), cx));
                         this.accounts.clear();
                         this.loaded = false;
                         this.password = None;

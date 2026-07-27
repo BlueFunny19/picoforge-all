@@ -12,7 +12,7 @@
 #![allow(dead_code)]
 
 use crate::error::PFError;
-use crate::hal::apdu::{tlv, Apdu, CLA_ISO};
+use crate::hal::apdu::{Apdu, CLA_ISO, tlv};
 use crate::hal::transport::ccid::CcidSession;
 
 pub const OPENPGP_AID: &[u8] = &[0xD2, 0x76, 0x00, 0x01, 0x24, 0x01];
@@ -142,7 +142,11 @@ pub const GENERATE_ALGOS: &[(&str, u8)] = &[
 /// Build the algorithm-attribute bytes for a slot + choice, or `None` if the
 /// combination is unsupported (e.g. Ed25519 on the encryption slot).
 pub fn algo_attr(slot: PgpSlot, choice: u8) -> Option<Vec<u8>> {
-    let ec_id = if slot == PgpSlot::Dec { ALGO_ECDH } else { ALGO_ECDSA };
+    let ec_id = if slot == PgpSlot::Dec {
+        ALGO_ECDH
+    } else {
+        ALGO_ECDSA
+    };
     let ec = |oid: &[u8]| {
         let mut v = vec![ec_id];
         v.extend_from_slice(oid);
@@ -214,7 +218,13 @@ pub fn open() -> Result<CcidSession, PFError> {
 }
 
 fn get_data(session: &CcidSession, tag: u16) -> Result<Vec<u8>, PFError> {
-    session.transceive_full(&Apdu::read(CLA_ISO, INS_GET_DATA, (tag >> 8) as u8, tag as u8, &[]))
+    session.transceive_full(&Apdu::read(
+        CLA_ISO,
+        INS_GET_DATA,
+        (tag >> 8) as u8,
+        tag as u8,
+        &[],
+    ))
 }
 
 pub fn get_version(session: &CcidSession) -> Result<[u8; 3], PFError> {
@@ -255,14 +265,14 @@ pub fn read_info(session: &CcidSession) -> Result<PgpInfo, PFError> {
     let key_info = tlv::find(disc, 0xDE).unwrap_or(&[]);
 
     let mut keys = Vec::new();
-    for (i, slot) in [PgpSlot::Sig, PgpSlot::Dec, PgpSlot::Aut].into_iter().enumerate() {
+    for (i, slot) in [PgpSlot::Sig, PgpSlot::Dec, PgpSlot::Aut]
+        .into_iter()
+        .enumerate()
+    {
         let attr = tlv::find(disc, slot.attr_tag() as u32).unwrap_or(&[]);
         let fp = fps.get(i * 20..i * 20 + 20).unwrap_or(&[]);
-        let present = fp.iter().any(|&b| b != 0)
-            || key_info
-                .get(i * 2 + 1)
-                .map(|&b| b != 0)
-                .unwrap_or(false);
+        let present =
+            fp.iter().any(|&b| b != 0) || key_info.get(i * 2 + 1).map(|&b| b != 0).unwrap_or(false);
         let touch = tlv::find(disc, slot.uif_tag() as u32)
             .and_then(|u| u.first())
             .map(|&b| b != 0)
@@ -284,8 +294,12 @@ pub fn read_info(session: &CcidSession) -> Result<PgpInfo, PFError> {
     let sex = tlv::find(ch, 0x5F35)
         .and_then(|v| v.first().copied())
         .unwrap_or(0x39);
-    let login = get_data(session, 0x5E).map(|v| str_of(&v)).unwrap_or_default();
-    let url = get_data(session, 0x5F50).map(|v| str_of(&v)).unwrap_or_default();
+    let login = get_data(session, 0x5E)
+        .map(|v| str_of(&v))
+        .unwrap_or_default();
+    let url = get_data(session, 0x5F50)
+        .map(|v| str_of(&v))
+        .unwrap_or_default();
 
     Ok(PgpInfo {
         version,
@@ -303,22 +317,41 @@ pub fn read_info(session: &CcidSession) -> Result<PgpInfo, PFError> {
 }
 
 fn str_of(v: &[u8]) -> String {
-    String::from_utf8_lossy(v).trim_end_matches('\0').to_string()
+    String::from_utf8_lossy(v)
+        .trim_end_matches('\0')
+        .to_string()
 }
 
 // ── PIN management ──────────────────────────────────────────────────────────
 
 pub fn verify_pin(session: &CcidSession, reference: u8, pin: &str) -> Result<(), PFError> {
-    session.transceive_full(&Apdu::write(CLA_ISO, INS_VERIFY, 0x00, reference, pin.as_bytes()))?;
+    session.transceive_full(&Apdu::write(
+        CLA_ISO,
+        INS_VERIFY,
+        0x00,
+        reference,
+        pin.as_bytes(),
+    ))?;
     Ok(())
 }
 
 /// Change PW1 (`ref=PW1`) or PW3 (`ref=PW3`). The device splits old/new at the
 /// stored PIN length, so send `old ‖ new` concatenated.
-pub fn change_pin(session: &CcidSession, reference: u8, old: &str, new: &str) -> Result<(), PFError> {
+pub fn change_pin(
+    session: &CcidSession,
+    reference: u8,
+    old: &str,
+    new: &str,
+) -> Result<(), PFError> {
     let mut body = old.as_bytes().to_vec();
     body.extend_from_slice(new.as_bytes());
-    session.transceive_full(&Apdu::write(CLA_ISO, INS_CHANGE_REF, 0x00, reference, &body))?;
+    session.transceive_full(&Apdu::write(
+        CLA_ISO,
+        INS_CHANGE_REF,
+        0x00,
+        reference,
+        &body,
+    ))?;
     Ok(())
 }
 
@@ -332,7 +365,13 @@ pub fn unblock_with_rc(session: &CcidSession, rc: &str, new_pw1: &str) -> Result
 
 /// Unblock PW1 using a verified admin PIN (call `verify_pin(PW3)` first).
 pub fn unblock_with_admin(session: &CcidSession, new_pw1: &str) -> Result<(), PFError> {
-    session.transceive_full(&Apdu::write(CLA_ISO, INS_RESET_RETRY, 0x02, PW1, new_pw1.as_bytes()))?;
+    session.transceive_full(&Apdu::write(
+        CLA_ISO,
+        INS_RESET_RETRY,
+        0x02,
+        PW1,
+        new_pw1.as_bytes(),
+    ))?;
     Ok(())
 }
 
@@ -371,7 +410,11 @@ pub fn set_cardholder(
 }
 
 pub fn set_touch(session: &CcidSession, slot: PgpSlot, on: bool) -> Result<(), PFError> {
-    put_data(session, slot.uif_tag(), &[if on { 0x01 } else { 0x00 }, 0x20])
+    put_data(
+        session,
+        slot.uif_tag(),
+        &[if on { 0x01 } else { 0x00 }, 0x20],
+    )
 }
 
 pub fn set_algo_attr(session: &CcidSession, slot: PgpSlot, attr: &[u8]) -> Result<(), PFError> {
@@ -379,13 +422,15 @@ pub fn set_algo_attr(session: &CcidSession, slot: PgpSlot, attr: &[u8]) -> Resul
 }
 
 /// Set the slot's algorithm then GENERATE a key (returns the `7F49` public key).
-pub fn generate(
-    session: &CcidSession,
-    slot: PgpSlot,
-    attr: &[u8],
-) -> Result<Vec<u8>, PFError> {
+pub fn generate(session: &CcidSession, slot: PgpSlot, attr: &[u8]) -> Result<Vec<u8>, PFError> {
     set_algo_attr(session, slot, attr)?;
-    session.transceive_full(&Apdu::read(CLA_ISO, INS_GENERATE, 0x80, 0x00, &[slot.crt(), 0x00]))
+    session.transceive_full(&Apdu::read(
+        CLA_ISO,
+        INS_GENERATE,
+        0x80,
+        0x00,
+        &[slot.crt(), 0x00],
+    ))
 }
 
 // ── Factory reset (block both PINs → TERMINATE → ACTIVATE) ───────────────────
@@ -393,7 +438,13 @@ pub fn generate(
 pub fn reset(session: &CcidSession) -> Result<(), PFError> {
     for reference in [PW1, PW3] {
         for _ in 0..10 {
-            match session.transceive(&Apdu::write(CLA_ISO, INS_VERIFY, 0x00, reference, b"00000000")) {
+            match session.transceive(&Apdu::write(
+                CLA_ISO,
+                INS_VERIFY,
+                0x00,
+                reference,
+                b"00000000",
+            )) {
                 Ok((_, sw)) if sw.0 == 0x6983 => break,
                 Ok(_) => continue,
                 Err(e) => return Err(e),
@@ -411,8 +462,14 @@ mod tests {
 
     #[test]
     fn algo_attr_bytes() {
-        assert_eq!(algo_attr(PgpSlot::Sig, 0).unwrap(), vec![0x01, 0x08, 0x00, 0x00, 0x20, 0x00]);
-        assert_eq!(algo_attr(PgpSlot::Sig, 2).unwrap(), vec![0x01, 0x10, 0x00, 0x00, 0x20, 0x00]);
+        assert_eq!(
+            algo_attr(PgpSlot::Sig, 0).unwrap(),
+            vec![0x01, 0x08, 0x00, 0x00, 0x20, 0x00]
+        );
+        assert_eq!(
+            algo_attr(PgpSlot::Sig, 2).unwrap(),
+            vec![0x01, 0x10, 0x00, 0x00, 0x20, 0x00]
+        );
         // P-256: ECDSA on SIG, ECDH on DEC, same OID.
         assert_eq!(algo_attr(PgpSlot::Sig, 3).unwrap()[0], ALGO_ECDSA);
         assert_eq!(algo_attr(PgpSlot::Dec, 3).unwrap()[0], ALGO_ECDH);
@@ -424,9 +481,18 @@ mod tests {
 
     #[test]
     fn labels_from_attrs() {
-        assert_eq!(algo_label(&[0x01, 0x10, 0x00, 0x00, 0x20, 0x00]), "RSA-4096");
-        assert_eq!(algo_label(&[0x13, 0x2B, 0x81, 0x04, 0x00, 0x22]), "ECC P-384");
-        assert_eq!(algo_label(&[0x16, 0x2B, 0x06, 0x01, 0x04, 0x01, 0xDA, 0x47, 0x0F, 0x01]), "Ed25519");
+        assert_eq!(
+            algo_label(&[0x01, 0x10, 0x00, 0x00, 0x20, 0x00]),
+            "RSA-4096"
+        );
+        assert_eq!(
+            algo_label(&[0x13, 0x2B, 0x81, 0x04, 0x00, 0x22]),
+            "ECC P-384"
+        );
+        assert_eq!(
+            algo_label(&[0x16, 0x2B, 0x06, 0x01, 0x04, 0x01, 0xDA, 0x47, 0x0F, 0x01]),
+            "Ed25519"
+        );
     }
 
     #[test]

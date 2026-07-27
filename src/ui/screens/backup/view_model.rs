@@ -4,11 +4,11 @@ use crate::ui::app::AppModels;
 use crate::ui::components::applet_gate::AppletGate;
 use crate::ui::components::dialog;
 use crate::ui::components::dialog::StatusContent;
-use crate::ui::models::device::{backup, DeviceEvent, DeviceRepo, FirmwareType};
+use crate::ui::models::device::{DeviceEvent, DeviceRepo, FirmwareType, backup};
 use gpui::*;
+use gpui_component::WindowExt;
 use gpui_component::button::{ButtonVariant, ButtonVariants};
 use gpui_component::input::InputState;
-use gpui_component::WindowExt;
 
 pub struct BackupViewModel {
     pub(super) device: Entity<DeviceRepo>,
@@ -184,9 +184,8 @@ impl BackupViewModel {
 
     pub(super) fn open_restore(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let pin = Self::pin_input(window, cx);
-        let phrase = cx.new(|cx| {
-            InputState::new(window, cx).placeholder("24 words separated by spaces")
-        });
+        let phrase =
+            cx.new(|cx| InputState::new(window, cx).placeholder("24 words separated by spaces"));
         let view = cx.entity().downgrade();
         let submit = {
             let pin = pin.clone();

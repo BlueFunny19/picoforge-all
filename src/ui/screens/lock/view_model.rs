@@ -4,11 +4,11 @@ use crate::ui::app::AppModels;
 use crate::ui::components::applet_gate::AppletGate;
 use crate::ui::components::dialog;
 use crate::ui::components::dialog::StatusContent;
-use crate::ui::models::device::{backup, DeviceEvent, DeviceRepo, FirmwareType};
+use crate::ui::models::device::{DeviceEvent, DeviceRepo, FirmwareType, backup};
 use gpui::*;
+use gpui_component::WindowExt;
 use gpui_component::button::{ButtonVariant, ButtonVariants};
 use gpui_component::input::InputState;
-use gpui_component::WindowExt;
 
 pub struct LockViewModel {
     pub(super) device: Entity<DeviceRepo>,
@@ -83,7 +83,11 @@ impl LockViewModel {
     }
 
     fn pin_input(window: &mut Window, cx: &mut Context<Self>) -> Entity<InputState> {
-        cx.new(|cx| InputState::new(window, cx).masked(true).placeholder("FIDO PIN (required)"))
+        cx.new(|cx| {
+            InputState::new(window, cx)
+                .masked(true)
+                .placeholder("FIDO PIN (required)")
+        })
     }
 
     fn phrase_input(window: &mut Window, cx: &mut Context<Self>) -> Entity<InputState> {

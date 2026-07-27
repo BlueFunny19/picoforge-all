@@ -6,7 +6,7 @@ use crate::ui::models::device::audit;
 use crate::ui::screens::audit::view_model::AuditViewModel;
 use gpui::*;
 use gpui_component::button::Button;
-use gpui_component::{h_flex, v_flex, ActiveTheme, Disableable, Icon, StyledExt, Theme};
+use gpui_component::{ActiveTheme, Disableable, Icon, StyledExt, Theme, h_flex, v_flex};
 
 fn empty_state(heading: &str, body: String, theme: &Theme) -> AnyElement {
     v_flex()
@@ -48,10 +48,25 @@ impl AuditViewModel {
             .gap_3()
             .py_1()
             .text_sm()
-            .child(div().w(px(56.)).text_color(theme.muted_foreground).child(entry.seq.to_string()))
-            .child(div().w(px(72.)).text_color(theme.muted_foreground).child(format!("{:.1}s", entry.uptime_s())))
+            .child(
+                div()
+                    .w(px(56.))
+                    .text_color(theme.muted_foreground)
+                    .child(entry.seq.to_string()),
+            )
+            .child(
+                div()
+                    .w(px(72.))
+                    .text_color(theme.muted_foreground)
+                    .child(format!("{:.1}s", entry.uptime_s())),
+            )
             .child(div().w(px(160.)).font_medium().child(entry.event_label()))
-            .child(div().w(px(40.)).text_color(theme.muted_foreground).child(entry.aux.to_string()))
+            .child(
+                div()
+                    .w(px(40.))
+                    .text_color(theme.muted_foreground)
+                    .child(entry.aux.to_string()),
+            )
             .child(
                 div()
                     .flex_1()
@@ -111,7 +126,10 @@ impl AuditViewModel {
                         j.start,
                     )))
                     .child(mono(theme, format!("epoch  {}", short_hex(&j.epoch))))
-                    .child(mono(theme, format!("head   {}  (chain OK)", short_hex(&j.head)))),
+                    .child(mono(
+                        theme,
+                        format!("head   {}  (chain OK)", short_hex(&j.head)),
+                    )),
             )
             .child(div().h(px(1.)).bg(theme.border))
             .child(v_flex().gap_0p5().children(rows))
@@ -136,7 +154,12 @@ impl AuditViewModel {
         let kv = |k: &str, val: String| {
             v_flex()
                 .gap_0p5()
-                .child(div().text_xs().text_color(theme.muted_foreground).child(k.to_string()))
+                .child(
+                    div()
+                        .text_xs()
+                        .text_color(theme.muted_foreground)
+                        .child(k.to_string()),
+                )
                 .child(div().font_family("monospace").text_xs().child(val))
         };
 
@@ -201,14 +224,18 @@ impl Render for AuditViewModel {
                     .label("Disable")
                     .outline()
                     .disabled(self.loading)
-                    .on_click(cx.listener(|this, _, window, cx| this.open_toggle(false, window, cx))),
+                    .on_click(
+                        cx.listener(|this, _, window, cx| this.open_toggle(false, window, cx)),
+                    ),
             ),
             Some(false) => Some(
                 Button::new("audit-enable")
                     .label("Enable")
                     .outline()
                     .disabled(self.loading)
-                    .on_click(cx.listener(|this, _, window, cx| this.open_toggle(true, window, cx))),
+                    .on_click(
+                        cx.listener(|this, _, window, cx| this.open_toggle(true, window, cx)),
+                    ),
             ),
             None => None,
         };
@@ -218,7 +245,10 @@ impl Render for AuditViewModel {
         let verify_body = self.verify_body(theme);
 
         let (dot, status_text) = match self.enabled {
-            Some(true) => (theme.green, "On — recording security events to the key's flash."),
+            Some(true) => (
+                theme.green,
+                "On — recording security events to the key's flash.",
+            ),
             Some(false) => (
                 theme.muted_foreground,
                 "Off — journalling is opt-in; nothing is being recorded.",

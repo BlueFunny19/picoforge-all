@@ -7,10 +7,10 @@ use crate::ui::components::applet_gate::AppletGate;
 use crate::ui::components::dialog;
 use crate::ui::components::dialog::StatusContent;
 use crate::ui::components::form::{select_state, selected_key};
-use crate::ui::models::device::{openpgp, DeviceEvent, DeviceRepo, USB_CAP_OPENPGP};
+use crate::ui::models::device::{DeviceEvent, DeviceRepo, USB_CAP_OPENPGP, openpgp};
 use gpui::*;
-use gpui_component::button::ButtonVariants;
 use gpui_component::WindowExt;
+use gpui_component::button::ButtonVariants;
 use openpgp::PgpSlot;
 
 const OPT_TOUCH: &[(&str, u8)] = &[("Off", 0), ("On", 1)];
@@ -73,7 +73,11 @@ impl OpenPgpViewModel {
 
     /// Whether the firmware advertises elliptic-curve keys (else RSA-only).
     fn ecc(&self, cx: &App) -> bool {
-        self.device.read(cx).openpgp_features().map(|f| f.ecc).unwrap_or(false)
+        self.device
+            .read(cx)
+            .openpgp_features()
+            .map(|f| f.ecc)
+            .unwrap_or(false)
     }
 
     fn load(&mut self, cx: &mut Context<Self>) {
@@ -286,7 +290,12 @@ impl OpenPgpViewModel {
 
     // ── Generate ────────────────────────────────────────────────────────────
 
-    pub(super) fn open_generate(&mut self, slot: PgpSlot, window: &mut Window, cx: &mut Context<Self>) {
+    pub(super) fn open_generate(
+        &mut self,
+        slot: PgpSlot,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let algos: &'static [(&str, u8)] = if self.ecc(cx) {
             openpgp::GENERATE_ALGOS
         } else {
@@ -359,7 +368,12 @@ impl OpenPgpViewModel {
 
     // ── Touch policy ──────────────────────────────────────────────────────────
 
-    pub(super) fn open_touch(&mut self, slot: PgpSlot, window: &mut Window, cx: &mut Context<Self>) {
+    pub(super) fn open_touch(
+        &mut self,
+        slot: PgpSlot,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let current = self
             .info
             .as_ref()
@@ -438,20 +452,29 @@ impl OpenPgpViewModel {
             .info
             .as_ref()
             .map(|i| {
-                (i.name.clone(), i.login.clone(), i.url.clone(), i.lang.clone(), i.sex)
+                (
+                    i.name.clone(),
+                    i.login.clone(),
+                    i.url.clone(),
+                    i.lang.clone(),
+                    i.sex,
+                )
             })
-            .unwrap_or((String::new(), String::new(), String::new(), String::new(), 0x39));
-        let name = cx.new(|cx| {
-            gpui_component::input::InputState::new(window, cx).default_value(cur_name)
-        });
-        let login = cx.new(|cx| {
-            gpui_component::input::InputState::new(window, cx).default_value(cur_login)
-        });
+            .unwrap_or((
+                String::new(),
+                String::new(),
+                String::new(),
+                String::new(),
+                0x39,
+            ));
+        let name =
+            cx.new(|cx| gpui_component::input::InputState::new(window, cx).default_value(cur_name));
+        let login = cx
+            .new(|cx| gpui_component::input::InputState::new(window, cx).default_value(cur_login));
         let url =
             cx.new(|cx| gpui_component::input::InputState::new(window, cx).default_value(cur_url));
-        let lang = cx.new(|cx| {
-            gpui_component::input::InputState::new(window, cx).default_value(cur_lang)
-        });
+        let lang =
+            cx.new(|cx| gpui_component::input::InputState::new(window, cx).default_value(cur_lang));
         let sex_row = OPT_SEX.iter().position(|(_, k)| *k == cur_sex).unwrap_or(0);
         let sex = select_state(window, cx, OPT_SEX, sex_row);
         let admin = admin_input(window, cx);

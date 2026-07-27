@@ -130,9 +130,7 @@ impl HomeViewModel {
                                     .justify_between()
                                     .text_sm()
                                     .child(
-                                        div()
-                                            .text_color(theme.muted_foreground)
-                                            .child(flash_label),
+                                        div().text_color(theme.muted_foreground).child(flash_label),
                                     )
                                     .child(div().text_color(theme.foreground).child(
                                         if let (Some(used), Some(total)) =
@@ -153,46 +151,40 @@ impl HomeViewModel {
                                     this.child(Progress::new().value(flash_percent))
                                 },
                             )
-                            .when_some(
-                                info.flash_files.filter(|_| is_rskey),
-                                |this, nfiles| {
-                                    this.child(
-                                        h_flex()
-                                            .justify_between()
-                                            .text_sm()
-                                            .child(
-                                                div()
-                                                    .text_color(theme.muted_foreground)
-                                                    .child("Stored objects"),
-                                            )
-                                            .child(
-                                                div()
-                                                    .text_color(theme.foreground)
-                                                    .child(nfiles.to_string()),
-                                            ),
-                                    )
-                                },
-                            )
-                            .when_some(
-                                info.flash_chip_size.filter(|_| is_rskey),
-                                |this, chip| {
-                                    this.child(
-                                        h_flex()
-                                            .justify_between()
-                                            .text_sm()
-                                            .child(
-                                                div()
-                                                    .text_color(theme.muted_foreground)
-                                                    .child("Flash chip"),
-                                            )
-                                            .child(
-                                                div()
-                                                    .text_color(theme.foreground)
-                                                    .child(Self::format_flash_size(chip)),
-                                            ),
-                                    )
-                                },
-                            ),
+                            .when_some(info.flash_files.filter(|_| is_rskey), |this, nfiles| {
+                                this.child(
+                                    h_flex()
+                                        .justify_between()
+                                        .text_sm()
+                                        .child(
+                                            div()
+                                                .text_color(theme.muted_foreground)
+                                                .child("Stored objects"),
+                                        )
+                                        .child(
+                                            div()
+                                                .text_color(theme.foreground)
+                                                .child(nfiles.to_string()),
+                                        ),
+                                )
+                            })
+                            .when_some(info.flash_chip_size.filter(|_| is_rskey), |this, chip| {
+                                this.child(
+                                    h_flex()
+                                        .justify_between()
+                                        .text_sm()
+                                        .child(
+                                            div()
+                                                .text_color(theme.muted_foreground)
+                                                .child("Flash chip"),
+                                        )
+                                        .child(
+                                            div()
+                                                .text_color(theme.foreground)
+                                                .child(Self::format_flash_size(chip)),
+                                        ),
+                                )
+                            }),
                     ),
             )
     }
