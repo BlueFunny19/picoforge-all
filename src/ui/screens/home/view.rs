@@ -35,9 +35,41 @@ impl HomeViewModel {
             )
     }
 
+    /// RS-Key impersonates a YubiKey's CTAP `firmwareVersion` (e.g. 5.7.4), so
+    /// its real build id is the USB bcdDevice; prefer that when we have it.
+    fn firmware_version_label(status: &FullDeviceStatus) -> String {
+        if status.firmware_type == FirmwareType::RSKey
+            && let Some(bcd) = status.info.bcd_device
+        {
+            format!("RS-Key 0x{:04X}", bcd)
+        } else {
+            format!("v{}", status.info.firmware_version)
+        }
+    }
+
+    /// Human-readable flash chip size. RP2350 boards are whole-MB (2/4/16 MB).
+    fn format_flash_size(bytes: u32) -> String {
+        const MB: u32 = 1024 * 1024;
+        if bytes >= MB && bytes.is_multiple_of(MB) {
+            format!("{} MB", bytes / MB)
+        } else if bytes >= 1024 && bytes.is_multiple_of(1024) {
+            format!("{} KB", bytes / 1024)
+        } else {
+            format!("{} B", bytes)
+        }
+    }
+
     fn render_device_info(status: &FullDeviceStatus, theme: &Theme) -> impl IntoElement {
         let info = &status.info;
         let config = &status.config;
+        // RS-Key's rescue FlashInfo is the KV filesystem (credentials & config),
+        // not the whole chip — label it honestly and surface objects + chip size.
+        let is_rskey = status.firmware_type == FirmwareType::RSKey;
+        let flash_label = if is_rskey {
+            "Storage (credentials & config)"
+        } else {
+            "Flash Memory"
+        };
 
         Card::new()
             .title("Device Information")
@@ -58,7 +90,7 @@ impl HomeViewModel {
                             ))
                             .child(Self::render_kv(
                                 "Firmware Version",
-                                format!("v{}", info.firmware_version),
+                                Self::firmware_version_label(status),
                                 theme,
                                 true,
                             ))
@@ -73,6 +105,14 @@ impl HomeViewModel {
                                 format!("{}:{}", config.vid, config.pid),
                                 theme,
                                 true,
+                            ))
+                            .child(Self::render_kv(
+                                "Manufacturer",
+                                info.manufacturer
+                                    .clone()
+                                    .unwrap_or_else(|| "Unknown".to_string()),
+                                theme,
+                                false,
                             ))
                             .child(Self::render_kv(
                                 "Product Name",
@@ -90,9 +130,7 @@ impl HomeViewModel {
                                     .justify_between()
                                     .text_sm()
                                     .child(
-                                        div()
-                                            .text_color(theme.muted_foreground)
-                                            .child("Flash Memory"),
+                                        div().text_color(theme.muted_foreground).child(flash_label),
                                     )
                                     .child(div().text_color(theme.foreground).child(
                                         if let (Some(used), Some(total)) =
@@ -112,7 +150,41 @@ impl HomeViewModel {
                                     let flash_percent = (used as f32 / total as f32) * 100.0;
                                     this.child(Progress::new().value(flash_percent))
                                 },
-                            ),
+                            )
+                            .when_some(info.flash_files.filter(|_| is_rskey), |this, nfiles| {
+                                this.child(
+                                    h_flex()
+                                        .justify_between()
+                                        .text_sm()
+                                        .child(
+                                            div()
+                                                .text_color(theme.muted_foreground)
+                                                .child("Stored objects"),
+                                        )
+                                        .child(
+                                            div()
+                                                .text_color(theme.foreground)
+                                                .child(nfiles.to_string()),
+                                        ),
+                                )
+                            })
+                            .when_some(info.flash_chip_size.filter(|_| is_rskey), |this, chip| {
+                                this.child(
+                                    h_flex()
+                                        .justify_between()
+                                        .text_sm()
+                                        .child(
+                                            div()
+                                                .text_color(theme.muted_foreground)
+                                                .child("Flash chip"),
+                                        )
+                                        .child(
+                                            div()
+                                                .text_color(theme.foreground)
+                                                .child(Self::format_flash_size(chip)),
+                                        ),
+                                )
+                            }),
                     ),
             )
     }
@@ -296,6 +368,11 @@ impl HomeViewModel {
                                 config
                                     .led_gpio
                                     .map(|g| format!("GPIO {}", g))
+                                    .or_else(|| {
+                                        config
+                                            .effective_led_gpio
+                                            .map(|g| format!("GPIO {g} (default)"))
+                                    })
                                     .unwrap_or_else(|| "Firmware default".into()),
                             ),
                     )
@@ -326,6 +403,11 @@ impl HomeViewModel {
                                 config
                                     .touch_timeout
                                     .map(|t| format!("{}s", t))
+                                    .or_else(|| {
+                                        config
+                                            .effective_touch_timeout
+                                            .map(|t| format!("{t}s (default)"))
+                                    })
                                     .unwrap_or_else(|| "Firmware default".into()),
                             ),
                     )

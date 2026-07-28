@@ -25,6 +25,22 @@ pub struct DeviceInfo {
     pub flash_used: Option<u32>,
     pub flash_total: Option<u32>,
     pub firmware_version: String,
+    /// USB bcdDevice (FIDO transport only; `None` over the Rescue/PC-SC channel,
+    /// which has no USB descriptor). RS-Key's real build id, distinct from the
+    /// impersonated CTAP `firmware_version`.
+    #[serde(default)]
+    pub bcd_device: Option<u16>,
+    /// USB iManufacturer string (FIDO transport only). Display-only; RS-Key
+    /// derives it from the effective VID at runtime.
+    #[serde(default)]
+    pub manufacturer: Option<String>,
+    /// Number of objects stored in the KV filesystem (RS-Key rescue FlashInfo).
+    #[serde(default)]
+    pub flash_files: Option<u32>,
+    /// Total onboard flash chip size in bytes (RS-Key rescue FlashInfo). Distinct
+    /// from `flash_total`, which is only the KV partition the credentials live in.
+    #[serde(default)]
+    pub flash_chip_size: Option<u32>,
 }
 
 /// Full device configuration (USB descriptors, LED, touch, crypto options).
@@ -34,6 +50,10 @@ pub struct AppConfig {
     pub vid: String,
     pub pid: String,
     pub product_name: String,
+    /// USB iManufacturer override (phy tag 0x0F). Empty = the VID-derived
+    /// default (Yubico VID → "Yubico", else the build's manufacturer const).
+    #[serde(default)]
+    pub manufacturer_name: String,
     /// GPIO pin the status LED is connected to. `None` = no phy override, i.e.
     /// the firmware's build-time default (which the device doesn't report back).
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -65,6 +85,16 @@ pub struct AppConfig {
     /// Number of individual LEDs on the device.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub led_num: Option<u8>,
+    /// Boot-resolved effective values the device reports (CONFIG_READ key 2, RS-Key
+    /// 0x0852+): shown as placeholders where there is no explicit override, so the
+    /// UI displays the real value instead of a bare "firmware default". `None` =
+    /// not reported (older firmware, rescue transport, or a headless build).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub effective_led_gpio: Option<u8>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub effective_led_driver: Option<u8>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub effective_touch_timeout: Option<u8>,
 }
 
 /// Partial config update; `None` fields are left unchanged on the device.
@@ -74,6 +104,7 @@ pub struct AppConfigInput {
     pub vid: Option<String>,
     pub pid: Option<String>,
     pub product_name: Option<String>,
+    pub manufacturer_name: Option<String>,
     pub led_gpio: Option<u8>,
     pub led_brightness: Option<u8>,
     pub touch_timeout: Option<u8>,

@@ -9,8 +9,12 @@
 use crate::ui::components::sidebar::{AppSidebar, SidebarEvent};
 use crate::ui::models::device::{DeviceEvent, DeviceRepo};
 use crate::ui::screens::{
-    about::AboutViewModel, config::ConfigViewModel, home::HomeViewModel, passkeys::PasskeysEvent,
-    passkeys::PasskeysViewModel, security::SecurityViewModel,
+    about::AboutViewModel, accounts::AccountsEvent, accounts::AccountsViewModel,
+    attestation::AttestationEvent, attestation::AttestationViewModel, audit::AuditViewModel,
+    backup::BackupViewModel, config::ConfigViewModel, home::HomeViewModel, lock::LockViewModel,
+    offboard::OffboardEvent, offboard::OffboardViewModel, openpgp::OpenPgpEvent,
+    openpgp::OpenPgpViewModel, passkeys::PasskeysEvent, passkeys::PasskeysViewModel, piv::PivEvent,
+    piv::PivViewModel, security::SecurityViewModel, slots::SlotsEvent, slots::SlotsViewModel,
 };
 use gpui::prelude::*;
 use gpui::*;
@@ -33,6 +37,15 @@ pub struct ViewModelStore {
     pub about: Option<Entity<AboutViewModel>>,
     pub security: Option<Entity<SecurityViewModel>>,
     pub passkeys: Option<Entity<PasskeysViewModel>>,
+    pub accounts: Option<Entity<AccountsViewModel>>,
+    pub slots: Option<Entity<SlotsViewModel>>,
+    pub piv: Option<Entity<PivViewModel>>,
+    pub openpgp: Option<Entity<OpenPgpViewModel>>,
+    pub audit: Option<Entity<AuditViewModel>>,
+    pub backup: Option<Entity<BackupViewModel>>,
+    pub lock: Option<Entity<LockViewModel>>,
+    pub attestation: Option<Entity<AttestationViewModel>>,
+    pub offboard: Option<Entity<OffboardViewModel>>,
     pub config: Option<Entity<ConfigViewModel>>,
 }
 
@@ -44,6 +57,15 @@ impl ViewModelStore {
             about: None,
             security: None,
             passkeys: None,
+            accounts: None,
+            slots: None,
+            piv: None,
+            openpgp: None,
+            audit: None,
+            backup: None,
+            lock: None,
+            attestation: None,
+            offboard: None,
             config: None,
         }
     }
@@ -54,6 +76,15 @@ impl ViewModelStore {
 pub enum Destination {
     Home,
     Passkeys,
+    Accounts,
+    Slots,
+    Piv,
+    OpenPgp,
+    Audit,
+    Backup,
+    Lock,
+    Attestation,
+    Offboard,
     Configuration,
     Security,
     About,
@@ -178,6 +209,120 @@ impl Render for ApplicationRoot {
                             window,
                             |_, _, event: &PasskeysEvent, window, cx| match event {
                                 PasskeysEvent::Notification(msg) => {
+                                    window.push_notification(msg.to_string(), cx);
+                                }
+                            },
+                        )
+                        .detach();
+                        view
+                    });
+                    view.clone().into_any_element()
+                }
+                Destination::Accounts => {
+                    let view = self.views_store.accounts.get_or_insert_with(|| {
+                        let view = cx.new(|cx| AccountsViewModel::new(window, cx, &self.models));
+                        cx.subscribe_in(
+                            &view,
+                            window,
+                            |_, _, event: &AccountsEvent, window, cx| match event {
+                                AccountsEvent::Notification(msg) => {
+                                    window.push_notification(msg.to_string(), cx);
+                                }
+                            },
+                        )
+                        .detach();
+                        view
+                    });
+                    view.clone().into_any_element()
+                }
+                Destination::Slots => {
+                    let view = self.views_store.slots.get_or_insert_with(|| {
+                        let view = cx.new(|cx| SlotsViewModel::new(window, cx, &self.models));
+                        cx.subscribe_in(&view, window, |_, _, event: &SlotsEvent, window, cx| {
+                            match event {
+                                SlotsEvent::Notification(msg) => {
+                                    window.push_notification(msg.to_string(), cx);
+                                }
+                            }
+                        })
+                        .detach();
+                        view
+                    });
+                    view.clone().into_any_element()
+                }
+                Destination::Piv => {
+                    let view = self.views_store.piv.get_or_insert_with(|| {
+                        let view = cx.new(|cx| PivViewModel::new(window, cx, &self.models));
+                        cx.subscribe_in(&view, window, |_, _, event: &PivEvent, window, cx| {
+                            match event {
+                                PivEvent::Notification(msg) => {
+                                    window.push_notification(msg.to_string(), cx);
+                                }
+                            }
+                        })
+                        .detach();
+                        view
+                    });
+                    view.clone().into_any_element()
+                }
+                Destination::OpenPgp => {
+                    let view = self.views_store.openpgp.get_or_insert_with(|| {
+                        let view = cx.new(|cx| OpenPgpViewModel::new(window, cx, &self.models));
+                        cx.subscribe_in(&view, window, |_, _, event: &OpenPgpEvent, window, cx| {
+                            match event {
+                                OpenPgpEvent::Notification(msg) => {
+                                    window.push_notification(msg.to_string(), cx);
+                                }
+                            }
+                        })
+                        .detach();
+                        view
+                    });
+                    view.clone().into_any_element()
+                }
+                Destination::Audit => {
+                    let view = self.views_store.audit.get_or_insert_with(|| {
+                        cx.new(|cx| AuditViewModel::new(window, cx, &self.models))
+                    });
+                    view.clone().into_any_element()
+                }
+                Destination::Backup => {
+                    let view = self.views_store.backup.get_or_insert_with(|| {
+                        cx.new(|cx| BackupViewModel::new(window, cx, &self.models))
+                    });
+                    view.clone().into_any_element()
+                }
+                Destination::Lock => {
+                    let view = self.views_store.lock.get_or_insert_with(|| {
+                        cx.new(|cx| LockViewModel::new(window, cx, &self.models))
+                    });
+                    view.clone().into_any_element()
+                }
+                Destination::Attestation => {
+                    let view = self.views_store.attestation.get_or_insert_with(|| {
+                        let view = cx.new(|cx| AttestationViewModel::new(window, cx, &self.models));
+                        cx.subscribe_in(
+                            &view,
+                            window,
+                            |_, _, event: &AttestationEvent, window, cx| match event {
+                                AttestationEvent::Notification(msg) => {
+                                    window.push_notification(msg.to_string(), cx);
+                                }
+                            },
+                        )
+                        .detach();
+                        view
+                    });
+                    view.clone().into_any_element()
+                }
+                Destination::Offboard => {
+                    let view = self.views_store.offboard.get_or_insert_with(|| {
+                        let view = cx.new(|cx| OffboardViewModel::new(window, cx, &self.models));
+                        cx.subscribe_in(
+                            &view,
+                            window,
+                            |_, _, event: &OffboardEvent, window, cx| match event {
+                                OffboardEvent::Notification(msg) => {
                                     window.push_notification(msg.to_string(), cx);
                                 }
                             },

@@ -33,10 +33,13 @@
 //! [`io`] sits on top and exposes one function per device operation,
 //! selecting the correct protocol path based on the detected firmware.
 
+pub mod apdu;
+pub mod applets;
 pub mod common;
 pub mod fido;
 pub mod firmwares;
 pub mod io;
+pub mod offboard;
 pub mod rescue;
 pub mod transport;
 pub mod types;

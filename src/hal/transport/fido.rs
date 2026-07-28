@@ -159,6 +159,12 @@ pub struct HidTransport {
     pub vid: u16,
     pub pid: u16,
     pub product_name: String,
+    /// USB iManufacturer string. RS-Key derives it from the effective VID at
+    /// runtime (Yubico when the VID is 0x1050), so it is display-only, not settable.
+    pub manufacturer: Option<String>,
+    /// USB bcdDevice from the device descriptor. RS-Key encodes its real build
+    /// id here (the CTAP getInfo firmwareVersion is an impersonated YubiKey value).
+    pub release_number: u16,
 }
 
 impl HidTransport {
@@ -191,6 +197,8 @@ impl HidTransport {
 
         let vid = info.vendor_id();
         let pid = info.product_id();
+        let release_number = info.release_number();
+        let manufacturer = info.manufacturer_string().map(|s| s.to_string());
         let product_name = info
             .product_string()
             .unwrap_or("Unknown FIDO Device")
@@ -214,6 +222,8 @@ impl HidTransport {
             vid,
             pid,
             product_name,
+            manufacturer,
+            release_number,
         })
     }
 
@@ -338,6 +348,18 @@ impl HidTransport {
     pub fn send_raw(&self, cmd: u8, payload: &[u8]) -> Result<Vec<u8>, PFError> {
         self.write_cbor_request(cmd, payload)?;
         self.read_hid_response(cmd, HID_TOTAL_TIMEOUT_MS)
+    }
+
+    /// Like [`send_raw`](HidTransport::send_raw) but with a caller-chosen read
+    /// timeout — for touch-gated vendor commands that block on a button press.
+    pub fn send_raw_with_timeout(
+        &self,
+        cmd: u8,
+        payload: &[u8],
+        timeout_ms: i32,
+    ) -> Result<Vec<u8>, PFError> {
+        self.write_cbor_request(cmd, payload)?;
+        self.read_hid_response(cmd, timeout_ms)
     }
 
     /// Send the CTAP authenticatorReset command (0x07).
