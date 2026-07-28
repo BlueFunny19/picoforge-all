@@ -90,18 +90,19 @@ impl ConfigViewModel {
     ) -> impl IntoElement {
         // GPIO pin + driver are the LED hardware topology — always shown.
         let mut content = v_flex().gap_4().child(
-            h_flex()
+            div()
+                .grid()
+                .grid_cols(2)
                 .gap_4()
-                .flex_wrap()
                 .child(
-                    v_flex().gap_2().flex_1().child("LED GPIO Pin").child(
+                    v_flex().gap_2().child("LED GPIO Pin").child(
                         Input::new(&self.led_gpio_input)
                             .bg(rgb(0x222225))
                             .disabled(hardware_config_disabled),
                     ),
                 )
                 .child(
-                    v_flex().gap_2().flex_1().child("LED Driver").child(
+                    v_flex().gap_2().child("LED Driver").child(
                         Select::new(&self.led_driver_select)
                             .w_full()
                             .bg(rgb(0x222225))
@@ -553,8 +554,7 @@ impl Render for ConfigViewModel {
                             .child("No Device Connected"),
                     ),
                 theme,
-            )
-            .into_any_element();
+            );
         }
 
         let device = self.device.read(cx);
@@ -587,7 +587,7 @@ impl Render for ConfigViewModel {
             .render_touch_card(cx.theme(), is_fido_no_rskey)
             .into_any_element();
 
-        let mut inner = v_flex().gap_6().child(identity_card);
+        let mut inner = v_flex().gap_6().w_full().child(identity_card);
 
         // RS-Key: put the functional config (which apps + transports are on)
         // right after Identity, before appearance/misc, so the panel reads
@@ -634,6 +634,5 @@ impl Render for ConfigViewModel {
             inner,
             theme,
         )
-        .into_any_element()
     }
 }

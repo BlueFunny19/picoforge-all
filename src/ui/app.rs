@@ -192,6 +192,7 @@ impl Render for ApplicationRoot {
             .min_h(px(0.))
             .min_w(px(0.))
             .overflow_y_scrollbar()
+            .w_full()
             .flex_grow()
             .bg(cx.theme().background)
             .child(match self.active_destination {

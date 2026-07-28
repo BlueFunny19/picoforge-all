@@ -42,7 +42,7 @@ impl Render for AboutViewModel {
                                             .text_color(theme.muted_foreground)
                                             .max_w(px(450.0))
                                             .child(
-                                                "An open source commissioning tool for pico-fido and rs-key security keys. Developed with Rust and GPUI.",
+                                                "An open source commissioning tool for RS-Key and pico-fido security keys. Developed with Rust and GPUI.",
                                             ),
                                     )
                                     .child(
