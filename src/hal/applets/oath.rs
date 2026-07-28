@@ -1,7 +1,7 @@
 //! YKOATH (Yubico OATH) applet client — TOTP/HOTP account management.
 //!
 //! Speaks the standard Yubico OATH wire protocol over a
-//! [`CcidSession`](crate::hal::transport::ccid::CcidSession), so it is
+//! [`CcidSession`], so it is
 //! firmware-agnostic (RS-Key emulates the same AID and command set). The device
 //! holds the secrets and computes the codes; the host only frames commands,
 //! parses responses, and — for password-protected devices — derives the access
