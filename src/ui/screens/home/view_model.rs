@@ -23,7 +23,7 @@ impl HomeViewModel {
     /// behaviour change), not a BCD-encoded version number — there is no
     /// mathematical conversion to semver.  This table provides the known
     /// mapping for released versions.  The data comes from the RS-Key
-    /// CHANGELOG (https://github.com/TheMaxMur/RS-Key/blob/main/CHANGELOG.md)
+    /// CHANGELOG (<https://github.com/TheMaxMur/RS-Key/blob/main/CHANGELOG.md>)
     /// and the project's git tags.
     ///
     /// When RS-Key ships a new release, add its `bcdDevice` value(s) here.
