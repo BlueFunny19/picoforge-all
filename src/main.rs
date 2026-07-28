@@ -957,7 +957,7 @@ fn main() {
                 window_decorations: Some(gpui::WindowDecorations::Client),
 
                 window_min_size: Some(gpui::Size {
-                    width: px(450.),
+                    width: px(500.),
                     height: px(400.),
                 }),
                 kind: WindowKind::Normal,

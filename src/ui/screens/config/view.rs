@@ -459,6 +459,8 @@ impl ConfigViewModel {
             div()
                 .text_sm()
                 .text_color(rgb(0xf59e0b))
+                .w_full()
+                .max_w(px(800.0))
                 .child("Advanced. HID off disables all FIDO2/U2F; CCID off disables every smart-card app (and the rescue applet). The firmware always keeps one of them, so you can't lock yourself out here."),
         );
 
@@ -511,6 +513,8 @@ impl ConfigViewModel {
                             div()
                                 .text_sm()
                                 .text_color(theme.muted_foreground)
+                                .w_full()
+                                .max_w(px(600.0))
                                 .child(desc),
                         ),
                     )
