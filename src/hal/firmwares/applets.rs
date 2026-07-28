@@ -71,9 +71,27 @@ impl AppletProfile for RSKeyFirmware {
     }
 }
 
-// No applet data for pico-fido / other firmwares yet — a maintainer supplies it
-// when the wire facts are known. Until then screens render "not characterised".
-impl AppletProfile for PicoFidoFirmware {}
+impl AppletProfile for PicoFidoFirmware {
+    fn oath(&self) -> Option<OathFeatures> {
+        Some(OathFeatures {
+            rename: true,
+            touch: true,
+            sha512: true,
+            password: true,
+        })
+    }
+
+    fn otp(&self) -> Option<OtpFeatures> {
+        Some(OtpFeatures {
+            slots: 4,
+            chalresp: true,
+            hotp: true,
+            static_pw: true,
+            yubiotp: true,
+            swap: true,
+        })
+    }
+}
 
 impl AnyFirmware {
     /// OATH feature profile for the inner firmware.
