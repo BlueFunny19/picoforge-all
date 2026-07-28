@@ -416,12 +416,14 @@ impl PivViewModel {
             "New PIN",
             window,
             cx,
-            |puk, new| DeviceRepo::piv_unblock_pin_blocking(puk, new),
+            DeviceRepo::piv_unblock_pin_blocking,
             "PIN unblocked.",
         );
     }
 
     /// A two-masked-field dialog (current/new or puk/new) running a blocking op.
+    // TODO: refactor into parameter struct to remove this clippy escape
+    #[allow(clippy::too_many_arguments)]
     fn two_secret_dialog(
         &mut self,
         title: &'static str,

@@ -1,6 +1,7 @@
 //! View model for the Audit screen — export and verify the device's
 //! tamper-evident security journal.
 
+use crate::ui::DialogSubmit;
 use crate::ui::app::AppModels;
 use crate::ui::components::applet_gate::AppletGate;
 use crate::ui::components::dialog;
@@ -320,7 +321,7 @@ impl AuditViewModel {
         body: &'static str,
         pin: Entity<InputState>,
         extra: Option<(&'static str, Entity<InputState>)>,
-        submit: std::rc::Rc<dyn Fn(&mut Window, &mut App)>,
+        submit: DialogSubmit,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {

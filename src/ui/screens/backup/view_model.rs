@@ -1,5 +1,6 @@
 //! View model for the Backup screen — wallet-style FIDO seed export/restore.
 
+use crate::ui::DialogSubmit;
 use crate::ui::app::AppModels;
 use crate::ui::components::applet_gate::AppletGate;
 use crate::ui::components::dialog;
@@ -265,7 +266,7 @@ impl BackupViewModel {
         pin: Entity<InputState>,
         extra: Option<(&'static str, Entity<InputState>)>,
         action: (&'static str, ButtonVariant),
-        submit: std::rc::Rc<dyn Fn(&mut Window, &mut App)>,
+        submit: DialogSubmit,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {

@@ -567,6 +567,8 @@ impl ConfigViewModel {
         }
     }
 
+    // TODO: refactor into parameter struct to remove this clippy escape
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn write_config_to_device(
         &mut self,
         phy: Option<AppConfigInput>,

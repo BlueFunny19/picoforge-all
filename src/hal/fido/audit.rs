@@ -171,7 +171,7 @@ pub fn build_journal(
     entries_bytes: &[u8],
 ) -> Result<AuditJournal, String> {
     let expected = (seq_next.saturating_sub(start) as usize) * ENTRY_LEN;
-    if entries_bytes.len() % ENTRY_LEN != 0 || entries_bytes.len() != expected {
+    if !entries_bytes.len().is_multiple_of(ENTRY_LEN) || entries_bytes.len() != expected {
         return Err("export length does not match the window — corrupt journal?".into());
     }
     Ok(AuditJournal {

@@ -261,7 +261,7 @@ const MODHEX: &[u8; 16] = b"cbdefghijklnrtuv";
 /// Decode a modhex string (Yubico's keyboard-safe hex) into bytes.
 pub fn modhex_decode(s: &str) -> Option<Vec<u8>> {
     let s = s.trim();
-    if s.is_empty() || s.len() % 2 != 0 {
+    if s.is_empty() || !s.len().is_multiple_of(2) {
         return None;
     }
     let bytes = s.as_bytes();
@@ -356,8 +356,11 @@ pub fn random_secret() -> Result<[u8; SECRET_LEN], PFError> {
     Ok(s)
 }
 
+/// (public id, private id, AES key) for a Yubico OTP slot.
+pub type YubicoKeyMaterial = ([u8; 6], [u8; 6], [u8; 16]);
+
 /// Random (public id, private id, AES key) for a self-generated Yubico OTP slot.
-pub fn random_yubico() -> Result<([u8; 6], [u8; 6], [u8; 16]), PFError> {
+pub fn random_yubico() -> Result<YubicoKeyMaterial, PFError> {
     let mut buf = [0u8; 28];
     SystemRandom::new()
         .fill(&mut buf)

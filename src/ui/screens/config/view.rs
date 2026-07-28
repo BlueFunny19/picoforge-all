@@ -310,9 +310,7 @@ impl ConfigViewModel {
 
             let inc_bright_listener = cx.listener(move |this, _, _, cx| {
                 let b = this.led_status_brightness[i];
-                this.led_status_brightness[i] = b
-                    .saturating_add(LED_BRIGHTNESS_STEP)
-                    .min(LED_BRIGHTNESS_MAX);
+                this.led_status_brightness[i] = b.saturating_add(LED_BRIGHTNESS_STEP);
                 cx.notify();
             });
 
@@ -373,7 +371,7 @@ impl ConfigViewModel {
                                             .active(rgb(0x3f3f46).into())
                                             .border(theme.border),
                                     )
-                                    .disabled(is_fido || brightness_val >= LED_BRIGHTNESS_MAX)
+                                    .disabled(is_fido || brightness_val == LED_BRIGHTNESS_MAX)
                                     .on_click(inc_bright_listener),
                             ),
                     ),

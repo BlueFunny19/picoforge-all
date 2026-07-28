@@ -50,9 +50,9 @@ impl HomeViewModel {
     /// Human-readable flash chip size. RP2350 boards are whole-MB (2/4/16 MB).
     fn format_flash_size(bytes: u32) -> String {
         const MB: u32 = 1024 * 1024;
-        if bytes >= MB && bytes % MB == 0 {
+        if bytes >= MB && bytes.is_multiple_of(MB) {
             format!("{} MB", bytes / MB)
-        } else if bytes >= 1024 && bytes % 1024 == 0 {
+        } else if bytes >= 1024 && bytes.is_multiple_of(1024) {
             format!("{} KB", bytes / 1024)
         } else {
             format!("{} B", bytes)

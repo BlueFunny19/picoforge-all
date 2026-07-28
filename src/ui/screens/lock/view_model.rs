@@ -1,5 +1,6 @@
 //! View model for the Lock screen — at-rest soft-lock of the FIDO seed.
 
+use crate::ui::DialogSubmit;
 use crate::ui::app::AppModels;
 use crate::ui::components::applet_gate::AppletGate;
 use crate::ui::components::dialog;
@@ -281,7 +282,7 @@ impl LockViewModel {
         extra: Option<(&'static str, Entity<InputState>)>,
         pin: Entity<InputState>,
         action: (&'static str, ButtonVariant),
-        submit: std::rc::Rc<dyn Fn(&mut Window, &mut App)>,
+        submit: DialogSubmit,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
@@ -329,7 +330,7 @@ impl LockViewModel {
         body: &'static str,
         phrase: Entity<InputState>,
         action: (&'static str, ButtonVariant),
-        submit: std::rc::Rc<dyn Fn(&mut Window, &mut App)>,
+        submit: DialogSubmit,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
