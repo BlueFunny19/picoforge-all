@@ -72,6 +72,36 @@ install -m 644 static/appIcons/in.suyogtandel.picoforge.svg %{buildroot}%{_datad
 %{_datadir}/icons/hicolor/scalable/apps/in.suyogtandel.picoforge.svg
 
 %changelog
+* Tue Jul 28 2026 Suyog Tandel <git@suyogtandel.in> 0.8.0-1
+- chore: sync spec to 0.8.0-1 [skip ci] (git@suyogtandel.in)
+- chore: update screenshot urls in metainfo file (git@suyogtandel.in)
+- feat: add totp and slot support with pico-fido firmware (git@suyogtandel.in)
+- fix: config screen ui overflowing out of the window view (git@suyogtandel.in)
+- chore: tried fixing config view (git@suyogtandel.in)
+- fix: bare url doc error in home view_model failing ci (git@suyogtandel.in)
+- feat: map RS-Key bcdDevice to release tag, convert buttons to PFButton, fix
+  sidebar clipping (git@suyogtandel.in)
+- chore: bump app ver to 0.8 (git@suyogtandel.in)
+- fix: rustdoc issues (git@suyogtandel.in)
+- fix: clippy issues on latest rustc (git@suyogtandel.in)
+- chore(fmt): run cargo fmt with latest rustc (git@suyogtandel.in)
+- fmt: Run cargo fmt (muravjev.mak@yandex.ru)
+- feat(ui): RS-Key applet + management screens (muravjev.mak@yandex.ru)
+- feat(hal): RS-Key CCID applets + FIDO vendor management
+  (muravjev.mak@yandex.ru)
+- chore(deps): add bip39 for RS-Key seed backup (muravjev.mak@yandex.ru)
+- ci: update nix channel and action versions
+  (226018678+jetcookies@users.noreply.github.com)
+- ci(fix): appimage build script metainfo asset (git@suyogtandel.in)
+- ci: drop .deb and .tar.gz pkgs from releases (git@suyogtandel.in)
+- refactor: flatpak build script (git@suyogtandel.in)
+- ci[release]: refactor appimage build script to include appimage auto update
+  info (git@suyogtandel.in)
+- ci/cd: new improved appimage builds for picoforge release workflow
+  (git@suyogtandel.in)
+- chore: clean unused workflows (git@suyogtandel.in)
+- docs: update installation guide for openSUSE Tumbleweed (git@suyogtandel.in)
+
 * Sun Jul 19 2026 Suyog Tandel <git@suyogtandel.in> 0.7.1-1
 - chore: sync spec to 0.7.1-1 [skip ci] (git@suyogtandel.in)
 - feat: update flathub metainfo and increment app ver to 0.7.1
