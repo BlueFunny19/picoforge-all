@@ -59,6 +59,23 @@
   </screenshots>
 
   <releases>
+    <release version="0.8.0" date="2026-07-28">
+        <url type="details">https://github.com/librekeys/picoforge/releases/tag/v0.8.0</url>
+        <description translate="no">
+        <p>Release 0.8.0</p>
+        <ul>
+            <li>Full RS-Key firmware support with CCID applet management: OATH (accounts/2FA TOTP), PIV certificates, OpenPGP card, and OTP slot programming</li>
+            <li>FIDO seed backup — export RS-Key recovery seed as a BIP39 mnemonic phrase</li>
+            <li>Device offboarding and factory reset screen</li>
+            <li>Device lock/unlock screen for managing PIN and device access</li>
+            <li>Audit log viewer to inspect security events stored on the device</li>
+            <li>Attestation certificate viewer for FIDO attestation certificates</li>
+            <li>Native CCID (PC/SC) transport layer with APDU/TLV codec for smart card applets</li>
+            <li>Containerized AppImage builds with auto-update support</li>
+            <li>Reorganized sidebar with entries for all new management screens</li>
+        </ul>
+        </description>
+    </release>
     <release version="0.7.1" date="2026-07-19">
         <url type="details">https://github.com/librekeys/picoforge/releases/tag/v0.7.1</url>
         <description translate="no">

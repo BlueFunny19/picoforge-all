@@ -23,7 +23,7 @@
 > **RP2350 (Pico2) Notice:** If you are using an RP2350-based device (Pico2, etc.), please switch to [RS-Key](https://github.com/TheMaxMur/RS-Key) firmware instead of pico-fido for better support while using picoforge.
 >
 > **Supported Firmwares:**
-> - **[RS-Key](https://github.com/TheMaxMur/RS-Key)**: v0.3.X
+> - **[RS-Key](https://github.com/TheMaxMur/RS-Key)**: v0.3.X, 0.4.X
 > - **[pico-fido](https://github.com/polhenarejos/pico-fido)**: v7.0, v7.2, v7.4, v7.6
 > - **[LibreKeys One](https://github.com/librekeys/pico-fido-firmwares/releases)**: v7.4.2
 >
