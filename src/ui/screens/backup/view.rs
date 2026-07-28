@@ -1,5 +1,6 @@
 //! Backup screen rendering.
 
+use crate::ui::components::button::PFButton;
 use crate::ui::components::card::Card;
 use crate::ui::components::page_view::PageView;
 use crate::ui::screens::backup::view_model::BackupViewModel;
@@ -32,7 +33,7 @@ impl BackupViewModel {
         &self,
         title: &'static str,
         subtitle: &'static str,
-        btn: Button,
+        btn: impl IntoElement,
         theme: &Theme,
     ) -> impl IntoElement {
         h_flex()
@@ -130,9 +131,9 @@ impl Render for BackupViewModel {
             .danger()
             .disabled(self.loading)
             .on_click(cx.listener(|this, _, window, cx| this.open_export(window, cx)));
-        let seal_btn = Button::new("bk-seal")
-            .label("Seal window")
-            .outline()
+        let seal_btn = PFButton::new("Seal window")
+            .id("bk-seal")
+            .with_colors(rgb(0x222225), rgb(0x2a2a2d), rgb(0x333336))
             .disabled(self.loading)
             .on_click(cx.listener(|this, _, window, cx| this.open_finalize(window, cx)));
         let restore_btn = Button::new("bk-restore")

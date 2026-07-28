@@ -1,5 +1,6 @@
 //! OpenPGP screen rendering.
 
+use crate::ui::components::button::PFButton;
 use crate::ui::components::card::Card;
 use crate::ui::components::page_view::PageView;
 use crate::ui::models::device::openpgp;
@@ -97,9 +98,9 @@ impl OpenPgpViewModel {
                     .gap_2()
                     .flex_wrap()
                     .child(
-                        Button::new(SharedString::from(format!("gen-{}", slot.label())))
-                            .label(if k.present { "Regenerate" } else { "Generate" })
-                            .outline()
+                        PFButton::new(if k.present { "Regenerate" } else { "Generate" })
+                            .id(format!("gen-{}", slot.label()))
+                            .with_colors(rgb(0x222225), rgb(0x2a2a2d), rgb(0x333336))
                             .disabled(d)
                             .on_click(cx.listener(move |this, _, window, cx| {
                                 this.open_generate(slot, window, cx);
@@ -122,7 +123,7 @@ impl OpenPgpViewModel {
         &self,
         title: &'static str,
         subtitle: &'static str,
-        btn: Button,
+        btn: impl IntoElement,
         theme: &Theme,
     ) -> impl IntoElement {
         h_flex()
@@ -171,29 +172,29 @@ impl Render for OpenPgpViewModel {
             .ghost()
             .disabled(self.loading)
             .on_click(cx.listener(|this, _, _, cx| this.refresh(cx)));
-        let change_user_btn = Button::new("pgp-change-user")
-            .label("Change User PIN")
-            .outline()
+        let change_user_btn = PFButton::new("Change User PIN")
+            .id("pgp-change-user")
+            .with_colors(rgb(0x222225), rgb(0x2a2a2d), rgb(0x333336))
             .on_click(cx.listener(|this, _, window, cx| this.open_change_user_pin(window, cx)));
-        let change_admin_btn = Button::new("pgp-change-admin")
-            .label("Change Admin PIN")
-            .outline()
+        let change_admin_btn = PFButton::new("Change Admin PIN")
+            .id("pgp-change-admin")
+            .with_colors(rgb(0x222225), rgb(0x2a2a2d), rgb(0x333336))
             .on_click(cx.listener(|this, _, window, cx| this.open_change_admin_pin(window, cx)));
-        let unblock_code_btn = Button::new("pgp-unblock-code")
-            .label("Reset code")
-            .outline()
+        let unblock_code_btn = PFButton::new("Reset code")
+            .id("pgp-unblock-code")
+            .with_colors(rgb(0x222225), rgb(0x2a2a2d), rgb(0x333336))
             .on_click(cx.listener(|this, _, window, cx| this.open_unblock_with_code(window, cx)));
-        let unblock_admin_btn = Button::new("pgp-unblock-admin")
-            .label("Admin PIN")
-            .outline()
+        let unblock_admin_btn = PFButton::new("Admin PIN")
+            .id("pgp-unblock-admin")
+            .with_colors(rgb(0x222225), rgb(0x2a2a2d), rgb(0x333336))
             .on_click(cx.listener(|this, _, window, cx| this.open_unblock_with_admin(window, cx)));
-        let reset_code_btn = Button::new("pgp-set-rc")
-            .label("Set reset code")
-            .outline()
+        let reset_code_btn = PFButton::new("Set reset code")
+            .id("pgp-set-rc")
+            .with_colors(rgb(0x222225), rgb(0x2a2a2d), rgb(0x333336))
             .on_click(cx.listener(|this, _, window, cx| this.open_set_reset_code(window, cx)));
-        let cardholder_btn = Button::new("pgp-cardholder")
-            .label("Edit")
-            .outline()
+        let cardholder_btn = PFButton::new("Edit")
+            .id("pgp-cardholder")
+            .with_colors(rgb(0x222225), rgb(0x2a2a2d), rgb(0x333336))
             .on_click(cx.listener(|this, _, window, cx| this.open_cardholder(window, cx)));
         let reset_btn = Button::new("pgp-reset")
             .label("Reset OpenPGP applet")

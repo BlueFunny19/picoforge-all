@@ -1,5 +1,6 @@
 //! Slots (OTP) screen rendering.
 
+use crate::ui::components::button::PFButton;
 use crate::ui::components::card::Card;
 use crate::ui::components::page_view::PageView;
 use crate::ui::models::device::otp;
@@ -44,9 +45,9 @@ impl SlotsViewModel {
             "Empty".to_string()
         };
 
-        let program_btn = Button::new(SharedString::from(format!("prog-{slot}")))
-            .label(if configured { "Reprogram" } else { "Program" })
-            .outline()
+        let program_btn = PFButton::new(if configured { "Reprogram" } else { "Program" })
+            .id(format!("prog-{slot}"))
+            .with_colors(rgb(0x222225), rgb(0x2a2a2d), rgb(0x333336))
             .disabled(self.loading)
             .on_click(cx.listener(move |this, _, window, cx| {
                 this.open_program_dialog(slot, window, cx);
@@ -137,7 +138,7 @@ impl Render for SlotsViewModel {
         let slots_card = Card::new()
             .title("Slots")
             .description(format!("{count} configurable slots"))
-            .icon(Icon::default().path("icons/asterisk.svg"))
+            .icon(Icon::default().path("icons/touch-app.svg"))
             .header_right(toolbar)
             .child(v_flex().gap_2().children(cards));
 

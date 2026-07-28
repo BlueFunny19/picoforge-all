@@ -1,5 +1,6 @@
 //! PIV screen rendering.
 
+use crate::ui::components::button::PFButton;
 use crate::ui::components::card::Card;
 use crate::ui::components::page_view::PageView;
 use crate::ui::models::device::piv;
@@ -78,9 +79,9 @@ impl PivViewModel {
         }
 
         let mut btns: Vec<AnyElement> = vec![
-            Button::new(SharedString::from(format!("gen-{slot:02x}")))
-                .label(if has_key { "Regenerate" } else { "Generate" })
-                .outline()
+            PFButton::new(if has_key { "Regenerate" } else { "Generate" })
+                .id(format!("gen-{slot:02x}"))
+                .with_colors(rgb(0x222225), rgb(0x2a2a2d), rgb(0x333336))
                 .disabled(d)
                 .on_click(cx.listener(move |this, _, window, cx| {
                     this.open_generate_dialog(slot, window, cx);
@@ -144,7 +145,7 @@ impl PivViewModel {
         &self,
         title: &'static str,
         subtitle: &'static str,
-        btn: Button,
+        btn: impl IntoElement,
         theme: &Theme,
     ) -> impl IntoElement {
         h_flex()
@@ -195,25 +196,25 @@ impl Render for PivViewModel {
             .ghost()
             .disabled(self.loading)
             .on_click(cx.listener(|this, _, _, cx| this.refresh(cx)));
-        let change_pin_btn = Button::new("piv-change-pin")
-            .label("Change PIN")
-            .outline()
+        let change_pin_btn = PFButton::new("Change PIN")
+            .id("piv-change-pin")
+            .with_colors(rgb(0x222225), rgb(0x2a2a2d), rgb(0x333336))
             .on_click(cx.listener(|this, _, window, cx| this.open_change_pin(false, window, cx)));
-        let change_puk_btn = Button::new("piv-change-puk")
-            .label("Change PUK")
-            .outline()
+        let change_puk_btn = PFButton::new("Change PUK")
+            .id("piv-change-puk")
+            .with_colors(rgb(0x222225), rgb(0x2a2a2d), rgb(0x333336))
             .on_click(cx.listener(|this, _, window, cx| this.open_change_pin(true, window, cx)));
-        let unblock_btn = Button::new("piv-unblock")
-            .label("Unblock PIN")
-            .outline()
+        let unblock_btn = PFButton::new("Unblock PIN")
+            .id("piv-unblock")
+            .with_colors(rgb(0x222225), rgb(0x2a2a2d), rgb(0x333336))
             .on_click(cx.listener(|this, _, window, cx| this.open_unblock_pin(window, cx)));
-        let retries_btn = Button::new("piv-retries")
-            .label("Set retries")
-            .outline()
+        let retries_btn = PFButton::new("Set retries")
+            .id("piv-retries")
+            .with_colors(rgb(0x222225), rgb(0x2a2a2d), rgb(0x333336))
             .on_click(cx.listener(|this, _, window, cx| this.open_set_retries(window, cx)));
-        let mgm_btn = Button::new("piv-mgm")
-            .label("Change key")
-            .outline()
+        let mgm_btn = PFButton::new("Change key")
+            .id("piv-mgm")
+            .with_colors(rgb(0x222225), rgb(0x2a2a2d), rgb(0x333336))
             .on_click(cx.listener(|this, _, window, cx| this.open_change_mgm(window, cx)));
         let reset_btn = Button::new("piv-reset")
             .label("Reset PIV applet")

@@ -1,12 +1,12 @@
 //! Audit screen rendering.
 
+use crate::ui::components::button::PFButton;
 use crate::ui::components::card::Card;
 use crate::ui::components::page_view::PageView;
 use crate::ui::models::device::audit;
 use crate::ui::screens::audit::view_model::AuditViewModel;
 use gpui::*;
-use gpui_component::button::Button;
-use gpui_component::{ActiveTheme, Disableable, Icon, StyledExt, Theme, h_flex, v_flex};
+use gpui_component::{ActiveTheme, Icon, StyledExt, Theme, h_flex, v_flex};
 
 fn empty_state(heading: &str, body: String, theme: &Theme) -> AnyElement {
     v_flex()
@@ -207,31 +207,30 @@ impl Render for AuditViewModel {
                 .into_any_element();
         }
 
-        let read_btn = Button::new("audit-read")
-            .icon(Icon::default().path("icons/refresh-cw.svg"))
-            .label("Read journal")
-            .outline()
+        let read_btn = PFButton::new("Read journal")
+            .id("audit-read")
+            .with_colors(rgb(0x222225), rgb(0x2a2a2d), rgb(0x333336))
             .disabled(self.loading)
             .on_click(cx.listener(|this, _, window, cx| this.open_read(window, cx)));
-        let verify_btn = Button::new("audit-verify")
-            .label("Verify")
-            .outline()
+        let verify_btn = PFButton::new("Verify")
+            .id("audit-verify")
+            .with_colors(rgb(0x222225), rgb(0x2a2a2d), rgb(0x333336))
             .disabled(self.loading)
             .on_click(cx.listener(|this, _, window, cx| this.open_verify(window, cx)));
         let toggle_btn = match self.enabled {
             Some(true) => Some(
-                Button::new("audit-disable")
-                    .label("Disable")
-                    .outline()
+                PFButton::new("Disable")
+                    .id("audit-disable")
+                    .with_colors(rgb(0x222225), rgb(0x2a2a2d), rgb(0x333336))
                     .disabled(self.loading)
                     .on_click(
                         cx.listener(|this, _, window, cx| this.open_toggle(false, window, cx)),
                     ),
             ),
             Some(false) => Some(
-                Button::new("audit-enable")
-                    .label("Enable")
-                    .outline()
+                PFButton::new("Enable")
+                    .id("audit-enable")
+                    .with_colors(rgb(0x222225), rgb(0x2a2a2d), rgb(0x333336))
                     .disabled(self.loading)
                     .on_click(
                         cx.listener(|this, _, window, cx| this.open_toggle(true, window, cx)),

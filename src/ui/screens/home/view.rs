@@ -41,7 +41,11 @@ impl HomeViewModel {
         if status.firmware_type == FirmwareType::RSKey
             && let Some(bcd) = status.info.bcd_device
         {
-            format!("RS-Key 0x{:04X}", bcd)
+            if let Some(ver) = Self::rs_key_version_from_bcd(bcd) {
+                format!("RS-Key {} (build 0x{:04X})", ver, bcd)
+            } else {
+                format!("RS-Key build 0x{:04X}", bcd)
+            }
         } else {
             format!("v{}", status.info.firmware_version)
         }

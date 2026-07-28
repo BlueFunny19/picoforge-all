@@ -268,7 +268,7 @@ impl Render for AccountsViewModel {
         let accounts_card = Card::new()
             .title("Accounts")
             .description(format!("{} stored", accounts.len()))
-            .icon(Icon::default().path("icons/key.svg"))
+            .icon(Icon::default().path("icons/users-round.svg"))
             .header_right(toolbar)
             .child(list);
         let reset_card = Card::new()

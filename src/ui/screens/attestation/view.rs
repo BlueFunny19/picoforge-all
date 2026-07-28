@@ -1,5 +1,6 @@
 //! Attestation screen rendering.
 
+use crate::ui::components::button::PFButton;
 use crate::ui::components::card::Card;
 use crate::ui::components::page_view::PageView;
 use crate::ui::screens::attestation::view_model::AttestationViewModel;
@@ -32,7 +33,7 @@ impl AttestationViewModel {
         &self,
         title: &'static str,
         subtitle: &'static str,
-        btn: Button,
+        btn: impl IntoElement,
         theme: &Theme,
     ) -> impl IntoElement {
         h_flex()
@@ -76,9 +77,9 @@ impl Render for AttestationViewModel {
             .ghost()
             .disabled(self.loading)
             .on_click(cx.listener(|this, _, _, cx| this.refresh(cx)));
-        let import_btn = Button::new("att-import")
-            .label(if installed { "Replace" } else { "Import" })
-            .outline()
+        let import_btn = PFButton::new(if installed { "Replace" } else { "Import" })
+            .id("att-import")
+            .with_colors(rgb(0x222225), rgb(0x2a2a2d), rgb(0x333336))
             .disabled(self.loading)
             .on_click(cx.listener(|this, _, window, cx| this.open_import(window, cx)));
         let clear_btn = Button::new("att-clear")

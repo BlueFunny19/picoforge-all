@@ -169,9 +169,7 @@ impl Render for AppSidebar {
         let nav_sidebar = Sidebar::new(Side::Left)
             .collapsed(sidebar_width < px(120.))
             .collapsible(false)
-            .h_auto()
             .w_full()
-            .flex_grow()
             .bg(sidebar_bg)
             .border_color(gpui::transparent_white())
             // Grouped so the panel reads as sections, not one long list: the
@@ -198,13 +196,13 @@ impl Render for AppSidebar {
                         .child(self.menu_item(
                             cx,
                             "Accounts",
-                            "icons/key.svg",
+                            "icons/users-round.svg",
                             Destination::Accounts,
                         ))
                         .child(self.menu_item(
                             cx,
                             "Slots",
-                            "icons/asterisk.svg",
+                            "icons/touch-app.svg",
                             Destination::Slots,
                         ))
                         .child(self.menu_item(cx, "PIV", "icons/shield.svg", Destination::Piv))
@@ -360,7 +358,13 @@ impl Render for AppSidebar {
             .border_color(border_color)
             .w(sidebar_width)
             .child(header)
-            .child(nav_sidebar)
+            .child(
+                div()
+                    .flex_1()
+                    .min_h(px(0.))
+                    .overflow_hidden()
+                    .child(nav_sidebar),
+            )
             .child(footer);
 
         div()
