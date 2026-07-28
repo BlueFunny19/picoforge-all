@@ -222,8 +222,10 @@ impl ProgramSlotForm {
                     match otp::modhex_decode(self.yk_public.read(cx).text().to_string().trim()) {
                         Some(p) if !p.is_empty() && p.len() <= 16 => p,
                         _ => {
-                            return self
-                                .notify(cx, "Public ID must be modhex (≤ 16 bytes) — use Generate");
+                            return self.notify(
+                                cx,
+                                "Public ID must be modhex (≤ 16 bytes) — use Generate",
+                            );
                         }
                     };
                 let private: [u8; 6] =
