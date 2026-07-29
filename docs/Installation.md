@@ -84,6 +84,66 @@ To have the pcscd service, you may need to install pcsc-lite if it is not instal
 - On Debian : `sudo apt install pcscd`
 - On NixOS, add this line in your /etc/nixos/configuration.nix : `services.pcscd.enable = true;`
 
+### Quick Install (Recommended)
+
+The fastest way to install PicoForge on any Linux distribution. The install script detects your architecture and libc, downloads the latest AppImage, and integrates it into your system with a desktop entry and icon.
+
+You can inspect the script on GitHub before running: [`install.sh`](https://github.com/librekeys/picoforge/blob/main/install.sh)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/librekeys/picoforge/main/install.sh | sh
+```
+
+Or with `wget`:
+
+```bash
+wget -qO- https://raw.githubusercontent.com/librekeys/picoforge/main/install.sh | sh
+```
+
+To remove PicoForge later:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/librekeys/picoforge/main/install.sh | sh -s -- --uninstall
+```
+
+Run `sh install.sh --help` for all available options.
+
+### Flathub
+
+Available as a Flatpak on Flathub:
+
+[![Get it on Flathub](https://flathub.org/api/badge?locale=en)](https://flathub.org/en-GB/apps/in.suyogtandel.picoforge)
+
+```bash
+flatpak install flathub in.suyogtandel.picoforge
+```
+
+### AppImage
+
+AppImage is a self-contained format that runs on almost any Linux distribution without installation.
+
+1. Download the `.AppImage` file from the [Latest Releases](https://github.com/librekeys/picoforge/releases/latest).
+2. Mark it as executable:
+   ```bash
+   chmod +x picoforge_*.AppImage
+   ```
+3. Run it:
+   ```bash
+   ./picoforge_*.AppImage
+   ```
+
+> [!NOTE]
+> If the AppImage does not start, you may be missing FUSE (Filesystem in Userspace), which is required on some newer distributions like Ubuntu 22.04+. Install `fuse3` via your package manager.
+
+#### Auto-updates with Gear Lever
+
+For automatic updates and desktop integration, use [Gear Lever](https://github.com/mijorus/gearlever). Install it via Flatpak:
+
+```bash
+flatpak install flathub it.mijorus.gearlever
+```
+
+Then open the downloaded `.AppImage` file with Gear Lever (or drag and drop it). It will manage updates and keep PicoForge in your application menu automatically.
 
 ### Fedora
 
@@ -117,29 +177,6 @@ sudo dnf install picoforge
 
 **Troubleshooting**: Ensure the EPEL repository is enabled on your system.
 
-### openSUSE
-
-#### Tumbleweed
-
-> [!IMPORTANT]
-> One more update, I am dropping support for OpenSUSE Tumbleweed builds via my [COPR Repository](https://copr.fedorainfracloud.org/coprs/lockedmutex/picoforge/), you can still install and use the leap 15.6 rpm from GitHub releases. However the official [COPR Repository](https://copr.fedorainfracloud.org/coprs/lockedmutex/picoforge/) will not be maintained anymore. Might move OpenSUSE builds to https://build.opensuse.org/ in future or use GitHub workflows to build RPMs specific to openSUSE tumbleweed.
-
-#### Leap 15.6
-
-```bash
-sudo zypper addrepo https://copr.fedorainfracloud.org/coprs/lockedmutex/picoforge/repo/opensuse-leap-15.6/lockedmutex-picoforge-opensuse-leap-15.6.repo
-sudo zypper refresh
-sudo zypper install picoforge
-```
-
-**Troubleshooting**: Verify the repository URL matches your distribution version.
-
-For manual RPM install, download the `picoforge-*.suse.lp156.*.rpm` from [Latest Releases](https://github.com/librekeys/picoforge/releases/latest).
-
-```bash
-sudo zypper install ./picoforge-*.suse.lp156.*.rpm
-```
-
 ### openEuler
 
 #### openEuler 24
@@ -150,62 +187,6 @@ PicoForge is available via COPR for openEuler 24.
 sudo dnf copr enable lockedmutex/picoforge
 sudo dnf install picoforge
 ```
-
-### Debian / Ubuntu
-
-For Debian and Ubuntu-based distributions, you can install the application using the `.deb` package.
-
-1.  Download the `.deb` file from the [Latest Releases](https://github.com/librekeys/picoforge/releases/latest).
-2.  Install dependencies and the package:
-
-<details>
-<summary><strong>Debian / Ubuntu Dependencies</strong></summary>
-
-```bash
-sudo apt update
-sudo apt install libwebkit2gtk-4.1-0 libgtk-3-0 libsoup-3.0-0 \
-libpcsclite1 pcscd pcsc-tools libhidapi-hidraw0 libsecret-1-0 \
-gstreamer1.0-plugins-base libavif16 libwebp7 libenchant-2-2
-```
-</details>
-
-```bash
-# Example installation command (replace with actual filename)
-sudo apt install ./picoforge_[version]_amd64.deb
-```
-
-### Other Distributions
-
-For distributions that do not have a native package or repository (e.g., Arch Linux), you can use AppImage.
-
-#### AppImage (Recommended)
-
-AppImage is the recommended way to run PicoForge on unsupported distributions. The format is self-contained and runs on almost any Linux distribution.
-
-1.  Download the `.AppImage` file from the [Latest Releases](https://github.com/librekeys/picoforge/releases/latest).
-2.  Mark the file as executable:
-    ```bash
-    chmod +x picoforge_*.AppImage
-    ```
-3.  Launch the file:
-    ```bash
-    ./picoforge_*.AppImage
-    ```
-
-> [!NOTE]
-> If the AppImage does not start, check if you are missing FUSE (Filesystem in Userspace), which is required for AppImages on some newer distributions like Ubuntu 22.04+.
-
-##### Managing AppImages with Gear Lever
-
-For a better experience, you can use [Gear Lever](https://github.com/mijorus/gearlever) to manage AppImages. It integrates AppImages into your application menu, handles updates, and keeps them organized in a dedicated folder.
-
-Install Gear Lever via Flatpak:
-
-```bash
-flatpak install flathub it.mijorus.gearlever
-```
-
-Once installed, simply open the downloaded `.AppImage` file with Gear Lever (or drag and drop it), and it will integrate PicoForge into your system — complete with a desktop entry and icon.
 
 ### Post-Installation
 

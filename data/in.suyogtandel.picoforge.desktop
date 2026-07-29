@@ -6,5 +6,6 @@ Icon=in.suyogtandel.picoforge
 Terminal=false
 Categories=Utility;
 Keywords=Config;
+StartupWMClass=in.suyogtandel.picoforge
 StartupNotify=true
 DBusActivatable=false
