@@ -72,6 +72,13 @@ install -m 644 static/appIcons/in.suyogtandel.picoforge.svg %{buildroot}%{_datad
 %{_datadir}/icons/hicolor/scalable/apps/in.suyogtandel.picoforge.svg
 
 %changelog
+* Thu Jul 30 2026 Suyog Tandel <git@suyogtandel.in> 0.9.0-1
+- chore: sync spec to 0.9.0-1 [skip ci] (git@suyogtandel.in)
+- chore: bump app ver to 0.9 and update metainfo (git@suyogtandel.in)
+- refactor: unify button styling across screens and fix OATH dialog placeholder
+  (git@suyogtandel.in)
+- feat: add application installation script for linux (git@suyogtandel.in)
+
 * Tue Jul 28 2026 Suyog Tandel <git@suyogtandel.in> 0.8.0-1
 - chore: sync spec to 0.8.0-1 [skip ci] (git@suyogtandel.in)
 - chore: update screenshot urls in metainfo file (git@suyogtandel.in)
