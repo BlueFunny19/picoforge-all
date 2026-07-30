@@ -6,7 +6,7 @@ use crate::ui::components::page_view::PageView;
 use crate::ui::models::device::openpgp;
 use crate::ui::screens::openpgp::view_model::OpenPgpViewModel;
 use gpui::*;
-use gpui_component::button::{Button, ButtonVariants};
+use gpui_component::button::{Button, ButtonCustomVariant, ButtonVariants};
 use gpui_component::{ActiveTheme, Disableable, Icon, StyledExt, Theme, h_flex, v_flex};
 
 fn empty_state(heading: &str, body: String, theme: &Theme) -> AnyElement {
@@ -107,9 +107,8 @@ impl OpenPgpViewModel {
                             })),
                     )
                     .child(
-                        Button::new(SharedString::from(format!("touch-{}", slot.label())))
-                            .label("Touch policy")
-                            .ghost()
+                        PFButton::new("Touch policy")
+                            .id(format!("touch-{}", slot.label()))
                             .disabled(d)
                             .on_click(cx.listener(move |this, _, window, cx| {
                                 this.open_touch(slot, window, cx);
@@ -166,10 +165,17 @@ impl Render for OpenPgpViewModel {
         for k in keys {
             key_rows.push(self.render_key_row(k, cx));
         }
+        let theme = cx.theme();
 
         let refresh_btn = Button::new("pgp-refresh")
             .icon(Icon::default().path("icons/refresh-cw.svg"))
-            .ghost()
+            .custom(
+                ButtonCustomVariant::new(cx)
+                    .color(rgb(0x1b1b1d).into())
+                    .hover(rgb(0x232325).into())
+                    .active(rgb(0x3f3f46).into())
+                    .border(theme.border),
+            )
             .disabled(self.loading)
             .on_click(cx.listener(|this, _, _, cx| this.refresh(cx)));
         let change_user_btn = PFButton::new("Change User PIN")
@@ -201,8 +207,6 @@ impl Render for OpenPgpViewModel {
             .danger()
             .disabled(self.loading)
             .on_click(cx.listener(|this, _, window, cx| this.open_reset_dialog(window, cx)));
-
-        let theme = cx.theme();
 
         let info_card = {
             let body = match &info {

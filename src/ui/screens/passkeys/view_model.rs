@@ -200,6 +200,7 @@ impl PasskeysViewModel {
         dialog::open_pin_prompt(
             "Unlock Storage",
             "Enter your device PIN to view saved passkeys",
+            "Enter FIDO PIN",
             None,
             "Unlock",
             window,
@@ -662,6 +663,7 @@ impl PasskeysViewModel {
         dialog::open_pin_prompt(
             "Enable Enterprise Attestation",
             "Enter your device PIN to enable enterprise attestation",
+            "Enter FIDO PIN",
             Some("This operation is irreversible"),
             "Enable",
             window,
@@ -739,6 +741,7 @@ impl PasskeysViewModel {
                 dialog::open_pin_prompt(
                     "Upload Certificate",
                     "Enter your device PIN to upload the certificate to the device",
+                    "Enter FIDO PIN",
                     None,
                     "Upload",
                     window,

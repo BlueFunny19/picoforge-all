@@ -1,11 +1,12 @@
 //! Accounts (OATH) screen rendering.
 
+use crate::ui::components::button::PFIconButton;
 use crate::ui::components::card::Card;
 use crate::ui::components::page_view::PageView;
 use crate::ui::models::device::oath;
 use crate::ui::screens::accounts::view_model::AccountsViewModel;
 use gpui::*;
-use gpui_component::button::{Button, ButtonVariants};
+use gpui_component::button::{Button, ButtonCustomVariant, ButtonVariants};
 use gpui_component::{ActiveTheme, Disableable, Icon, StyledExt, Theme, h_flex, v_flex};
 
 /// Split a numeric code into two halves for readability ("123 456").
@@ -227,14 +228,20 @@ impl Render for AccountsViewModel {
         } else {
             "Set password"
         };
-        let password_btn = Button::new("password-oath")
-            .icon(Icon::default().path("icons/lock.svg"))
-            .label(password_label)
-            .ghost()
-            .on_click(cx.listener(|this, _, window, cx| this.open_password_dialog(window, cx)));
+        let theme = cx.theme();
+        let password_btn =
+            PFIconButton::new(Icon::default().path("icons/lock.svg"), password_label)
+                .with_colors(rgb(0x222225), rgb(0x2a2a2d), rgb(0x333336))
+                .on_click(cx.listener(|this, _, window, cx| this.open_password_dialog(window, cx)));
         let refresh_btn = Button::new("refresh-oath")
             .icon(Icon::default().path("icons/refresh-cw.svg"))
-            .ghost()
+            .custom(
+                ButtonCustomVariant::new(cx)
+                    .color(rgb(0x1b1b1d).into())
+                    .hover(rgb(0x232325).into())
+                    .active(rgb(0x3f3f46).into())
+                    .border(theme.border),
+            )
             .disabled(self.loading)
             .on_click(cx.listener(|this, _, _, cx| this.refresh(cx)));
         let add_btn = Button::new("add-account")
@@ -249,7 +256,6 @@ impl Render for AccountsViewModel {
             .disabled(self.loading)
             .on_click(cx.listener(|this, _, window, cx| this.open_reset_dialog(window, cx)));
 
-        let theme = cx.theme();
         let toolbar = h_flex()
             .gap_2()
             .child(password_btn)

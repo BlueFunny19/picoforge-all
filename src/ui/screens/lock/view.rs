@@ -1,10 +1,11 @@
 //! Lock screen rendering.
 
+use crate::ui::components::button::PFButton;
 use crate::ui::components::card::Card;
 use crate::ui::components::page_view::PageView;
 use crate::ui::screens::lock::view_model::LockViewModel;
 use gpui::*;
-use gpui_component::button::{Button, ButtonVariants};
+use gpui_component::button::{Button, ButtonCustomVariant, ButtonVariants};
 use gpui_component::{ActiveTheme, Disableable, Icon, StyledExt, Theme, h_flex, v_flex};
 
 fn empty_state(heading: &str, body: String, theme: &Theme) -> AnyElement {
@@ -32,7 +33,7 @@ impl LockViewModel {
         &self,
         title: &'static str,
         subtitle: &'static str,
-        btn: Button,
+        btn: impl IntoElement,
         theme: &Theme,
     ) -> impl IntoElement {
         h_flex()
@@ -60,16 +61,14 @@ impl LockViewModel {
         let theme = cx.theme();
         let copy = {
             let p = phrase.to_string();
-            Button::new("lk-copy")
-                .label("Copy")
-                .ghost()
+            PFButton::new("Copy")
+                .id("lk-copy")
                 .on_click(cx.listener(move |_, _, _, cx| {
                     cx.write_to_clipboard(ClipboardItem::new_string(p.clone()));
                 }))
         };
-        let clear = Button::new("lk-clear")
-            .label("Clear from screen")
-            .ghost()
+        let clear = PFButton::new("Clear from screen")
+            .id("lk-clear")
             .on_click(cx.listener(|this, _, _, cx| this.clear_lock_key(cx)));
 
         Card::new()
@@ -119,10 +118,17 @@ impl Render for LockViewModel {
         let locked = status.map(|s| s.locked).unwrap_or(false);
         let lock_key = self.lock_key.clone();
         let lock_key_card = lock_key.map(|p| self.lock_key_card(&p, cx));
+        let theme = cx.theme();
 
         let refresh_btn = Button::new("lk-refresh")
             .icon(Icon::default().path("icons/refresh-cw.svg"))
-            .ghost()
+            .custom(
+                ButtonCustomVariant::new(cx)
+                    .color(rgb(0x1b1b1d).into())
+                    .hover(rgb(0x232325).into())
+                    .active(rgb(0x3f3f46).into())
+                    .border(theme.border),
+            )
             .disabled(self.loading)
             .on_click(cx.listener(|this, _, _, cx| this.refresh(cx)));
         let enable_btn = Button::new("lk-enable")
@@ -130,18 +136,16 @@ impl Render for LockViewModel {
             .danger()
             .disabled(self.loading || locked)
             .on_click(cx.listener(|this, _, window, cx| this.open_enable(window, cx)));
-        let unlock_btn = Button::new("lk-unlock")
-            .label("Unlock")
-            .outline()
+        let unlock_btn = PFButton::new("Unlock")
+            .id("lk-unlock")
+            .with_colors(rgb(0x222225), rgb(0x2a2a2d), rgb(0x333336))
             .disabled(self.loading || !locked)
             .on_click(cx.listener(|this, _, window, cx| this.open_unlock(window, cx)));
-        let disable_btn = Button::new("lk-disable")
-            .label("Disable lock")
-            .outline()
+        let disable_btn = PFButton::new("Disable lock")
+            .id("lk-disable")
+            .with_colors(rgb(0x222225), rgb(0x2a2a2d), rgb(0x333336))
             .disabled(self.loading || !locked)
             .on_click(cx.listener(|this, _, window, cx| this.open_disable(window, cx)));
-
-        let theme = cx.theme();
 
         let status_card = {
             let body =

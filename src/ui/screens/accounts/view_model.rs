@@ -212,6 +212,7 @@ impl AccountsViewModel {
         dialog::open_pin_prompt(
             "Unlock Accounts",
             "Enter the OATH password for this device.",
+            "OATH password",
             None,
             "Unlock",
             window,
@@ -269,6 +270,7 @@ impl AccountsViewModel {
         dialog::open_pin_prompt(
             "OATH Password",
             "Enter a new OATH password, or leave empty to remove password protection.",
+            "New OATH password",
             None,
             "Save",
             window,

@@ -278,9 +278,11 @@ impl Render for PinPromptContent {
 }
 
 /// Open a PIN prompt dialog and return the submitted PIN.
+#[allow(clippy::too_many_arguments)]
 pub fn open_pin_prompt(
     title: &str,
     description: &str,
+    placeholder: &str,
     warning: Option<&str>,
     confirm_label: &str,
     window: &mut Window,
@@ -289,12 +291,13 @@ pub fn open_pin_prompt(
 ) {
     let title_str = SharedString::from(title.to_string());
     let description = SharedString::from(description.to_string());
+    let placeholder_str = SharedString::from(placeholder.to_string());
     let warning = warning.map(|w| SharedString::from(w.to_string()));
     let confirm_label = SharedString::from(confirm_label.to_string());
 
     let pin_input = cx.new(|cx| {
         InputState::new(window, cx)
-            .placeholder("Enter FIDO PIN")
+            .placeholder(placeholder_str)
             .masked(true)
     });
 

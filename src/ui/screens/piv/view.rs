@@ -6,7 +6,7 @@ use crate::ui::components::page_view::PageView;
 use crate::ui::models::device::piv;
 use crate::ui::screens::piv::view_model::PivViewModel;
 use gpui::*;
-use gpui_component::button::{Button, ButtonVariants};
+use gpui_component::button::{Button, ButtonCustomVariant, ButtonVariants};
 use gpui_component::{ActiveTheme, Disableable, Icon, StyledExt, Theme, h_flex, v_flex};
 
 fn empty_state(heading: &str, body: String, theme: &Theme) -> AnyElement {
@@ -67,9 +67,8 @@ impl PivViewModel {
 
         macro_rules! btn {
             ($id:expr, $label:expr, $method:ident) => {
-                Button::new(SharedString::from(format!("{}-{slot:02x}", $id)))
-                    .label($label)
-                    .ghost()
+                PFButton::new($label)
+                    .id(format!("{}-{slot:02x}", $id))
                     .disabled(d)
                     .on_click(
                         cx.listener(move |this, _, window, cx| this.$method(slot, window, cx)),
@@ -191,9 +190,16 @@ impl Render for PivViewModel {
         }
 
         // Buttons.
+        let theme = cx.theme();
         let refresh_btn = Button::new("piv-refresh")
             .icon(Icon::default().path("icons/refresh-cw.svg"))
-            .ghost()
+            .custom(
+                ButtonCustomVariant::new(cx)
+                    .color(rgb(0x1b1b1d).into())
+                    .hover(rgb(0x232325).into())
+                    .active(rgb(0x3f3f46).into())
+                    .border(theme.border),
+            )
             .disabled(self.loading)
             .on_click(cx.listener(|this, _, _, cx| this.refresh(cx)));
         let change_pin_btn = PFButton::new("Change PIN")
@@ -221,8 +227,6 @@ impl Render for PivViewModel {
             .danger()
             .disabled(self.loading)
             .on_click(cx.listener(|this, _, window, cx| this.open_reset_dialog(window, cx)));
-
-        let theme = cx.theme();
 
         // Card information.
         let info_card = {

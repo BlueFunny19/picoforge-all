@@ -6,7 +6,7 @@ use crate::ui::components::page_view::PageView;
 use crate::ui::models::device::otp;
 use crate::ui::screens::slots::view_model::SlotsViewModel;
 use gpui::*;
-use gpui_component::button::{Button, ButtonVariants};
+use gpui_component::button::{Button, ButtonCustomVariant, ButtonVariants};
 use gpui_component::{ActiveTheme, Disableable, Icon, StyledExt, Theme, h_flex, v_flex};
 
 fn empty_state(heading: &str, body: String, theme: &Theme) -> AnyElement {
@@ -121,18 +121,23 @@ impl Render for SlotsViewModel {
             cards.push(self.render_slot_card(slot, cx));
         }
 
-        let swap_btn = Button::new("swap-slots")
-            .label("Swap 1 ↔ 2")
-            .ghost()
+        let theme = cx.theme();
+        let swap_btn = PFButton::new("Swap 1 ↔ 2")
+            .id("swap-slots")
+            .with_colors(rgb(0x222225), rgb(0x2a2a2d), rgb(0x333336))
             .disabled(self.loading)
             .on_click(cx.listener(|this, _, window, cx| this.open_swap_dialog(window, cx)));
         let refresh_btn = Button::new("refresh-slots")
             .icon(Icon::default().path("icons/refresh-cw.svg"))
-            .ghost()
+            .custom(
+                ButtonCustomVariant::new(cx)
+                    .color(rgb(0x1b1b1d).into())
+                    .hover(rgb(0x232325).into())
+                    .active(rgb(0x3f3f46).into())
+                    .border(theme.border),
+            )
             .disabled(self.loading)
             .on_click(cx.listener(|this, _, _, cx| this.refresh(cx)));
-
-        let theme = cx.theme();
         let toolbar = h_flex().gap_2().child(swap_btn).child(refresh_btn);
 
         let slots_card = Card::new()
