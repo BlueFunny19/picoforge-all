@@ -59,6 +59,17 @@
   </screenshots>
 
   <releases>
+    <release version="0.9.0" date="2026-07-30">
+        <url type="details">https://github.com/librekeys/picoforge/releases/tag/v0.9.0</url>
+        <description translate="no">
+        <p>Release 0.9.0</p>
+        <ul>
+            <li>Unify button styling across all management screens with consistent PFButton theme</li>
+            <li>Replace ghost-style buttons on Lock, PIV, OpenPGP, Slots, Accounts, Backup, and Attestation screens with styled variants</li>
+            <li>Fix OATH password dialog showing "Enter FIDO PIN" instead of "OATH password"</li>
+        </ul>
+        </description>
+    </release>
     <release version="0.8.0" date="2026-07-28">
         <url type="details">https://github.com/librekeys/picoforge/releases/tag/v0.8.0</url>
         <description translate="no">
