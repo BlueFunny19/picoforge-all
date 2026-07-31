@@ -21,14 +21,14 @@ This document outlines the guidelines and workflow for contributing to the `pico
 
 ## 1. Code Acquisition (Source Cloning)
 
-The primary repository is hosted on GitHub, but a read-only mirror is available. **Mirrors can only be used to clone the source code locally.**
+The primary repository is hosted on GitHub, but read-only mirrors are available. **Mirrors can only be used to clone the source code locally.**
 
 | Platform                      | URL                                              | Purpose                           |
 | :---------------------------- | :----------------------------------------------- | :-------------------------------- |
 | **GitHub (Primary Source)**   | `https://github.com/librekeys/picoforge.git`     | Required for Contribution Forking |
 | **GitLab Mirror**             | `https://gitlab.com/librekeys/picoforge`         | Read-only viewing and cloning     |
 | **Codeberg Mirror**           | `https://codeberg.org/librekeys/picoforge`       | Read-only viewing and cloning     |
-| **Personal Mirror**           | `https://git.suyogtandel.in/LibreKeys/picoforge` | Read-only viewing and cloning     |
+| **Disroot Mirror**            | `https://git.disroot.org/librekeys/picoforge`    | Read-only viewing and cloning     |
 
 
 

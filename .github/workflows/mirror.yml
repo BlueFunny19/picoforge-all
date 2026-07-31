@@ -29,3 +29,14 @@ jobs:
         env:
           CODEBERG_USERNAME: ${{ secrets.CODEBERG_USERNAME }}
           CODEBERG_TOKEN: ${{ secrets.CODEBERG_TOKEN }}
+  mirror-disroot:
+    concurrency:
+      group: ${{ github.workflow }}-disroot
+      cancel-in-progress: true
+    runs-on: ubuntu-latest
+    steps:
+      - run: git clone --bare "https://github.com/librekeys/picoforge" .
+      - run: git push --mirror "https://${DISROOT_USERNAME}:${DISROOT_TOKEN}@git.disroot.org/librekeys/picoforge.git"
+        env:
+          DISROOT_USERNAME: ${{ secrets.DISROOT_USERNAME }}
+          DISROOT_TOKEN: ${{ secrets.DISROOT_TOKEN }}

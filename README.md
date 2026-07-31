@@ -15,22 +15,14 @@
 </div>
 
 > [!IMPORTANT]
-> PicoForge is an independent, community-developed tool and is not affiliated with or endorsed by the official [pico-fido](https://github.com/polhenarejos/pico-fido) project. 
-> This software does not share any code with the official closed-source pico-key application.
->
 > Check application [Installation Wiki](https://github.com/librekeys/picoforge/wiki/Installation) for installation guide of the PicoForge app on your system.
 >
 > **RP2350 (Pico2) Notice:** If you are using an RP2350-based device (Pico2, etc.), please switch to [RS-Key](https://github.com/TheMaxMur/RS-Key) firmware instead of pico-fido for better support while using picoforge.
 >
 > **Supported Firmwares:**
-> - **[RS-Key](https://github.com/TheMaxMur/RS-Key)**: v0.3.X, 0.4.X
-> - **[pico-fido](https://github.com/polhenarejos/pico-fido)**: v7.0, v7.2, v7.4, v7.6
+> - **[RS-Key](https://github.com/TheMaxMur/RS-Key)**: v0.2.X, v0.3.X, v0.4.X
 > - **[LibreKeys One](https://github.com/librekeys/pico-fido-firmwares/releases)**: v7.4.2
->
-> **Configuration Support:**
-> - **RS-Key v0.3.X**: Hardware configuration via FIDO mode is supported. Changes to VID/PID, LED, and other hardware settings are available through the FIDO transport.
-> - **pico-fido v7.0/v7.2** & **LibreKeys One v7.4.2**: Hardware configuration via FIDO mode is supported.
-> - **pico-fido v7.4/v7.6**: Hardware configuration requires Rescue/PCSC mode. Configuration cannot be done via FIDO-only mode.
+> - **[pico-fido](https://github.com/polhenarejos/pico-fido)**: v7.0, v7.2, v7.4, v7.6
 
 ## About
 
@@ -58,15 +50,6 @@ PicoForge is a modern desktop application for configuring and managing RS-Key an
 
 </div>
 
-## Features
-
-- **Device Configuration** - Customize USB identifiers, LED behavior, and hardware settings
-- **Security Management** - Enable secure boot and firmware verification (experimental and WIP)
-- **Real-time Monitoring** - View flash usage, connection status, and system logs
-- **Modern UI** - Clean, responsive interface built with Rust and GPUI
-- **Multi-Vendor Support** - Compatible with multiple hardware variants
-- **Cross-Platform** - Works on Windows, macOS, and Linux
-
 ## Installation
 
 ### Linux:
@@ -76,19 +59,6 @@ PicoForge is a modern desktop application for configuring and managing RS-Key an
 ### Other OS:
 
 Check the official [PicoForge Wiki](https://github.com/librekeys/picoforge/wiki/Installation) for installation info of the application.
-
-## Usage
-
-1. Connect your smart card reader
-2. Insert your Pico FIDO device
-3. Launch PicoForge
-4. Click **Refresh** button at top right corner to detect your key
-5. Navigate through the sidebar to configure settings:
-   - **Home** - Device overview and quick actions
-   - **Configuration** - USB settings, LED options
-   - **Security** - Secure boot management (experimental)
-   - **Logs** - Real-time event monitoring
-   - **About** - Application information
 
 ## Requirements
 
@@ -110,6 +80,16 @@ To contribute to PicoForge, you'll need:
 git clone https://github.com/librekeys/picoforge.git
 cd picoforge
 ```
+
+> [!TIP]
+> Read-only mirrors are available for cloning:
+>
+> | Platform             | URL                                        |
+> | :------------------- | :----------------------------------------- |
+> | **GitHub (Primary)** | `https://github.com/librekeys/picoforge`   |
+> | **GitLab Mirror**    | `https://gitlab.com/librekeys/picoforge`   |
+> | **Codeberg Mirror**  | `https://codeberg.org/librekeys/picoforge` |
+> | **Disroot Mirror**   | `https://git.disroot.org/librekeys/picoforge` |
 
 ### 2. Build and Run
 
