@@ -50,6 +50,7 @@ const PROP_TOUCH: u8 = 0x02;
 const DEFAULT_PERIOD: u32 = 30;
 const ACCESS_KEY_LEN: usize = 16;
 const PBKDF2_ITERS: u32 = 1000;
+const YKOATH_MIN_KEY_LEN: usize = 14;
 
 /// OATH credential kind.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -243,6 +244,14 @@ pub fn clear_code(session: &CcidSession) -> Result<(), PFError> {
     Ok(())
 }
 
+fn normalize_ykoath_secret(secret: &[u8]) -> Vec<u8> {
+    let mut normalized = secret.to_vec();
+    if normalized.len() < YKOATH_MIN_KEY_LEN {
+        normalized.resize(YKOATH_MIN_KEY_LEN, 0);
+    }
+    normalized
+}
+
 /// Add or overwrite a credential.
 pub fn put(session: &CcidSession, cred: &NewCredential) -> Result<(), PFError> {
     let id = build_cred_id(
@@ -252,7 +261,7 @@ pub fn put(session: &CcidSession, cred: &NewCredential) -> Result<(), PFError> {
         cred.period,
     );
     let mut key_tlv = vec![cred.oath_type.wire() | cred.algorithm.wire(), cred.digits];
-    key_tlv.extend_from_slice(&cred.secret);
+    key_tlv.extend_from_slice(&normalize_ykoath_secret(&cred.secret));
 
     let mut data = Vec::new();
     tlv::write(&mut data, TAG_NAME, id.as_bytes());
@@ -601,6 +610,68 @@ mod tests {
         // Lowercase, spaces and padding tolerated.
         assert_eq!(base32_decode("nb sw y3=dp").unwrap(), b"hello");
         assert!(base32_decode("0189").is_none()); // invalid symbols
+    }
+
+    #[test]
+    fn short_ykoath_secret_is_zero_padded() {
+        let secret: Vec<u8> = (0xA0..0xAA).collect();
+        let normalized = normalize_ykoath_secret(&secret);
+
+        assert_eq!(normalized.len(), 14);
+        assert_eq!(&normalized[..10], secret.as_slice());
+        assert_eq!(&normalized[10..], &[0u8; 4]);
+    }
+
+    #[test]
+    fn ykoath_secret_padding_preserves_boundary_lengths() {
+        let thirteen = vec![0x13; 13];
+        assert_eq!(
+            normalize_ykoath_secret(&thirteen),
+            [thirteen, vec![0]].concat()
+        );
+
+        let fourteen: Vec<u8> = (0..14).collect();
+        assert_eq!(normalize_ykoath_secret(&fourteen), fourteen);
+
+        let longer: Vec<u8> = (0..16).collect();
+        assert_eq!(normalize_ykoath_secret(&longer), longer);
+    }
+
+    #[test]
+    fn short_base32_secret_is_normalized_without_changing_decode_errors() {
+        let credential = parse_otpauth("otpauth://totp/example?secret=JBSWY3DPEHPK3PXP").unwrap();
+        assert_eq!(credential.secret, b"Hello!\xde\xad\xbe\xef");
+        assert_eq!(normalize_ykoath_secret(&credential.secret).len(), 14);
+
+        assert_eq!(
+            parse_otpauth("otpauth://totp/example?secret=0189").unwrap_err(),
+            "Invalid base32 secret"
+        );
+        assert_eq!(
+            parse_otpauth("otpauth://totp/example?secret=").unwrap_err(),
+            "Empty secret"
+        );
+    }
+
+    #[test]
+    fn short_key_zero_padding_preserves_hmac_sha1_otp() {
+        let short_key = b"1234567890";
+        let normalized_key = normalize_ykoath_secret(short_key);
+        let time_step = 42u64.to_be_bytes();
+
+        let short_hmac = hmac_sha1(short_key, &time_step);
+        let normalized_hmac = hmac_sha1(&normalized_key, &time_step);
+        assert_eq!(short_hmac, normalized_hmac);
+
+        let mut short_response = vec![6u8];
+        short_response.extend_from_slice(&short_hmac);
+        let mut normalized_response = vec![6u8];
+        normalized_response.extend_from_slice(&normalized_hmac);
+        assert_eq!(format_response(&short_response).unwrap(), "055299");
+        assert_eq!(
+            format_response(&short_response).unwrap(),
+            format_response(&normalized_response).unwrap()
+        );
     }
 
     #[test]

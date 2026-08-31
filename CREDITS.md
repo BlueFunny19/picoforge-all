@@ -9,6 +9,7 @@
 - [Sylvain Pelissier](https://github.com/sylvainpelissier): Worked on the Enterprise attestation features.
 - [kralonur](https://github.com/kralonur): Improved Pico-FIDO 7.6 compatibility and preserved legacy FIDO hardware configuration support.
 - [TheMaxMur](https://github.com/TheMaxMur): Add RS-Key support.
+- [Scott-Nx](https://github.com/Scott-Nx): Fixed OATH credential creation for short TOTP/HOTP secrets on YKOATH-compatible devices.
 
 **Third-party Libraries**
 
