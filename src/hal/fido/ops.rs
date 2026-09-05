@@ -772,8 +772,8 @@ impl FidoOperations for HidTransport {
         let mut new_pin_enc = Vec::new();
         let mut encryptor =
             cbc::Encryptor::<aes::Aes256>::new_from_slices(shared_secret_bytes, &iv).unwrap();
-        for chunk in padded_new_pin.chunks_exact(16) {
-            let mut block = Block::<aes::Aes256>::try_from(chunk).unwrap();
+        for chunk in padded_new_pin.as_chunks::<16>().0 {
+            let mut block = Block::<aes::Aes256>::try_from(chunk.as_slice()).unwrap();
             encryptor.encrypt_block(&mut block);
             new_pin_enc.extend_from_slice(&block);
         }
@@ -912,8 +912,8 @@ impl FidoOperations for HidTransport {
         let mut new_pin_enc = Vec::new();
         let mut encryptor =
             cbc::Encryptor::<aes::Aes256>::new_from_slices(shared_secret_bytes, &iv).unwrap();
-        for chunk in padded_new_pin.chunks_exact(16) {
-            let mut block = Block::<aes::Aes256>::try_from(chunk).unwrap();
+        for chunk in padded_new_pin.as_chunks::<16>().0 {
+            let mut block = Block::<aes::Aes256>::try_from(chunk.as_slice()).unwrap();
             encryptor.encrypt_block(&mut block);
             new_pin_enc.extend_from_slice(&block);
         }
