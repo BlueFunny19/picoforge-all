@@ -116,7 +116,9 @@ pub fn event_name(event: u8) -> Option<&'static str> {
 /// entry are ignored.
 pub fn parse_entries(bytes: &[u8]) -> Vec<AuditEntry> {
     bytes
-        .chunks_exact(ENTRY_LEN)
+        .as_chunks::<ENTRY_LEN>()
+        .0
+        .iter()
         .map(|e| AuditEntry {
             seq: u32::from_le_bytes([e[0], e[1], e[2], e[3]]),
             uptime_ms: u32::from_le_bytes([e[4], e[5], e[6], e[7]]),
