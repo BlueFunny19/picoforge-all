@@ -155,7 +155,10 @@ const HID_TOTAL_TIMEOUT_MS: i32 = 5000;
 #[derive(Debug)]
 pub struct HidTransport {
     device: hidapi::HidDevice,
+    _session: std::sync::MutexGuard<'static, ()>,
     cid: u32,
+    /// USB serial, used to pair HID and PC/SC.
+    pub serial: Option<String>,
     pub vid: u16,
     pub pid: u16,
     pub product_name: String,
@@ -174,16 +177,23 @@ impl HidTransport {
     /// the CTAPHID_INIT handshake. Returns an error if no device is found or
     /// the INIT handshake times out.
     pub fn open() -> Result<Self, PFError> {
+        let session = super::pcsc::lock_device()?;
         log::info!("Attempting to open HID transport for FIDO device...");
         let api = hidapi::HidApi::new().map_err(|e| {
             log::error!("Failed to initialize HidApi: {}", e);
             PFError::Device(format!("Failed to initialize HidApi: {}", e))
         })?;
 
-        // Find device with FIDO Usage Page (0xF1D0)
+        let selected_serial = super::pcsc::selected_pico_all_serial();
+        // Match the same physical board as the PC/SC application session.
         let info = api
             .device_list()
-            .find(|d| d.usage_page() == HID_USAGE_PAGE_FIDO)
+            .find(|d| {
+                d.usage_page() == HID_USAGE_PAGE_FIDO
+                    && selected_serial.as_ref().is_none_or(|s| {
+                        d.serial_number().is_some_and(|n| n.eq_ignore_ascii_case(s))
+                    })
+            })
             .ok_or_else(|| {
                 log::warn!("No FIDO device found with Usage Page 0xF1D0.");
                 PFError::NoDevice
@@ -218,7 +228,9 @@ impl HidTransport {
         log::info!("HID Transport established successfully. CID: 0x{:08X}", cid);
         Ok(Self {
             device,
+            _session: session,
             cid,
+            serial: info.serial_number().map(str::to_string),
             vid,
             pid,
             product_name,

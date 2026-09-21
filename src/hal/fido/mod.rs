@@ -645,7 +645,13 @@ pub fn read_device_details() -> Result<FullDeviceStatus, PFError> {
         fido_info.firmware_version
     );
 
-    let firmware_type = if fido_info.aaguid == RSKEY_AAGUID {
+    let firmware_type = if transport.serial.as_ref().is_some_and(|serial| {
+        crate::hal::transport::pcsc::selected_pico_all_serial().as_ref() == Some(serial)
+    }) || (fido_info.aaguid == PICOFIDO_AAGUID
+        && transport.manufacturer.as_deref() == Some("Pico All"))
+    {
+        FirmwareType::PicoAll
+    } else if fido_info.aaguid == RSKEY_AAGUID {
         FirmwareType::RSKey
     } else if fido_info.aaguid == PICOFIDO_AAGUID || fido_info.aaguid == LKONE_AAGUID {
         FirmwareType::PicoFido
@@ -1204,7 +1210,13 @@ pub fn write_config(config: AppConfigInput, pin: Option<String>) -> Result<Strin
         PFError::Device(format!("Could not open HID transport: {}", e))
     })?;
     let fido_info = read_device_info(&transport)?;
-    let firmware_type = if fido_info.aaguid == RSKEY_AAGUID {
+    let firmware_type = if transport.serial.as_ref().is_some_and(|serial| {
+        crate::hal::transport::pcsc::selected_pico_all_serial().as_ref() == Some(serial)
+    }) || (fido_info.aaguid == PICOFIDO_AAGUID
+        && transport.manufacturer.as_deref() == Some("Pico All"))
+    {
+        FirmwareType::PicoAll
+    } else if fido_info.aaguid == RSKEY_AAGUID {
         FirmwareType::RSKey
     } else if fido_info.aaguid == PICOFIDO_AAGUID || fido_info.aaguid == LKONE_AAGUID {
         FirmwareType::PicoFido
@@ -1442,12 +1454,18 @@ pub(crate) fn upload_enterprise_attestation_cert(
             format!("Failed to obtain PIN token: {}", error_text)
         })?;
 
+    let pico_all = transport.serial.as_ref().is_some_and(|serial| {
+        crate::hal::transport::pcsc::selected_pico_all_serial()
+            .as_ref()
+            .is_some_and(|selected| selected.eq_ignore_ascii_case(serial))
+    }) || transport.manufacturer.as_deref() == Some("Pico All");
+    let upload_id = if pico_all {
+        0x0002_A674_C29A_8DCF // Pico All 8.x CTAP_CONFIG_EA_UPLOAD
+    } else {
+        VendorConfigCommand::EnterpriseAttestationUpload as u64
+    };
     transport
-        .send_vendor_config(
-            &pin_token,
-            VendorConfigCommand::EnterpriseAttestationUpload,
-            Value::Bytes(cert_der),
-        )
+        .authconfig_vendor(&pin_token, upload_id, Some(Value::Bytes(cert_der)))
         .map_err(|e| format!("Failed to upload certificate: {}", e))?;
 
     log::info!("Enterprise attestation certificate uploaded successfully.");

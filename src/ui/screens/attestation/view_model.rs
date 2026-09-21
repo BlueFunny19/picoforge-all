@@ -49,7 +49,9 @@ impl AttestationViewModel {
         let repo = self.device.read(cx);
         match &repo.status {
             None => AppletGate::Unsupported,
-            Some(s) if s.firmware_type != FirmwareType::RSKey => AppletGate::Unsupported,
+            Some(s) if !matches!(s.firmware_type, FirmwareType::RSKey | FirmwareType::PicoAll) => {
+                AppletGate::Unsupported
+            }
             Some(_) => AppletGate::Ready,
         }
     }
@@ -138,7 +140,7 @@ impl AttestationViewModel {
                 let _ = view.update(cx, |this, cx| {
                     this.open_pin_dialog(
                         "Import Org Attestation",
-                        "Installs the org attestation key and chain (P-256). Requires the FIDO PIN, or a touch if none is set.",
+                        "Installs the org attestation key and chain (P-256). Requires physical confirmation and, when configured, the FIDO PIN.",
                         move |pin, this, window, cx| {
                             let status = dialog::open_status_dialog("Importing Attestation", window, cx);
                             let (kb, cb) = (key_bytes.clone(), chain_bytes.clone());
@@ -162,7 +164,7 @@ impl AttestationViewModel {
     pub(super) fn open_clear(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.open_pin_dialog(
             "Remove Org Attestation",
-            "Removes the org attestation and reverts to the self-signed device certificate. Requires the FIDO PIN, or a touch if none is set.",
+            "Removes the org attestation and reverts to the self-signed device certificate. Requires physical confirmation and, when configured, the FIDO PIN.",
             |pin, this, window, cx| {
                 let status = dialog::open_status_dialog("Removing Attestation", window, cx);
                 this.run_unit(

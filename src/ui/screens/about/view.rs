@@ -34,9 +34,10 @@ impl Render for AboutViewModel {
                                             .text_2xl()
                                             .font_bold()
                                             .text_color(theme.foreground)
-                                            .child("PicoForge"),
+                                            .child("PicoForge All"),
                                     )
-                                    .child(Tag::new("v0.9.0"))
+                                    .child(Tag::new(concat!("v", env!("CARGO_PKG_VERSION"))))
+                                    .child(div().font_bold().text_color(rgb(0xE34C2D)).child("UNOFFICIAL FORK"))
                                     .child(
                                         div()
                                             .text_color(theme.muted_foreground)
@@ -55,7 +56,7 @@ impl Render for AboutViewModel {
                                             .border_color(theme.border)
                                             .border_t_1()
                                             .border_color(theme.border)
-                                            .w(px(320.0))
+                                            .w_full().max_w(px(450.0))
                                             .child(
                                                 h_flex()
                                                     .justify_between()
@@ -66,7 +67,7 @@ impl Render for AboutViewModel {
                                                             .font_medium()
                                                             .text_color(theme.foreground)
                                                             .items_end()
-                                                            .child("PicoForge Contributers"),
+                                                            .child("PicoForge Contributers & BlueFunny"),
                                                     ),
                                             )
                                             .child(
@@ -103,7 +104,7 @@ impl Render for AboutViewModel {
                                                             .child("GitHub"),
                                                     )
                                                     .on_click(|_, _, cx| {
-                                                        cx.open_url("https://github.com/librekeys/picoforge")
+                                                        cx.open_url("https://github.com/BlueFunny19/picoforge-all")
                                                     }),
                                             )
                                             .child(
@@ -122,7 +123,7 @@ impl Render for AboutViewModel {
                                                     )
                                                     .on_click(|_, _, cx| {
                                                         cx.open_url(
-                                                            "https://github.com/librekeys/picoforge/wiki",
+                                                            "https://github.com/BlueFunny19/picoforge-all/wiki",
                                                         )
                                                     }),
                                             ),

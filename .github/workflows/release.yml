@@ -126,12 +126,12 @@ jobs:
         uses: softprops/action-gh-release@v3
         with:
           tag_name: v${{ env.version }}
-          name: "PicoForge-v${{ env.version }}"
+          name: "PicoForge-All-v${{ env.version }}"
           body: |
             > [!WARNING]
-            > This is a Beta release and thus can have some bugs, report them using github issues.
+            > Unofficial PicoForge All build. Report bugs to https://github.com/BlueFunny19/picoforge-all/issues, not to upstream PicoForge.
 
-            #### Check the Installation guide for the Application on the wiki: https://github.com/librekeys/picoforge/wiki/Installation
+            #### Source and build instructions: https://github.com/BlueFunny19/picoforge-all
           prerelease: false
           files: |
             *.flatpak

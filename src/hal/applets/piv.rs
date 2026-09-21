@@ -171,14 +171,16 @@ pub fn algo_label(algo: u8) -> &'static str {
     }
 }
 
-pub fn slot_label(slot: u8) -> &'static str {
+pub fn slot_label(slot: u8) -> String {
     match slot {
         SLOT_9A => "Authentication (9A)",
         SLOT_9C => "Signature (9C)",
         SLOT_9D => "Key Management (9D)",
         SLOT_9E => "Card Authentication (9E)",
+        s if (0x82..=0x95).contains(&s) => return format!("Retired {} ({s:02X})", s - 0x81),
         _ => "Slot",
     }
+    .to_string()
 }
 
 /// Object id (`5F C1 xx`) of a slot's certificate.
@@ -290,7 +292,7 @@ pub fn read_info(session: &CcidSession) -> Result<PivInfo, PFError> {
     };
 
     let mut slots = Vec::new();
-    for &slot in &PRIMARY_SLOTS {
+    for slot in PRIMARY_SLOTS.into_iter().chain(0x82..=0x95) {
         let meta = get_metadata(session, slot)
             .ok()
             .and_then(|r| parse_slot_meta(&r));

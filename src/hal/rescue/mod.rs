@@ -15,7 +15,7 @@ use ops::RescueOperations;
 
 /// Read full device status via the Rescue applet (PC/SC transport).
 pub fn read_device_details() -> Result<FullDeviceStatus, PFError> {
-    PcscTransport::open()?.read_device_details()
+    PcscTransport::discover()?.read_device_details()
 }
 
 /// Write PHY configuration to the device via the Rescue applet.
@@ -57,4 +57,32 @@ pub fn read_management_config() -> Result<ManagementAppConfig, PFError> {
 /// Write USB interface enable mask to the Management applet (RS-Key only).
 pub fn write_management_config(enabled_mask: u16) -> Result<String, PFError> {
     PcscTransport::open_with_aid(constants::MANAGEMENT_AID)?.write_management_config(enabled_mask)
+}
+
+/// Latched RP2350 security state; this query returns no root key material.
+#[derive(Debug, Clone)]
+pub struct RootStatus {
+    pub state: i8,
+    pub page: u8,
+    pub critical: u32,
+}
+
+/// Read Pico All's versioned OTP root status.
+pub fn read_root_status() -> Result<RootStatus, PFError> {
+    let card = PcscTransport::open()?;
+    if card.firmware_type != FirmwareType::PicoAll {
+        return Err(PFError::Device(
+            "OTP root status is only available on Pico All".into(),
+        ));
+    }
+    let mut buf = [0u8; 64];
+    let r = card.transmit(&[0x80, 0x1E, 6, 0, 0], &mut buf)?;
+    if r.len() != 9 || r[0] != 1 || !r.ends_with(&[0x90, 0]) {
+        return Err(PFError::Device("OTP root status unavailable".into()));
+    }
+    Ok(RootStatus {
+        state: r[1] as i8,
+        page: r[2],
+        critical: u32::from_be_bytes(r[3..7].try_into().unwrap()),
+    })
 }

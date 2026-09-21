@@ -450,9 +450,10 @@ pub fn swap(session: &CcidSession, current_acc: &[u8; 6]) -> Result<(), PFError>
 /// bytes equal to the frame's final byte — so the pad must not match, or the
 /// tail of the challenge would be trimmed away.
 fn pad_challenge(challenge: &[u8]) -> Result<[u8; CHALLENGE_FRAME], PFError> {
-    if challenge.is_empty() || challenge.len() > CHALLENGE_FRAME {
+    if challenge.is_empty() || challenge.len() >= CHALLENGE_FRAME {
         return Err(PFError::Device(format!(
-            "Challenge must be 1..={CHALLENGE_FRAME} bytes"
+            "Variable-length challenge must be 1..={} bytes (one byte is reserved for padding)",
+            CHALLENGE_FRAME - 1
         )));
     }
     let mut frame = [0u8; CHALLENGE_FRAME];
@@ -484,6 +485,14 @@ mod tests {
     use super::*;
 
     const NO_ACC: [u8; 6] = [0; 6];
+
+    #[test]
+    fn variable_length_challenge_cannot_fill_padding_byte() {
+        assert!(pad_challenge(&[0x42; 64]).is_err());
+        let frame = pad_challenge(&[0x42; 63]).unwrap();
+        assert_eq!(&frame[..63], &[0x42; 63]);
+        assert_ne!(frame[63], 0x42);
+    }
 
     #[test]
     fn config_crc_residual_is_valid() {
@@ -611,9 +620,9 @@ mod tests {
     fn hmac_challenge_length_bounds() {
         assert!(pad_challenge(&[]).is_err());
         assert!(pad_challenge(&[0u8; CHALLENGE_FRAME + 1]).is_err());
-        assert!(pad_challenge(&[0u8; CHALLENGE_FRAME]).is_ok());
+        assert!(pad_challenge(&[0u8; CHALLENGE_FRAME]).is_err());
         assert_eq!(
-            pad_challenge(&[9u8; CHALLENGE_FRAME]).unwrap().len(),
+            pad_challenge(&[9u8; CHALLENGE_FRAME - 1]).unwrap().len(),
             CHALLENGE_FRAME
         );
     }

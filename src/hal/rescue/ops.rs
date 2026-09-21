@@ -233,7 +233,11 @@ impl RescueOperations for PcscTransport {
         // ykman/YubiKey Manager display. See rsk_mgmt::serial4.
         let serial_str = if select_resp.len() >= 14 {
             let id = &select_resp[4..12];
-            u32::from_be_bytes([id[0] & 0x03, id[1], id[2], id[3]]).to_string()
+            if *fw_type == FirmwareType::PicoAll {
+                hex::encode_upper(id)
+            } else {
+                u32::from_be_bytes([id[0] & 0x03, id[1], id[2], id[3]]).to_string()
+            }
         } else {
             log::warn!(
                 "Device did not return a Serial Number (Firmware mismatch?). Using placeholder."
@@ -614,6 +618,10 @@ impl RescueOperations for PcscTransport {
         if rx.ends_with(&[0x90, 0x00]) {
             log::info!("Configuration applied successfully");
             Ok("Configuration Applied Successfully".into())
+        } else if rx.ends_with(&[0x69, 0x85]) {
+            Err(PFError::Device(
+                "Configuration was not confirmed. Press the device button when it flashes, then retry.".into(),
+            ))
         } else {
             log::error!("Configuration write failed: {:02X?}", rx);
             Err(PFError::Device(format!("Write failed: {:02X?}", rx)))

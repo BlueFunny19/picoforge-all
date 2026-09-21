@@ -47,6 +47,9 @@ impl BackupViewModel {
         let repo = self.device.read(cx);
         match &repo.status {
             None => AppletGate::Unsupported,
+            Some(s) if s.firmware_type == FirmwareType::PicoAll => {
+                AppletGate::ClientUnsupported("Backup and recovery")
+            }
             Some(s) if s.firmware_type != FirmwareType::RSKey => AppletGate::Unsupported,
             Some(_) => AppletGate::Ready,
         }

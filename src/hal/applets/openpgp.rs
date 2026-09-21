@@ -262,7 +262,7 @@ pub fn read_info(session: &CcidSession) -> Result<PgpInfo, PFError> {
         .unwrap_or((0, 0, 0));
 
     let fps = tlv::find(disc, 0xC5).unwrap_or(&[]);
-    let key_info = tlv::find(disc, 0xDE).unwrap_or(&[]);
+    let key_info = key_status(app, disc);
 
     let mut keys = Vec::new();
     for (i, slot) in [PgpSlot::Sig, PgpSlot::Dec, PgpSlot::Aut]
@@ -456,9 +456,27 @@ pub fn reset(session: &CcidSession) -> Result<(), PFError> {
     Ok(())
 }
 
+// Tag DE is a sibling of discretionary data on Pico All, but some cards nest it.
+fn key_status<'a>(app: &'a [u8], disc: &'a [u8]) -> &'a [u8] {
+    tlv::find(app, 0xDE)
+        .or_else(|| tlv::find(disc, 0xDE))
+        .unwrap_or(&[])
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn generated_key_without_fingerprint_is_reported_from_application_data() {
+        let app = hex::decode("7303c40101de06000101000200").unwrap();
+        let disc = tlv::find(&app, 0x73).unwrap();
+        assert_eq!(key_status(&app, disc), [0, 1, 1, 0, 2, 0]);
+        assert_eq!(
+            key_status(&[], &hex::decode("de06000101000200").unwrap()),
+            [0, 1, 1, 0, 2, 0]
+        );
+    }
 
     #[test]
     fn algo_attr_bytes() {

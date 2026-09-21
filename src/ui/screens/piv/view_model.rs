@@ -22,6 +22,13 @@ const OPT_ALGO: &[(&str, u8)] = &[
     ("RSA-3072", 0x05),
     ("RSA-4096", 0x16),
 ];
+const OPT_ALGO_PICO_ALL: &[(&str, u8)] = &[
+    ("ECC P-256", 0x11),
+    ("ECC P-384", 0x14),
+    ("RSA-2048", 0x07),
+    ("RSA-3072", 0x05),
+    ("RSA-4096", 0x16),
+];
 const OPT_PIN_POLICY: &[(&str, u8)] = &[("Default", 0), ("Never", 1), ("Once", 2), ("Always", 3)];
 const OPT_TOUCH_POLICY: &[(&str, u8)] =
     &[("Default", 0), ("Never", 1), ("Always", 2), ("Cached", 3)];
@@ -33,6 +40,26 @@ const OPT_SLOTS: &[(&str, u8)] = &[
     ("Signature (9C)", 0x9C),
     ("Key Management (9D)", 0x9D),
     ("Card Authentication (9E)", 0x9E),
+    ("Retired 1 (82)", 0x82),
+    ("Retired 2 (83)", 0x83),
+    ("Retired 3 (84)", 0x84),
+    ("Retired 4 (85)", 0x85),
+    ("Retired 5 (86)", 0x86),
+    ("Retired 6 (87)", 0x87),
+    ("Retired 7 (88)", 0x88),
+    ("Retired 8 (89)", 0x89),
+    ("Retired 9 (8A)", 0x8A),
+    ("Retired 10 (8B)", 0x8B),
+    ("Retired 11 (8C)", 0x8C),
+    ("Retired 12 (8D)", 0x8D),
+    ("Retired 13 (8E)", 0x8E),
+    ("Retired 14 (8F)", 0x8F),
+    ("Retired 15 (90)", 0x90),
+    ("Retired 16 (91)", 0x91),
+    ("Retired 17 (92)", 0x92),
+    ("Retired 18 (93)", 0x93),
+    ("Retired 19 (94)", 0x94),
+    ("Retired 20 (95)", 0x95),
 ];
 
 fn default_mgm_hex() -> String {
@@ -250,7 +277,18 @@ impl PivViewModel {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let algo_sel = select_state(window, cx, OPT_ALGO, 0);
+        let algos = if self
+            .device
+            .read(cx)
+            .status
+            .as_ref()
+            .is_some_and(|s| s.firmware_type == crate::hal::types::FirmwareType::PicoAll)
+        {
+            OPT_ALGO_PICO_ALL
+        } else {
+            OPT_ALGO
+        };
+        let algo_sel = select_state(window, cx, algos, 0);
         let pin_sel = select_state(window, cx, OPT_PIN_POLICY, 0);
         let touch_sel = select_state(window, cx, OPT_TOUCH_POLICY, 0);
         let mgm = self.mgm_input(window, cx);
@@ -269,7 +307,7 @@ impl PivViewModel {
                 let Some(auth) = resolve_mgm_auth(&mgm, protected, mgm_algo, &view, cx) else {
                     return;
                 };
-                let algo = selected_key(&algo_sel, OPT_ALGO, cx);
+                let algo = selected_key(&algo_sel, algos, cx);
                 let pin_pol = selected_key(&pin_sel, OPT_PIN_POLICY, cx);
                 let touch_pol = selected_key(&touch_sel, OPT_TOUCH_POLICY, cx);
                 window.close_dialog(cx);

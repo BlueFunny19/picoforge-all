@@ -8,6 +8,7 @@
 
 use crate::ui::components::sidebar::{AppSidebar, SidebarEvent};
 use crate::ui::models::device::{DeviceEvent, DeviceRepo};
+use crate::ui::screens::hsm::HsmViewModel;
 use crate::ui::screens::{
     about::AboutViewModel, accounts::AccountsEvent, accounts::AccountsViewModel,
     attestation::AttestationEvent, attestation::AttestationViewModel, audit::AuditViewModel,
@@ -40,6 +41,7 @@ pub struct ViewModelStore {
     pub accounts: Option<Entity<AccountsViewModel>>,
     pub slots: Option<Entity<SlotsViewModel>>,
     pub piv: Option<Entity<PivViewModel>>,
+    pub hsm: Option<Entity<HsmViewModel>>,
     pub openpgp: Option<Entity<OpenPgpViewModel>>,
     pub audit: Option<Entity<AuditViewModel>>,
     pub backup: Option<Entity<BackupViewModel>>,
@@ -60,6 +62,7 @@ impl ViewModelStore {
             accounts: None,
             slots: None,
             piv: None,
+            hsm: None,
             openpgp: None,
             audit: None,
             backup: None,
@@ -80,6 +83,7 @@ pub enum Destination {
     Slots,
     Piv,
     OpenPgp,
+    Hsm,
     Audit,
     Backup,
     Lock,
@@ -280,6 +284,12 @@ impl Render for ApplicationRoot {
                     });
                     view.clone().into_any_element()
                 }
+                Destination::Hsm => self
+                    .views_store
+                    .hsm
+                    .get_or_insert_with(|| cx.new(|cx| HsmViewModel::new(window, cx, &self.models)))
+                    .clone()
+                    .into_any_element(),
                 Destination::Audit => {
                     let view = self.views_store.audit.get_or_insert_with(|| {
                         cx.new(|cx| AuditViewModel::new(window, cx, &self.models))
@@ -442,6 +452,7 @@ impl Render for ApplicationRoot {
 
         div()
             .id("application-root")
+            .relative()
             .size_full()
             .overflow_hidden()
             .child(body)

@@ -202,11 +202,20 @@ impl Render for OpenPgpViewModel {
             .id("pgp-cardholder")
             .with_colors(rgb(0x222225), rgb(0x2a2a2d), rgb(0x333336))
             .on_click(cx.listener(|this, _, window, cx| this.open_cardholder(window, cx)));
-        let reset_btn = Button::new("pgp-reset")
-            .label("Reset OpenPGP applet")
-            .danger()
-            .disabled(self.loading)
-            .on_click(cx.listener(|this, _, window, cx| this.open_reset_dialog(window, cx)));
+        let reset_btn =
+            Button::new("pgp-reset")
+                .label(
+                    if self.device.read(cx).status.as_ref().is_some_and(|s| {
+                        s.firmware_type == crate::hal::types::FirmwareType::PicoAll
+                    }) {
+                        "Reset unavailable on Pico All v8.1"
+                    } else {
+                        "Reset OpenPGP applet"
+                    },
+                )
+                .danger()
+                .disabled(self.loading)
+                .on_click(cx.listener(|this, _, window, cx| this.open_reset_dialog(window, cx)));
 
         let info_card = {
             let body = match &info {

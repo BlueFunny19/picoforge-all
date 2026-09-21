@@ -97,6 +97,7 @@ impl AnyFirmware {
     /// OATH feature profile for the inner firmware.
     pub fn oath_features(&self) -> Option<OathFeatures> {
         match self {
+            Self::PicoAll(fw) => fw.oath(),
             Self::PicoFido(fw) => fw.oath(),
             Self::RSKey(fw) => fw.oath(),
         }
@@ -105,6 +106,7 @@ impl AnyFirmware {
     /// OTP feature profile for the inner firmware.
     pub fn otp_features(&self) -> Option<OtpFeatures> {
         match self {
+            Self::PicoAll(fw) => fw.otp(),
             Self::PicoFido(fw) => fw.otp(),
             Self::RSKey(fw) => fw.otp(),
         }
@@ -113,6 +115,12 @@ impl AnyFirmware {
     /// PIV feature profile for the inner firmware.
     pub fn piv_features(&self) -> Option<PivFeatures> {
         match self {
+            Self::PicoAll(_) => Some(PivFeatures {
+                generate: true,
+                import_cert: true,
+                attestation: true,
+                retired_slots: true,
+            }),
             Self::PicoFido(fw) => fw.piv(),
             Self::RSKey(fw) => fw.piv(),
         }
@@ -121,6 +129,12 @@ impl AnyFirmware {
     /// OpenPGP feature profile for the inner firmware.
     pub fn openpgp_features(&self) -> Option<OpenPgpFeatures> {
         match self {
+            Self::PicoAll(_) => Some(OpenPgpFeatures {
+                generate: true,
+                touch: true,
+                reset_code: true,
+                ecc: true,
+            }),
             Self::PicoFido(fw) => fw.openpgp(),
             Self::RSKey(fw) => fw.openpgp(),
         }

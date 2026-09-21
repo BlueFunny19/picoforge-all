@@ -113,7 +113,14 @@ impl ConfigViewModel {
 
         // Colour order is an RS-Key extension (phy tag 0x0D); pico-fido ignores
         // it, so only surface it for RS-Key. Fixes red/green swap on GRB panels.
-        if is_rskey {
+        if is_rskey
+            || self
+                .device
+                .read(cx)
+                .status
+                .as_ref()
+                .is_some_and(|s| s.firmware_type == FirmwareType::PicoAll)
+        {
             content = content.child(
                 v_flex().gap_2().child("LED Colour Order").child(
                     Select::new(&self.led_order_select)
@@ -461,7 +468,7 @@ impl ConfigViewModel {
                 .text_color(rgb(0xf59e0b))
                 .w_full()
                 .max_w(px(800.0))
-                .child("Advanced. HID off disables all FIDO2/U2F; CCID off disables every smart-card app (and the rescue applet). The firmware always keeps one of them, so you can't lock yourself out here."),
+                .child("Advanced. HID is required for FIDO2/U2F. CCID is kept enabled here so the management and smart-card applications remain accessible."),
         );
 
         let interfaces = [
@@ -598,7 +605,7 @@ impl Render for ConfigViewModel {
         // top-down by importance rather than burying it under the LED cards.
         // No curves card: the firmware ignores the phy ENABLED_CURVES tag
         // (curve support is compile-time), so exposing it would only mislead.
-        if is_rskey {
+        if is_rskey || status.as_ref().map(|s| &s.firmware_type) == Some(&FirmwareType::PicoAll) {
             inner = inner
                 .child(self.render_rskey_apps_card(cx, false))
                 .child(self.render_rskey_usb_itf_card(cx, false));
@@ -610,6 +617,21 @@ impl Render for ConfigViewModel {
             inner = inner.child(self.render_rskey_led_card(cx, false));
         }
 
+        if status
+            .as_ref()
+            .is_some_and(|s| s.firmware_type == FirmwareType::PicoAll)
+        {
+            inner = inner.child(Card::new().title("Status light")
+                .description("Colors and blink patterns are controlled by Pico All")
+                .icon(Icon::default().path("icons/palette.svg"))
+                .child(v_flex().gap_3()
+                    .child("Green breathing · Ready")
+                    .child("Yellow flashing · Press the device button to confirm")
+                    .child("Red double flash · Confirmation timed out")
+                    .child("Blue · Firmware update mode")
+                    .child(div().text_sm().text_color(cx.theme().muted_foreground)
+                        .child("Use LED Configuration to adjust overall brightness. This firmware does not expose per-state color overrides."))));
+        }
         inner = inner.child(touch_card).child(options_card);
 
         inner = inner.child(

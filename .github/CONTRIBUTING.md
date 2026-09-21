@@ -1,4 +1,6 @@
-# CONTRIBUTING.md
+# Contributing to PicoForge All
+
+This is an unofficial fork. Send bug reports and pull requests to [BlueFunny19/picoforge-all](https://github.com/BlueFunny19/picoforge-all), not to upstream PicoForge.
 
 First off, thank you for considering contributing to PicoForge! It's contributors like you that help make this project better for everyone. We deeply appreciate your time, effort, and interest in improving the tool.
 
@@ -21,14 +23,11 @@ This document outlines the guidelines and workflow for contributing to the `pico
 
 ## 1. Code Acquisition (Source Cloning)
 
-The primary repository is hosted on GitHub, but read-only mirrors are available. **Mirrors can only be used to clone the source code locally.**
+The fork is hosted on GitHub.
 
 | Platform                      | URL                                              | Purpose                           |
 | :---------------------------- | :----------------------------------------------- | :-------------------------------- |
-| **GitHub (Primary Source)**   | `https://github.com/librekeys/picoforge.git`     | Required for Contribution Forking |
-| **GitLab Mirror**             | `https://gitlab.com/librekeys/picoforge`         | Read-only viewing and cloning     |
-| **Codeberg Mirror**           | `https://codeberg.org/librekeys/picoforge`       | Read-only viewing and cloning     |
-| **Disroot Mirror**            | `https://git.disroot.org/librekeys/picoforge`    | Read-only viewing and cloning     |
+| **GitHub (Primary Source)**   | `https://github.com/BlueFunny19/picoforge-all.git`     | Required for Contribution Forking |
 
 
 
@@ -73,10 +72,8 @@ The primary repository is hosted on GitHub, but read-only mirrors are available.
 ## 6. Communication Channels (Discuss Before Contributing)
 
 Matrix is our most preferred option for direct communication, followed by Discord.
-- **Matrix**: [Join our Matrix room](https://matrix.to/#/%23librekeys:matrix.org)
-- **Discord**: [Join our Discord server](https://discord.gg/6wYBpSHJY2)
-- **Discussions**: [GitHub Discussions](https://github.com/librekeys/picoforge/discussions)
-- **Issues**: [GitHub Issues](https://github.com/librekeys/picoforge/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/BlueFunny19/picoforge-all/discussions)
+- **Issues**: [GitHub Issues](https://github.com/BlueFunny19/picoforge-all/issues)
 
 ## 7. Code of Conduct
 

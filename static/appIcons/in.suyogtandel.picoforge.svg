@@ -4,16 +4,16 @@
         <feColorMatrix color-interpolation-filters="sRGB" values="0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 1 0"/>
     </filter>
     <linearGradient id="b" gradientTransform="matrix(0.232143 0 0 0.328947 -8.566925 263.826965)" gradientUnits="userSpaceOnUse" x1="88.595886" x2="536.595886" y1="-449.394012" y2="-449.394012">
-        <stop offset="0" stop-color="#26a269"/>
-        <stop offset="0.0384615" stop-color="#57e389"/>
-        <stop offset="0.0768555" stop-color="#2ec27e"/>
-        <stop offset="0.923077" stop-color="#2ec27e"/>
-        <stop offset="0.961538" stop-color="#57e389"/>
-        <stop offset="1" stop-color="#26a269"/>
+        <stop offset="0" stop-color="#1c58a4"/>
+        <stop offset="0.0384615" stop-color="#65b7fa"/>
+        <stop offset="0.0768555" stop-color="#287bcd"/>
+        <stop offset="0.923077" stop-color="#287bcd"/>
+        <stop offset="0.961538" stop-color="#65b7fa"/>
+        <stop offset="1" stop-color="#1c58a4"/>
     </linearGradient>
     <linearGradient id="c" gradientUnits="userSpaceOnUse" x1="64" x2="64" y1="10" y2="114">
-        <stop offset="0" stop-color="#57e389"/>
-        <stop offset="0.726896" stop-color="#8ff0a4"/>
+        <stop offset="0" stop-color="#65b7fa"/>
+        <stop offset="0.726896" stop-color="#99d5ff"/>
     </linearGradient>
     <linearGradient id="d" gradientUnits="userSpaceOnUse">
         <stop offset="0" stop-color="#241f31"/>
@@ -266,5 +266,8 @@
         <g clip-path="url(#N)" transform="matrix(1 0 0 1 -8 -16)">
             <path d="m 61 60 h 3 v 1.5 h -3 z m 0 0" fill="#f6f5f4"/>
         </g>
+    </g>
+    <g aria-label="All" fill="none" stroke="#f6f5f4" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M55 68 58 60 61 68 M56 65.5h4 M64 60v8h2 M69 60v8h2"/>
     </g>
 </svg>

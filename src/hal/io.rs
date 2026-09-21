@@ -9,7 +9,7 @@ use crate::{
     error::PFError,
     hal::{
         applets::oath, applets::openpgp, applets::otp, applets::piv, fido, rescue,
-        transport::DeviceHandle, transport::ccid::CcidSession, types::*,
+        transport::ccid::CcidSession, types::*,
     },
 };
 
@@ -19,38 +19,19 @@ use crate::{
 /// rescue channel. When both succeed, fields from the more detailed
 /// source are used (e.g. serial/flash from Rescue, AAGUID from FIDO).
 pub fn read_device_details() -> Result<FullDeviceStatus, PFError> {
-    let mut fido_status: Option<FullDeviceStatus> = None;
-    let mut rescue_status: Option<FullDeviceStatus> = None;
-    let mut rescue_fw_type: Option<FirmwareType> = None;
-
-    // Discover via Rescue/PC/SC transport (preferred for richer details)
-    match DeviceHandle::try_rescue() {
-        Ok(Some((handle, _identity))) => {
-            rescue_fw_type = Some(handle.firmware_type());
-            match rescue::read_device_details() {
-                Ok(status) => {
-                    log::info!("Rescue device details read successfully");
-                    rescue_status = Some(status);
-                }
-                Err(e) => log::warn!("Rescue read_device_details failed: {}", e),
-            }
+    let rescue_status = match rescue::read_device_details() {
+        Ok(status) => Some(status),
+        Err(PFError::Device(message))
+            if message.starts_with("More than one") || message.starts_with("Device busy") =>
+        {
+            return Err(PFError::Device(message));
         }
-        Ok(None) => log::info!("No Rescue PC/SC device found"),
-        Err(e) => log::warn!("Rescue PC/SC discovery error: {}", e),
-    }
-
-    // Discover via FIDO/HID transport (fallback for FIDO-only details)
-    match DeviceHandle::try_fido() {
-        Ok(Some((_handle, _identity))) => match fido::read_device_details() {
-            Ok(status) => {
-                log::info!("FIDO device details read successfully");
-                fido_status = Some(status);
-            }
-            Err(e) => log::warn!("FIDO read_device_details failed: {}", e),
-        },
-        Ok(None) => log::info!("No FIDO HID device found"),
-        Err(e) => log::warn!("FIDO HID discovery error: {}", e),
-    }
+        Err(e) => {
+            log::debug!("Management channel unavailable: {e}");
+            None
+        }
+    };
+    let fido_status = fido::read_device_details().ok();
 
     match (fido_status, rescue_status) {
         (Some(fido), Some(rescue)) => {
@@ -119,7 +100,11 @@ pub fn read_device_details() -> Result<FullDeviceStatus, PFError> {
                 secure_boot: rescue.secure_boot,
                 secure_lock: rescue.secure_lock,
                 method: DeviceMethod::Rescue,
-                firmware_type: fido.firmware_type,
+                firmware_type: if rescue.firmware_type == FirmwareType::PicoAll {
+                    FirmwareType::PicoAll
+                } else {
+                    fido.firmware_type
+                },
             })
         }
         (Some(fido), None) => {
@@ -131,11 +116,7 @@ pub fn read_device_details() -> Result<FullDeviceStatus, PFError> {
         }
         (None, Some(rescue)) => {
             log::info!("Using Rescue-only device details");
-            let ft = rescue_fw_type.filter(|_| rescue.firmware_type == FirmwareType::Unknown);
-            Ok(FullDeviceStatus {
-                firmware_type: ft.unwrap_or(rescue.firmware_type),
-                ..rescue
-            })
+            Ok(rescue)
         }
         (None, None) => {
             log::error!("Failed to read device details via both FIDO and Rescue");
@@ -782,6 +763,13 @@ pub fn piv_delete_key(slot: u8, auth: MgmAuth) -> Result<(), PFError> {
 /// Import a private key from PEM/DER (PKCS8 / PKCS1 / SEC1).
 pub fn piv_import_key(slot: u8, key_file: Vec<u8>, auth: MgmAuth) -> Result<(), PFError> {
     let (algo, material) = piv::parse_private_key(&key_file).map_err(PFError::Device)?;
+    if crate::hal::transport::pcsc::selected_pico_all_serial().is_some()
+        && matches!(algo, piv::ALGO_ED25519 | piv::ALGO_X25519)
+    {
+        return Err(PFError::Device(
+            "Pico All PIV supports RSA and P-256/P-384 keys".into(),
+        ));
+    }
     let s = piv_authed(auth)?;
     piv::import_key(&s, slot, algo, &material)
 }
@@ -853,5 +841,56 @@ pub fn openpgp_generate(admin: String, slot: openpgp::PgpSlot, choice: u8) -> Re
 }
 
 pub fn openpgp_reset() -> Result<(), PFError> {
+    // Pico All v8.1 preserves shared retry storage during TERMINATE DF.
+    // Blocking both PINs first leaves this firmware locked after activation.
+    if crate::hal::transport::pcsc::selected_pico_all_serial().is_some() {
+        return Err(PFError::Device(
+            "OpenPGP reset is unavailable on this Pico All firmware: it retains blocked PIN counters after reset. Update to a firmware with corrected reset handling before using factory reset.".into(),
+        ));
+    }
     openpgp::reset(&openpgp::open()?)
+}
+
+#[cfg(test)]
+mod pico_all_hardware_test {
+    #[test]
+    #[ignore = "requires an attached Pico All; performs unauthenticated reads only"]
+    fn read_connected_pico_all() {
+        let status = super::read_device_details().expect("device status");
+        assert_eq!(status.firmware_type, super::FirmwareType::PicoAll);
+        println!(
+            "Device: {} / {} / secure boot={} lock={}",
+            status.info.serial,
+            status.info.firmware_version,
+            status.secure_boot,
+            status.secure_lock
+        );
+        println!("Config: {:?}", status.config);
+        println!(
+            "Apps: {:?}",
+            super::read_management_config(status.method).expect("apps")
+        );
+        println!("FIDO: {:?}", super::get_fido_info().expect("GetInfo"));
+        println!(
+            "Attestation: {:?}",
+            super::att_status().expect("attestation status")
+        );
+        println!("PIV: {:?}", super::piv_read_info().expect("PIV"));
+        println!(
+            "OpenPGP: {:?}",
+            super::openpgp_read_info().expect("OpenPGP")
+        );
+        println!(
+            "OATH password required: {:?}",
+            super::oath_password_required().expect("OATH SELECT")
+        );
+        println!("OTP: {:?}", super::otp_read_info().expect("OTP info"));
+        println!(
+            "HSM: {:?}",
+            crate::hal::applets::hsm::read_info().expect("HSM info")
+        );
+        let root = crate::hal::rescue::read_root_status().expect("root status");
+        assert_eq!(root.state, 1);
+        println!("Root: {:?}", root);
+    }
 }

@@ -37,9 +37,13 @@ pub mod apdu;
 pub mod applets;
 pub mod common;
 pub mod fido;
+pub mod firmware;
 pub mod firmwares;
 pub mod io;
 pub mod offboard;
 pub mod rescue;
 pub mod transport;
 pub mod types;
+
+#[cfg(test)]
+mod write_test;

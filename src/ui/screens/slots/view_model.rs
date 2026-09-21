@@ -371,7 +371,7 @@ impl SlotsViewModel {
             let submit_btn = submit.clone();
             dialog
                 .title(format!("Test Slot {slot}"))
-                .child("Send a challenge; the slot answers with its HMAC-SHA1 response.")
+                .child("Send a 1–63 byte challenge; the slot answers with its HMAC-SHA1 response.")
                 .child(
                     gpui_component::v_flex()
                         .gap_2()

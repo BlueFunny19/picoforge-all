@@ -17,6 +17,8 @@ pub enum AppletGate {
     Disabled(&'static str),
     /// This firmware does not expose the applet.
     Unsupported,
+    /// Firmware has this feature, but this client does not implement it yet.
+    ClientUnsupported(&'static str),
 }
 
 impl AppletGate {
@@ -34,6 +36,10 @@ impl AppletGate {
             Self::Disabled(name) => Some((
                 "Applet disabled",
                 format!("{name} is turned off. Enable it in Configuration → USB Applications."),
+            )),
+            Self::ClientUnsupported(name) => Some((
+                "Not yet supported",
+                format!("{name} is not yet supported for Pico All in this build."),
             )),
             Self::Unsupported => Some((
                 "Not available",

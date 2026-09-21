@@ -10,6 +10,7 @@
 //! descriptor, a method on `AppletProfile`, and per-firmware answers — the UI
 //! and transport layers do not change.
 
+pub mod hsm;
 pub mod oath;
 pub mod openpgp;
 pub mod otp;

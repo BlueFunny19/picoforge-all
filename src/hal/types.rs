@@ -151,6 +151,8 @@ pub enum DeviceMethod {
 /// compatibility checks throughout the application.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
 pub enum FirmwareType {
+    /// Pico All combined FIDO, OpenPGP, PIV and SmartCard-HSM firmware.
+    PicoAll,
     /// Pol Henarejos' pico-fido / pico-keys-sdk based firmware.
     PicoFido,
     /// TheMaxMur's RS-Key firmware (SDK 5.x+).
@@ -165,6 +167,7 @@ pub enum FirmwareType {
 impl fmt::Display for FirmwareType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::PicoAll => write!(f, "Pico All"),
             Self::PicoFido => write!(f, "pico-fido"),
             Self::RSKey => write!(f, "RS-Key"),
             Self::LkOne => write!(f, "LK-ONE"),

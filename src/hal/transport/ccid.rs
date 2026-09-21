@@ -14,7 +14,7 @@ use crate::error::PFError;
 use crate::hal::apdu::{
     Apdu, CLA_CHAIN, CLA_ISO, INS_GET_RESPONSE, INS_SELECT, INS_SEND_REMAINING, StatusWord,
 };
-use pcsc::{Context, Protocols, Scope, ShareMode};
+use std::sync::MutexGuard;
 
 /// Largest single PC/SC response chunk we read before assembling via GET RESPONSE.
 const RX_BUF: usize = 4096;
@@ -24,6 +24,7 @@ const CHAIN_CHUNK: usize = 255;
 /// An open PC/SC card bound to one applet (selected by AID).
 pub struct CcidSession {
     card: pcsc::Card,
+    _session: MutexGuard<'static, ()>,
     /// The applet's `SELECT` response (FCI / version block), parsed per applet.
     pub select_resp: Vec<u8>,
 }
@@ -34,16 +35,10 @@ impl CcidSession {
     /// The card is kept open for the session's lifetime so a subsequent VERIFY
     /// stays in effect for the following operation.
     pub fn open(aid: &[u8]) -> Result<Self, PFError> {
-        let ctx = Context::establish(Scope::User).map_err(PFError::Pcsc)?;
-        let mut readers_buf = [0; 2048];
-        let reader = ctx
-            .list_readers(&mut readers_buf)?
-            .next()
-            .ok_or(PFError::NoDevice)?;
-        let card = ctx.connect(reader, ShareMode::Shared, Protocols::ANY)?;
-
+        let (card, guard) = super::pcsc::connect_selected()?;
         let mut session = Self {
             card,
+            _session: guard,
             select_resp: Vec::new(),
         };
         let select = Apdu::read(CLA_ISO, INS_SELECT, 0x04, 0x00, aid);

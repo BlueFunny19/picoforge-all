@@ -1,6 +1,7 @@
 .DS_Store
 node_modules
 /target
+/.codex/
 /build
 /.svelte-kit
 /package
@@ -32,3 +33,7 @@ packaging
 llm-texts
 opencode.jsonc
 AGENTS.md
+
+# Python firmware worker and tests
+__pycache__/
+*.pyc

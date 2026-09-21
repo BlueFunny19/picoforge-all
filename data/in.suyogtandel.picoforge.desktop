@@ -1,6 +1,7 @@
 [Desktop Entry]
 Type=Application
-Name=PicoForge
+Name=PicoForge All
+Comment=Unofficial PicoForge fork for Pico All
 Exec=picoforge
 Icon=in.suyogtandel.picoforge
 Terminal=false

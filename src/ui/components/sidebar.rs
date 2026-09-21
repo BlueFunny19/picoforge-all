@@ -156,7 +156,16 @@ impl Render for AppSidebar {
                         div()
                             .ml_2()
                             .opacity(text_opacity)
+                            .flex()
+                            .items_center()
+                            .gap_2()
                             .child("PicoForge")
+                            .child(
+                                img("appIcons/all-patch.svg")
+                                    .w(px(42.))
+                                    .h(px(28.))
+                                    .flex_shrink_0(),
+                            )
                             .font_weight(gpui::FontWeight::EXTRA_BOLD)
                             .text_color(sidebar_fg),
                     )
@@ -211,7 +220,8 @@ impl Render for AppSidebar {
                             "OpenPGP",
                             "icons/scroll-text.svg",
                             Destination::OpenPgp,
-                        )),
+                        ))
+                        .child(self.menu_item(cx, "HSM", "icons/key.svg", Destination::Hsm)),
                 ),
             )
             .child(
@@ -250,8 +260,8 @@ impl Render for AppSidebar {
                         ))
                         .child(self.menu_item(
                             cx,
-                            "Offboard",
-                            "icons/trash-2.svg",
+                            "Firmware",
+                            "icons/microchip.svg",
                             Destination::Offboard,
                         ))
                         .child(self.menu_item_icon_name(

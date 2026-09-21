@@ -1,37 +1,37 @@
 <div align="center">
 
-# PicoForge
+# PicoForge All
 
-<img src="static/appIcons/in.suyogtandel.picoforge.svg" width="512" height="512" alt="PicoForge Logo">
+<img src="static/appIcons/in.suyogtandel.picoforge.svg" width="512" height="512" alt="PicoForge All Logo">
 
-**An open source commissioning tool for Pico FIDO security keys**
+**An unofficial PicoForge fork for Pico All security keys**
 
 [![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL%203.0-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
-[![GitHub issues](https://img.shields.io/github/issues/librekeys/picoforge)](https://github.com/librekeys/picoforge/issues)
-![GitHub Actions Workflow Status](https://img.shields.io/github/actions/workflow/status/librekeys/picoforge/release.yml)
-[![Copr build status](https://copr.fedorainfracloud.org/coprs/lockedmutex/picoforge/package/picoforge/status_image/last_build.png)](https://copr.fedorainfracloud.org/coprs/lockedmutex/picoforge/package/picoforge/)
-[![GitHub stars](https://img.shields.io/github/stars/librekeys/picoforge)](https://github.com/librekeys/picoforge/stargazers)
+[![GitHub issues](https://img.shields.io/github/issues/BlueFunny19/picoforge-all)](https://github.com/BlueFunny19/picoforge-all/issues)
+![GitHub Actions Workflow Status](https://img.shields.io/github/actions/workflow/status/BlueFunny19/picoforge-all/release.yml)
+[![GitHub stars](https://img.shields.io/github/stars/BlueFunny19/picoforge-all)](https://github.com/BlueFunny19/picoforge-all/stargazers)
 
 </div>
 
 > [!IMPORTANT]
-> Check application [Installation Wiki](https://github.com/librekeys/picoforge/wiki/Installation) for installation guide of the PicoForge app on your system.
->
-> **RP2350 (Pico2) Notice:** If you are using an RP2350-based device (Pico2, etc.), please switch to [RS-Key](https://github.com/TheMaxMur/RS-Key) firmware instead of pico-fido for better support while using picoforge.
+> **Unofficial fork.** PicoForge All is maintained independently of [upstream PicoForge](https://github.com/librekeys/picoforge).
+> Report problems with this build to **[BlueFunny19/picoforge-all/issues](https://github.com/BlueFunny19/picoforge-all/issues)**.
+> Please do not submit bugs from this fork to the upstream repository.
 >
 > **Supported Firmwares:**
+> - **[Pico All](https://github.com/XiaoNetwork-Astral/pico-all)**: v8.1; FIDO, PIV, OpenPGP, OATH/OTP and SmartCard-HSM management
 > - **[RS-Key](https://github.com/TheMaxMur/RS-Key)**: v0.2.X, v0.3.X, v0.4.X
 > - **[LibreKeys One](https://github.com/librekeys/pico-fido-firmwares/releases)**: v7.4.2
 > - **[pico-fido](https://github.com/polhenarejos/pico-fido)**: v7.0, v7.2, v7.4, v7.6
 
 ## About
 
-PicoForge is a modern desktop application for configuring and managing RS-Key and pico-fido security keys. Built with Rust and GPUI, it provides an intuitive interface for:
+PicoForge All is an unofficial fork of PicoForge, a desktop application for configuring and managing RS-Key and pico-fido security keys. Built with Rust and GPUI, it provides an intuitive interface for:
 
 - Reading device information and firmware details
 - Configuring USB VID/PID and product names
 - Adjusting LED settings (GPIO, brightness, driver)
-- Managing security features (secure boot, firmware locking) (WIP)
+- Inspecting, signing and installing Pico All firmware\n- Reviewing and applying staged Secure Boot provisioning
 - Real-time system logging and diagnostics
 - Support for multiple hardware variants and vendors
 
@@ -58,7 +58,7 @@ PicoForge is a modern desktop application for configuring and managing RS-Key an
 
 ### Other OS:
 
-Check the official [PicoForge Wiki](https://github.com/librekeys/picoforge/wiki/Installation) for installation info of the application.
+Build this fork from the source instructions below. Upstream packages and screenshots refer to the original PicoForge, not PicoForge All.
 
 ## Requirements
 
@@ -72,13 +72,20 @@ To contribute to PicoForge, you'll need:
   - macOS: Built-in
   - Windows: Built-in
 
+### Firmware management
+
+Firmware signing and security setup use the bundled Pico All management engine.
+Install Python with rich, cryptography and pyscard, and Raspberry Pi picotool; select their paths under Local tools if they are not on PATH.
+A locked device requires its original trusted signing key.
+Pico All v8.1 OpenPGP factory reset is currently disabled because the firmware retains blocked PIN counters after reset.
+
 ## Building from Source
 
 ### 1. Clone the Repository
 
 ```bash
-git clone https://github.com/librekeys/picoforge.git
-cd picoforge
+git clone https://github.com/BlueFunny19/picoforge-all.git
+cd picoforge-all
 ```
 
 > [!TIP]
@@ -86,10 +93,7 @@ cd picoforge
 >
 > | Platform             | URL                                        |
 > | :------------------- | :----------------------------------------- |
-> | **GitHub (Primary)** | `https://github.com/librekeys/picoforge`   |
-> | **GitLab Mirror**    | `https://gitlab.com/librekeys/picoforge`   |
-> | **Codeberg Mirror**  | `https://codeberg.org/librekeys/picoforge` |
-> | **Disroot Mirror**   | `https://git.disroot.org/librekeys/picoforge` |
+> | **GitHub (Primary)** | `https://github.com/BlueFunny19/picoforge-all`   |
 
 ### 2. Build and Run
 
@@ -124,13 +128,13 @@ Follow the [Installation Guide](https://nixos.org/download/#download-nix) and [N
 You can build and run PicoForge with a single command:
 
 ```bash
-nix run github:librekeys/picoforge
+nix run github:BlueFunny19/picoforge-all
 ```
 
 Or simply build it and link to the current directory:
 
 ```bash
-nix build github:librekeys/picoforge
+nix build github:BlueFunny19/picoforge-all
 ```
 
 > [!TIP]
@@ -141,7 +145,7 @@ nix build github:librekeys/picoforge
 Download the package definition:
 
 ```bash
-curl -LO https://raw.githubusercontent.com/librekeys/picoforge/main/package.nix
+curl -LO https://raw.githubusercontent.com/BlueFunny19/picoforge-all/main/package.nix
 ```
 
 Run the following command in the directory containing `package.nix`:
@@ -159,7 +163,7 @@ You can enter a developement environement with all the required dependencies.
 #### a. with Flakes
 
 ```bash
-nix develop github:librekeys/picoforge
+nix develop github:BlueFunny19/picoforge-all
 ```
 
 #### b. without Flakes
@@ -178,7 +182,7 @@ cargo run
 
 ## Contributing
 
-Contributions are welcome (REALLY NEEDED, PLEASE HELP US)! 
+Contributions are welcome (REALLY NEEDED, PLEASE HELP US)!
 
 Please check the [CONTRIBUTING.md](.github/CONTRIBUTING.md) file for the full contribution process and development guidelines.
 
@@ -197,8 +201,8 @@ See [LICENSE](LICENSE) for full details.
 - **Suyog Tandel** ([@lockedmutex](https://github.com/lockedmutex))
 - **Fabrice Bellamy** ([@Lab-8916100448256](https://github.com/Lab-8916100448256))
 
-> We are looking for new maintainers who can help us with actively maintaining the repository. 
-> If you are interested, please reach out to us on [Matrix](https://matrix.to/#/%23librekeys:matrix.org) or [Discord](https://discord.gg/6wYBpSHJY2).
+> The following acknowledgements and package-maintainer information refer to upstream PicoForge.
+> Use this fork's issue tracker for PicoForge All support.
 
 ## Package Maintainers
 
@@ -207,15 +211,13 @@ See [LICENSE](LICENSE) for full details.
 
 ## Support
 
-- **Matrix**: [Join our Matrix room](https://matrix.to/#/%23librekeys:matrix.org)
-- **Discord**: [Join our Discord server](https://discord.gg/6wYBpSHJY2)
-- **Issues**: [GitHub Issues](https://github.com/librekeys/picoforge/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/librekeys/picoforge/discussions)
+Report bugs and feature requests for **PicoForge All** at [this fork's issue tracker](https://github.com/BlueFunny19/picoforge-all/issues).
+This is an unofficial build. The upstream PicoForge maintainers do not maintain or support this fork.
 
 ## Disclaimer
 
 > [!WARNING]
-> PicoForge is experimental software and still in the Beta stage! 
+> PicoForge is experimental software and still in the Beta stage!
 > The app does contain bugs and is not secure by any means.
 >
 > It does not support all the features exposed by the `pico-fido` firmware and `pico-hsm`.

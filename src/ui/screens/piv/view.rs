@@ -290,7 +290,7 @@ impl Render for PivViewModel {
 
         let slots_card = Card::new()
             .title("Key slots")
-            .description("Certificate slots 9A / 9C / 9D / 9E")
+            .description("Primary and retired certificate slots")
             .icon(Icon::default().path("icons/key.svg"))
             .child(v_flex().gap_2().children(slot_rows));
 

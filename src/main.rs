@@ -945,7 +945,7 @@ fn main() {
                 window_bounds: Some(WindowBounds::Windowed(window_bounds)),
 
                 titlebar: Some(TitlebarOptions {
-                    title: Some("PicoForge".into()),
+                    title: Some("PicoForge All".into()),
                     appears_transparent: true,
                     traffic_light_position: Some(gpui::point(px(9.0), px(9.0))),
                 }),

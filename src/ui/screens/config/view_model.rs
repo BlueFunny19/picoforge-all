@@ -931,21 +931,22 @@ impl ConfigViewModel {
         // RS-Key ignores the phy ENABLED_CURVES tag (its curves card is hidden),
         // so preserve the device's mask rather than rebuilding it from the hidden
         // toggles — otherwise Apply Changes would write a meaningless curves tag.
-        let (has_curve_changes, built_curves_mask) = if is_rskey {
-            (false, raw_curves_mask)
-        } else {
-            let new_curves_mask = Self::curves_mask_from_toggles(self);
-            let changed = Some(new_curves_mask) != raw_curves_mask
-                || (raw_curves_mask.is_none() && new_curves_mask != 0);
-            (
-                changed,
-                if changed {
-                    Some(new_curves_mask)
-                } else {
-                    raw_curves_mask
-                },
-            )
-        };
+        let (has_curve_changes, built_curves_mask) =
+            if is_rskey || status.firmware_type == crate::hal::types::FirmwareType::PicoAll {
+                (false, raw_curves_mask)
+            } else {
+                let new_curves_mask = Self::curves_mask_from_toggles(self);
+                let changed = Some(new_curves_mask) != raw_curves_mask
+                    || (raw_curves_mask.is_none() && new_curves_mask != 0);
+                (
+                    changed,
+                    if changed {
+                        Some(new_curves_mask)
+                    } else {
+                        raw_curves_mask
+                    },
+                )
+            };
         if has_curve_changes {
             has_changes = true;
         }

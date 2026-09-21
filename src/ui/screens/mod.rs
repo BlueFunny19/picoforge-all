@@ -5,6 +5,7 @@ pub mod audit;
 pub mod backup;
 pub mod config;
 pub mod home;
+pub mod hsm;
 pub mod lock;
 pub mod offboard;
 pub mod openpgp;

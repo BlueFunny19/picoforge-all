@@ -63,6 +63,7 @@ pub struct DeviceIdentity {
 
 impl DeviceHandle {
     /// Return the firmware type for a rescue handle, or `Unknown` for FIDO.
+    #[allow(dead_code)]
     pub fn firmware_type(&self) -> FirmwareType {
         match self {
             Self::Fido(_) => FirmwareType::Unknown,

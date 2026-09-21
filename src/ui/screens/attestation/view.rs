@@ -155,7 +155,7 @@ impl Render for AttestationViewModel {
                     .gap_2()
                     .child(self.action_row(
                         "Import key + chain",
-                        "P-256 key (PEM/DER) and certificate chain (PIN or touch)",
+                        "P-256 key (PEM/DER) and certificate chain; confirm on the device",
                         import_btn,
                         theme,
                     ))

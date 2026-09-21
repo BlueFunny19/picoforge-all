@@ -1,7 +1,7 @@
 [package]
 name = "picoforge"
 version = "0.9.0"
-description = "An open source commissioning tool for pico-fido and rs-key security keys. Developed with Rust and GPUI."
+description = "PicoForge All: an unofficial PicoForge fork for Pico All security keys."
 authors = ["Suyog Tandel", "PicoForge Contributers"]
 license = "AGPL-3.0"
 edition = "2024"
@@ -56,16 +56,16 @@ tauri-winres = "0.3"
 
 # Tauri winres config:
 [package.metadata.tauri-winres]
-FileDescription = "An open source commissioning tool for Pico FIDO security keys."
-ProductName = "PicoForge"
+FileDescription = "PicoForge All - unofficial fork for Pico All security keys"
+ProductName = "PicoForge All"
 OriginalFilename = "picoforge.exe"
 LegalCopyright = "Copyright © 2026 Suyog Tandel"
 
 # Cargo-Packager config:
 [package.metadata.packager]
 name = "picoforge"
-productName = "picoforge"
-description = "An open source commissioning tool for Pico FIDO security keys. Developed with Rust and GPUI."
+productName = "PicoForge All"
+description = "Unofficial PicoForge fork for Pico All security keys."
 category = "Utility"
 authors = ["Suyog Tandel", "PicoForge Contributers"]
 identifier = "in.suyogtandel.picoforge"

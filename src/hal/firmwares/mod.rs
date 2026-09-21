@@ -40,6 +40,7 @@ use crate::hal::types::*;
 /// than matching on variants directly.
 #[derive(Debug, Clone)]
 pub enum AnyFirmware {
+    PicoAll(PicoFidoFirmware),
     PicoFido(PicoFidoFirmware),
     RSKey(RSKeyFirmware),
 }
@@ -90,6 +91,7 @@ impl AnyFirmware {
     pub fn new(firmware_variant: FirmwareType, version: &str) -> Self {
         let firmware_version = FirmwareVersion::parse(version).unwrap_or_default();
         match firmware_variant {
+            FirmwareType::PicoAll => Self::PicoAll(PicoFidoFirmware::new(firmware_version)),
             FirmwareType::PicoFido => Self::PicoFido(PicoFidoFirmware::new(firmware_version)),
             FirmwareType::RSKey => Self::RSKey(RSKeyFirmware::new(firmware_version)),
             FirmwareType::LkOne | FirmwareType::Unknown => {
@@ -109,6 +111,7 @@ impl AnyFirmware {
     ) -> Self {
         let firmware_version = FirmwareVersion::parse(version).unwrap_or_default();
         match firmware_variant {
+            FirmwareType::PicoAll => Self::PicoAll(PicoFidoFirmware::new(firmware_version)),
             FirmwareType::PicoFido => Self::PicoFido(
                 PicoFidoFirmware::new(firmware_version).with_legacy_vendor(has_legacy_vendor),
             ),
@@ -122,6 +125,7 @@ impl AnyFirmware {
     /// Delegate to the inner firmware's version.
     pub fn version(&self) -> &FirmwareVersion {
         match self {
+            Self::PicoAll(fw) => fw.version(),
             Self::PicoFido(fw) => fw.version(),
             Self::RSKey(fw) => fw.version(),
         }
@@ -130,6 +134,7 @@ impl AnyFirmware {
     /// Return the concrete [`FirmwareType`] of the inner firmware.
     pub fn firmware_type(&self) -> FirmwareType {
         match self {
+            Self::PicoAll(_) => FirmwareType::PicoAll,
             Self::PicoFido(_) => FirmwareType::PicoFido,
             Self::RSKey(_) => FirmwareType::RSKey,
         }
@@ -138,6 +143,7 @@ impl AnyFirmware {
     /// Whether the inner firmware supports legacy FIDO hardware-config commands.
     pub fn supports_legacy_fido_hardware_config(&self) -> bool {
         match self {
+            Self::PicoAll(_) => false,
             Self::PicoFido(fw) => fw.supports_legacy_fido_hardware_config(),
             Self::RSKey(fw) => fw.supports_legacy_fido_hardware_config(),
         }
@@ -146,6 +152,7 @@ impl AnyFirmware {
     /// Whether the inner firmware supports FIDO config writes.
     pub fn supports_fido_config_write(&self) -> bool {
         match self {
+            Self::PicoAll(_) => false,
             Self::PicoFido(fw) => fw.supports_fido_config_write(),
             Self::RSKey(fw) => fw.supports_fido_config_write(),
         }
@@ -157,6 +164,7 @@ impl AnyFirmware {
     /// pico-fido, and always `false` for RS-Key.
     pub fn supports_new_fido_hardware_config(&self) -> bool {
         match self {
+            Self::PicoAll(_) => false,
             Self::PicoFido(fw) => !fw.supports_legacy_fido_hardware_config(),
             Self::RSKey(_) => false,
         }
@@ -165,6 +173,7 @@ impl AnyFirmware {
     /// Whether RS-Key-specific vendor commands are available on the inner firmware.
     pub fn supports_rs_key_vendor_command(&self) -> bool {
         match self {
+            Self::PicoAll(_) => false,
             Self::PicoFido(_) => false,
             Self::RSKey(fw) => fw.supports_rs_key_vendor_command(),
         }
@@ -173,6 +182,7 @@ impl AnyFirmware {
     /// Whether the PC/SC rescue channel can be used with the inner firmware.
     pub fn supports_rescue_channel(&self) -> bool {
         match self {
+            Self::PicoAll(_) => true,
             Self::PicoFido(_) => true,
             Self::RSKey(_) => true,
         }

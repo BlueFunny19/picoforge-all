@@ -452,6 +452,8 @@ impl DeviceRepo {
                 io::read_led_config(status.method.clone()).ok(),
                 io::read_management_config(status.method.clone()).ok(),
             )
+        } else if status.firmware_type == types::FirmwareType::PicoAll {
+            (None, io::read_management_config(status.method.clone()).ok())
         } else {
             (None, None)
         };
@@ -717,7 +719,11 @@ impl DeviceRepo {
                     self.management_apps = io::read_management_config(status.method.clone()).ok();
                 } else {
                     self.led_status = None;
-                    self.management_apps = None;
+                    self.management_apps = if status.firmware_type == types::FirmwareType::PicoAll {
+                        io::read_management_config(status.method.clone()).ok()
+                    } else {
+                        None
+                    };
                 }
             }
             Err(e) => {
