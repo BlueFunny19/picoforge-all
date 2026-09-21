@@ -21,6 +21,28 @@ pub enum AppletGate {
     ClientUnsupported(&'static str),
 }
 
+pub fn empty_state(heading: &str, body: String, theme: &gpui_component::Theme) -> gpui::AnyElement {
+    use gpui::*;
+    use gpui_component::{StyledExt, v_flex};
+    v_flex()
+        .items_center()
+        .justify_center()
+        .h_64()
+        .gap_2()
+        .border_1()
+        .border_color(theme.border)
+        .rounded_xl()
+        .child(div().font_semibold().child(heading.to_string()))
+        .child(
+            div()
+                .text_sm()
+                .max_w(px(380.))
+                .text_color(theme.muted_foreground)
+                .child(body),
+        )
+        .into_any_element()
+}
+
 impl AppletGate {
     /// Heading + body copy for the empty state, or `None` when [`Self::Ready`].
     ///

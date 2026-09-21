@@ -279,8 +279,8 @@ pub struct ConfigViewModel {
 
     // RS-Key specific state
     pub(super) led_status_steady: bool,
-    pub(super) led_status_colors: [u8; 4],
-    pub(super) led_status_brightness: [u8; 4],
+    pub(super) led_status_colors: [u8; 7],
+    pub(super) led_status_brightness: [u8; 7],
     pub(super) usb_apps_supported: u16,
     pub(super) usb_apps_enabled: u16,
     pub(super) enabled_usb_itf: Option<u8>,
@@ -380,13 +380,19 @@ impl ConfigViewModel {
             .unwrap_or_else(|| "Firmware default".to_string());
 
         let mut led_status_steady = false;
-        let mut led_status_colors = [0; 4];
-        let mut led_status_brightness = [0; 4];
+        let mut led_status_colors = [0; 7];
+        let mut led_status_brightness = [0; 7];
         if let Some(led) = &device_read.led_status {
             led_status_steady = led.steady;
             for i in 0..4 {
                 led_status_colors[i] = led.statuses[i].0;
                 led_status_brightness[i] = led.statuses[i].1;
+            }
+            if let Some(notifications) = led.notifications {
+                for (i, (color, brightness)) in notifications.into_iter().enumerate() {
+                    led_status_colors[4 + i] = color;
+                    led_status_brightness[4 + i] = brightness;
+                }
             }
         }
 
@@ -986,6 +992,14 @@ impl ConfigViewModel {
                         led.statuses[i]
                             != (self.led_status_colors[i], self.led_status_brightness[i])
                     })
+                    || led.notifications.is_some_and(|n| {
+                        (0..3).any(|i| {
+                            n[i] != (
+                                self.led_status_colors[4 + i],
+                                self.led_status_brightness[4 + i],
+                            )
+                        })
+                    })
             }
             None => false,
         };
@@ -999,6 +1013,14 @@ impl ConfigViewModel {
         let phy = has_changes.then_some(changes);
         let led = led_changed.then(|| LedStatusConfig {
             steady: self.led_status_steady,
+            notifications: current_led.as_ref().and_then(|l| l.notifications).map(|_| {
+                std::array::from_fn(|i| {
+                    (
+                        self.led_status_colors[4 + i],
+                        self.led_status_brightness[4 + i],
+                    )
+                })
+            }),
             statuses: [
                 (self.led_status_colors[0], self.led_status_brightness[0]),
                 (self.led_status_colors[1], self.led_status_brightness[1]),
@@ -1134,6 +1156,12 @@ impl ConfigViewModel {
             for i in 0..4 {
                 self.led_status_colors[i] = led.statuses[i].0;
                 self.led_status_brightness[i] = led.statuses[i].1;
+            }
+            if let Some(notifications) = led.notifications {
+                for (i, (color, brightness)) in notifications.into_iter().enumerate() {
+                    self.led_status_colors[4 + i] = color;
+                    self.led_status_brightness[4 + i] = brightness;
+                }
             }
         }
 

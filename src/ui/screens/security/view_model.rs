@@ -94,20 +94,21 @@ impl SecurityAcknowledgement {
 }
 impl Render for SecurityAcknowledgement {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        use gpui_component::{Disableable, h_flex, switch::Switch, v_flex};
+        use gpui_component::{ActiveTheme, Disableable, h_flex, switch::Switch, v_flex};
         let remaining = self.remaining();
-        v_flex().gap_5()
+        v_flex().w_full().gap_5()
             .child(crate::ui::components::notice::warning(
                 "Permanent hardware changes",
                 "Secure Boot and Secure Lock cannot be undone. Keep a backup of the original trusted signing key before changing protection settings.",
                 true))
-            .child(h_flex().gap_3()
+            .child(h_flex().w_full().items_center().gap_3().p_3().rounded_lg()
+                .bg(rgb(0x18181b)).border_1().border_color(cx.theme().border)
                 .child(Switch::new("security-acknowledgement").checked(self.acknowledged)
                     .on_click(cx.listener(|this, checked, _, cx| {
                         this.acknowledged = *checked;
                         cx.notify();
                     })))
-                .child(div().text_sm().child("I understand that these changes are permanent.")))
+                .child(div().flex_1().text_sm().child("I understand these changes are permanent.")))
             .child(h_flex().justify_end().child(
                 crate::ui::components::button::standard("security-continue", cx)
                     .label(if remaining > 0 { format!("Continue in {remaining}s") } else { "Continue".into() })
@@ -135,9 +136,12 @@ fn show_entry_warning(window: &mut Window, cx: &mut App) {
             acknowledged: false,
         }
     });
-    window.open_dialog(cx, move |dialog, _, _| {
+    window.open_dialog(cx, move |dialog, window, _| {
         dialog
             .title("Before changing security settings")
+            .width(px(560.).min(window.viewport_size().width - px(48.)))
+            .margin_top(((window.viewport_size().height - px(340.)) / 2.).max(px(24.)))
+            .overlay(true)
             .close_button(false)
             .overlay_closable(false)
             .keyboard(false)

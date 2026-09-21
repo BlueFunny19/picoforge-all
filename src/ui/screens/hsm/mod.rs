@@ -3,6 +3,7 @@ use crate::hal::applets::hsm;
 use crate::hal::types::FirmwareType;
 use crate::ui::app::AppModels;
 use crate::ui::components::{
+    applet_gate::{AppletGate, empty_state},
     button::standard,
     card::Card,
     dialog,
@@ -149,13 +150,22 @@ impl HsmViewModel {
         this.load(cx);
         this
     }
-    fn available(&self, cx: &App) -> bool {
-        self.device
-            .read(cx)
+    fn gate(&self, cx: &App) -> AppletGate {
+        let device = self.device.read(cx);
+        if !device
             .status
             .as_ref()
             .is_some_and(|s| s.firmware_type == FirmwareType::PicoAll)
-            && self.device.read(cx).ccid_on()
+        {
+            AppletGate::Unsupported
+        } else if !device.ccid_on() {
+            AppletGate::CcidOff
+        } else {
+            AppletGate::Ready
+        }
+    }
+    fn available(&self, cx: &App) -> bool {
+        self.gate(cx) == AppletGate::Ready
     }
     fn load(&mut self, cx: &mut Context<Self>) {
         if self.loading || !self.available(cx) {
@@ -538,13 +548,14 @@ impl HsmViewModel {
 impl Render for HsmViewModel {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let mut body = v_flex().w_full().min_w_0().gap_6();
-        if !self.available(cx) {
-            body =
-                body.child(Card::new().title("HSM unavailable").description(
-                    "Connect a Pico All device with its smart-card interface enabled.",
-                ));
+        if let Some((heading, message)) = self.gate(cx).message() {
+            body = body.child(empty_state(heading, message, cx.theme()));
         } else {
-            let mut details = information::grid();
+            let mut details = if self.info.is_some() {
+                information::grid()
+            } else {
+                div()
+            };
             if let Some(info) = &self.info {
                 for (label, value) in [
                     ("Firmware", info.version.clone()),
@@ -573,11 +584,16 @@ impl Render for HsmViewModel {
                     details = details.child(information::field(label, value, cx.theme()));
                 }
             } else {
-                details = details.child(if self.loading {
-                    "Reading card information…"
-                } else {
-                    "Card information is unavailable"
-                });
+                details = details.child(
+                    div()
+                        .text_sm()
+                        .text_color(cx.theme().muted_foreground)
+                        .child(if self.loading {
+                            "Reading card information…"
+                        } else {
+                            "Card information unavailable. Refresh to retry."
+                        }),
+                );
             }
             body = body.child(
                 Card::new()
@@ -588,18 +604,15 @@ impl Render for HsmViewModel {
                         standard("hsm-refresh", cx)
                             .icon(Icon::default().path("icons/refresh-cw.svg"))
                             .disabled(self.loading)
+                            .tooltip(
+                                self.error
+                                    .clone()
+                                    .unwrap_or_else(|| "Refresh card information".into()),
+                            )
                             .on_click(cx.listener(|this, _, _, cx| this.load(cx))),
                     )
                     .child(details),
             );
-            if let Some(e) = &self.error {
-                body = body.child(
-                    div()
-                        .text_sm()
-                        .text_color(cx.theme().muted_foreground)
-                        .child(e.clone()),
-                );
-            }
             body = body
                 .child(self.stored_list(true, cx))
                 .child(self.stored_list(false, cx))

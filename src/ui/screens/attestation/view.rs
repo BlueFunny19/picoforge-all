@@ -113,7 +113,7 @@ impl Render for AttestationViewModel {
                             if s.installed {
                                 "Organisation"
                             } else {
-                                "Device · Self-signed"
+                                "Self-signed"
                             },
                             theme,
                         ));

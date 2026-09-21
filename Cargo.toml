@@ -1,6 +1,6 @@
 [package]
 name = "picoforge"
-version = "0.9.0"
+version = "0.9.1"
 description = "PicoForge All: an unofficial PicoForge fork for Pico All security keys."
 authors = ["Suyog Tandel", "PicoForge Contributers"]
 license = "AGPL-3.0"

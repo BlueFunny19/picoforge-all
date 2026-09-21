@@ -9,25 +9,7 @@ use gpui::*;
 use gpui_component::button::{Button, ButtonCustomVariant, ButtonVariants};
 use gpui_component::{ActiveTheme, Disableable, Icon, StyledExt, Theme, h_flex, v_flex};
 
-fn empty_state(heading: &str, body: String, theme: &Theme) -> AnyElement {
-    v_flex()
-        .items_center()
-        .justify_center()
-        .h_64()
-        .gap_2()
-        .border_1()
-        .border_color(theme.border)
-        .rounded_xl()
-        .child(div().font_semibold().child(heading.to_string()))
-        .child(
-            div()
-                .text_sm()
-                .max_w(px(380.))
-                .text_color(theme.muted_foreground)
-                .child(body),
-        )
-        .into_any_element()
-}
+use crate::ui::components::applet_gate::empty_state;
 
 fn kv(label: &str, value: String, theme: &Theme) -> impl IntoElement {
     v_flex()

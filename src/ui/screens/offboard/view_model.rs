@@ -14,7 +14,7 @@ pub struct OffboardViewModel {
     pub(super) device: Entity<DeviceRepo>,
     pub(super) inputs: Vec<Entity<InputState>>,
     pub(super) loading: bool,
-    pub(super) log: String,
+    pub(super) log: super::console::Console,
     pub(super) log_scroll: ScrollHandle,
     pub(super) error: Option<String>,
     pub(super) pending: Option<Request>,
@@ -109,7 +109,7 @@ impl OffboardViewModel {
             device: models.device.clone(),
             inputs,
             loading: false,
-            log: String::new(),
+            log: super::console::Console::default(),
             log_scroll: ScrollHandle::new(),
             error: None,
             pending: None,
@@ -125,15 +125,17 @@ impl OffboardViewModel {
             .trim()
             .to_uppercase();
         if !firmware::serial_valid(&serial) {
-            self.log
-                .push_str("[WARN] Enter a 16-digit device serial.\n");
+            self.log.push("WARN", "Enter a 16-digit device serial.");
             cx.notify();
             return;
         }
         self.loading = true;
         self.read_status = None;
         self.read_attempted = true;
-        self.log.push_str("[INFO] Reading device information…\n");
+        self.log.push(
+            "INFO",
+            format!("Reading device information\nRequested serial: {serial}"),
+        );
         self.task = Some(cx.spawn(async move |this, cx| {
             let result = cx
                 .background_executor()
@@ -150,16 +152,22 @@ impl OffboardViewModel {
                 this.loading = false;
                 match result {
                     Ok(state) => {
-                        this.log.push_str(&format!(
-                            "[INFO] Read device {} · firmware {}\n",
-                            state.status.info.serial, state.status.info.firmware_version
-                        ));
+                        this.log.push("SUCCESS", format!("Device information read\nSerial: {}\nFirmware: {}\nVersion: {}\nTransport: {:?}",
+                            state.status.info.serial, state.status.firmware_type,
+                            state.status.info.firmware_version, state.status.method));
+                        let details = serde_json::json!({
+                            "device": state.status,
+                            "statusLight": state.led_status,
+                            "usbApplications": state.management_apps,
+                        });
+                        this.log.push("DATA", format!("Device response (decoded)\n{}",
+                            serde_json::to_string_pretty(&details).unwrap_or_else(|_| details.to_string())));
                         let status = state.status.clone();
                         this.device
                             .update(cx, |device, cx| device.apply_fresh_state(state, cx));
                         this.read_status = Some(status);
                     }
-                    Err(error) => this.log.push_str(&format!("[WARN] {error}\n")),
+                    Err(error) => this.log.push("ERROR", error),
                 }
                 this.log_scroll.scroll_to_bottom();
                 cx.notify();
@@ -374,12 +382,7 @@ impl OffboardViewModel {
                     let _ = this.update(cx, |this, cx| {
                         let has_output = !lines.is_empty() || finished;
                         for line in lines {
-                            this.log.push_str(&line);
-                            this.log.push('\n');
-                        }
-                        if this.log.len() > 120_000 {
-                            let cut = this.log[..this.log.len() - 80_000].rfind('\n').unwrap_or(0);
-                            this.log.drain(..cut);
+                            this.log.worker(line);
                         }
                         match result {
                             Ok(Ok(result)) => {
@@ -412,13 +415,13 @@ impl OffboardViewModel {
                             }
                             Ok(Err(error)) => {
                                 this.loading = false;
-                                this.log.push_str(&format!("[ERROR] {error}\n"));
+                                this.log.push("ERROR", error.clone());
                                 this.error = Some(error);
                             }
                             Err(std::sync::mpsc::TryRecvError::Disconnected) => {
                                 this.loading = false;
                                 this.log
-                                    .push_str("[ERROR] Firmware worker stopped unexpectedly.\n");
+                                    .push("ERROR", "Firmware worker stopped unexpectedly.");
                             }
                             _ => {}
                         }

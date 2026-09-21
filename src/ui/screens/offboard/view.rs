@@ -53,18 +53,46 @@ impl OffboardViewModel {
             )
     }
     fn result_card(&self, height: Option<Pixels>, cx: &mut Context<Self>) -> Div {
-        let mut result = v_flex().min_w_0().gap_0p5();
-        for line in self.log.lines() {
-            // Keep large public-key/metadata lines within the content width.
-            let chars: Vec<_> = line.chars().collect();
-            for part in chars.chunks(58) {
-                result = result.child(
+        let mut result = v_flex().w_full().min_w_0().gap_4();
+        for entry in &self.log.entries {
+            let color = match entry.level.as_str() {
+                "ERROR" => rgb(0xf87171),
+                "WARN" => rgb(0xfbbf24),
+                "SUCCESS" => rgb(0x4ade80),
+                "DATA" | "picotool" | "OUTPUT" => rgb(0xc4b5fd),
+                _ => rgb(0x67e8f9),
+            };
+            let mut record = v_flex()
+                .min_w_0()
+                .w_full()
+                .gap_1()
+                .font_family("monospace")
+                .child(
+                    h_flex()
+                        .gap_3()
+                        .text_xs()
+                        .child(
+                            div()
+                                .text_color(cx.theme().muted_foreground)
+                                .child(entry.timestamp.clone()),
+                        )
+                        .child(div().text_color(color).child(entry.level.clone())),
+                );
+            for line in entry.message.lines() {
+                record = record.child(
                     div()
+                        .w_full()
+                        .min_w_0()
                         .text_sm()
-                        .font_family("monospace")
-                        .child(part.iter().collect::<String>()),
+                        .text_color(if matches!(entry.level.as_str(), "ERROR" | "WARN") {
+                            color
+                        } else {
+                            rgb(0xe4e4e7)
+                        })
+                        .child(super::console::wrap_tokens(line)),
                 );
             }
+            result = result.child(record);
         }
         let mut card = v_flex()
             .w_full()
@@ -207,7 +235,7 @@ impl OffboardViewModel {
                 .description("Complete stages in order; review each change before applying")
                 .child(stages),
         );
-        if self.loading || !self.log.is_empty() || self.error.is_some() {
+        if self.loading || !self.log.entries.is_empty() || self.error.is_some() {
             body = body.child(self.result_card(Some(px(520.)), cx));
         }
         body.into_any_element()

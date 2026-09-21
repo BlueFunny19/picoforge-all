@@ -281,17 +281,27 @@ impl ConfigViewModel {
             .as_ref()
             .is_some_and(|s| s.firmware_type == FirmwareType::PicoAll);
         let mut rows = div().grid().grid_cols(2).gap_4();
-        let states = if pico_all {
-            [
+        let notifications_available = self
+            .device
+            .read(cx)
+            .led_status
+            .as_ref()
+            .is_some_and(|l| l.notifications.is_some());
+        let states: &[&str] = if pico_all {
+            &[
                 "Ready",
                 "Processing",
                 "Button confirmation",
                 "Firmware update",
+                "Success",
+                "Timeout",
+                "Error",
             ]
         } else {
-            ["Idle", "Processing", "Touch", "Boot"]
+            &["Idle", "Processing", "Touch", "Boot"]
         };
-        for (i, name) in states.into_iter().enumerate() {
+        for (i, &name) in states.iter().enumerate() {
+            let available = available && (i < 4 || notifications_available);
             let color = self.led_status_colors[i];
             let brightness = self.led_status_brightness[i];
             let palette = [
@@ -428,6 +438,13 @@ impl ConfigViewModel {
                             })),
                     ),
             );
+        if pico_all && available && !notifications_available {
+            card = card.child(crate::ui::components::notice::warning(
+                "Notification colors unavailable",
+                "Update the device firmware to edit Success, Timeout and Error colors.",
+                false,
+            ));
+        }
         if !available {
             card = card.child(crate::ui::components::notice::warning(
                 "Status colors unavailable",

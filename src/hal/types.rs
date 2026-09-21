@@ -188,6 +188,9 @@ pub struct LedStatusConfig {
     /// Fixed array of `(color, brightness)` pairs indexed by device status:
     /// Idle, Processing, Touch, Boot.
     pub statuses: [(u8, u8); 4],
+    /// Pico All notification extension: Success, Timeout, Error.
+    /// None means the firmware does not expose configurable notification colours.
+    pub notifications: Option<[(u8, u8); 3]>,
 }
 
 /// USB application endpoint bitmasks from the Management applet.

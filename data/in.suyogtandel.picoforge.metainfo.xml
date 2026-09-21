@@ -59,6 +59,16 @@
   </screenshots>
 
   <releases>
+    <release version="0.9.1" date="2026-09-21">
+      <description translate="no">
+        <p>PicoForge All 0.9.1</p>
+        <ul>
+          <li>Add Pico All applet and native firmware management.</li>
+          <li>Expand status-light controls and improve security dialogs and diagnostic logs.</li>
+          <li>Unify applet status and unavailable layouts.</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.9.0" date="2026-07-30">
         <url type="details">https://github.com/librekeys/picoforge/releases/tag/v0.9.0</url>
         <description translate="no">

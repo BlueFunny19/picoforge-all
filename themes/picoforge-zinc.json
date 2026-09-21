@@ -208,7 +208,7 @@
                 "warning.active.background": "#5b320f",
                 "warning.foreground": "#fefce8",
                 "warning.hover.background": "#7b4414",
-                "overlay": "#ffffff08",
+                "overlay": "#00000099",
                 "window.border": "#27272a",
                 "base.red": "#ef4444",
                 "base.red.light": "#fecaca",

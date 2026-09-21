@@ -2041,7 +2041,11 @@ pub(crate) fn read_rskey_led_config(transport: &HidTransport) -> Result<LedStatu
         steady,
         statuses
     );
-    Ok(LedStatusConfig { steady, statuses })
+    Ok(LedStatusConfig {
+        steady,
+        statuses,
+        notifications: None,
+    })
 }
 
 /// Write the full LED configuration to an RS-Key over FIDO.

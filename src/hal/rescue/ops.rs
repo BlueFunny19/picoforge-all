@@ -607,9 +607,11 @@ impl RescueOperations for PcscTransport {
 
         if self.firmware_type == FirmwareType::PicoAll {
             let current = super::pico_led::data(self)?;
-            if let Some(block) = super::pico_led::block(&current) {
-                tlv.extend([0x10, block.len() as u8]);
-                tlv.extend_from_slice(block);
+            for tag in [0x10, 0x11] {
+                if let Some(block) = super::pico_led::block(&current, tag) {
+                    tlv.extend([tag, block.len() as u8]);
+                    tlv.extend_from_slice(block);
+                }
             }
         }
         // 2. Connect and Send
@@ -764,7 +766,11 @@ impl RescueOperations for PcscTransport {
             .ok_or_else(|| PFError::Device("LED config response too short".into()))?;
 
         log::info!("LED config: steady={}, statuses={:?}", steady, statuses);
-        Ok(LedStatusConfig { steady, statuses })
+        Ok(LedStatusConfig {
+            steady,
+            statuses,
+            notifications: None,
+        })
     }
 
     /// Applies an individual LED status update to the Vendor/LED applet.
