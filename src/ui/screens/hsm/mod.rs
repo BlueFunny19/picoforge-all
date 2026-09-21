@@ -560,12 +560,12 @@ impl Render for HsmViewModel {
                 for (label, value) in [
                     ("Firmware", info.version.clone()),
                     ("Free memory", format!("{} bytes", info.free_memory)),
-                    ("User PIN", info.pin.to_string()),
-                    ("Security officer PIN", info.so_pin.to_string()),
+                    ("User PIN tries", info.pin.to_string()),
+                    ("Security officer PIN tries", info.so_pin.to_string()),
                     (
                         "Identity certificate",
                         if info.files.contains(&0xC400) {
-                            "C400 · Installed"
+                            "C400"
                         } else {
                             "Not installed"
                         }
@@ -574,14 +574,23 @@ impl Render for HsmViewModel {
                     (
                         "Identity key",
                         if info.files.contains(&0xCC00) {
-                            "CC00 · Installed"
+                            "CC00"
                         } else {
                             "Not installed"
                         }
                         .into(),
                     ),
                 ] {
-                    details = details.child(information::field(label, value, cx.theme()));
+                    let field = information::field(label, value, cx.theme());
+                    details = if label.ends_with("PIN tries") {
+                        details.child(field.id(SharedString::from(label)).tooltip(|window, cx| {
+                            gpui_component::tooltip::Tooltip::new(
+                                "Remaining / total tries. (default) means the factory retry limit, not a default PIN. A dash means this firmware does not report the limit."
+                            ).build(window, cx)
+                        }))
+                    } else {
+                        details.child(field)
+                    };
                 }
             } else {
                 details = details.child(

@@ -46,7 +46,31 @@ pub fn open() -> Result<CcidSession, PFError> {
     CcidSession::open(AID)
 }
 
+fn pin_metadata(data: &[u8]) -> Result<String, PFError> {
+    if data.len() != 4 || data[0] != 1 || data[2] == 0 || data[1] > data[2] || data[3] & !3 != 0 {
+        return Err(error("Invalid HSM PIN metadata"));
+    }
+    let state = if data[3] & 1 == 0 {
+        " (not initialized)"
+    } else if data[1] == 0 {
+        " (blocked)"
+    } else if data[3] & 2 != 0 {
+        " (default)"
+    } else {
+        ""
+    };
+    Ok(format!("{}/{}{}", data[1], data[2], state))
+}
+
 fn pin_status(s: &CcidSession, reference: u8) -> Result<String, PFError> {
+    let (metadata, status) = s.transceive(&Apdu::read(0x80, 0xF7, 0, reference, &[]))?;
+    if status.is_ok() {
+        return pin_metadata(&metadata);
+    }
+    // Older firmware exposes only remaining retries; never invent the limit.
+    if !matches!(status.0, 0x6D00 | 0x6A86 | 0x6B00 | 0x6E00) {
+        return Err(status.to_error());
+    }
     let (_, sw) = s.transceive(&Apdu::read(0, 0x20, 0, reference, &[]))?;
     Ok(match sw.0 {
         0x9000 => "Verified".into(),
@@ -54,7 +78,7 @@ fn pin_status(s: &CcidSession, reference: u8) -> Result<String, PFError> {
         0x6A88 => "Not initialized".into(),
         _ => {
             if let Some(n) = sw.retries_left() {
-                format!("{n} retries remaining")
+                format!("{n}/—")
             } else {
                 return Err(sw.to_error());
             }
@@ -319,6 +343,26 @@ pub fn dkek_share(pin: &[u8], share: &[u8]) -> Result<Vec<u8>, PFError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn pin_metadata_uses_real_limits_and_state() {
+        assert_eq!(pin_metadata(&[1, 3, 3, 3]).unwrap(), "3/3 (default)");
+        assert_eq!(pin_metadata(&[1, 14, 15, 3]).unwrap(), "14/15 (default)");
+        assert_eq!(pin_metadata(&[1, 4, 5, 1]).unwrap(), "4/5");
+        assert_eq!(pin_metadata(&[1, 0, 5, 1]).unwrap(), "0/5 (blocked)");
+        assert_eq!(
+            pin_metadata(&[1, 3, 3, 2]).unwrap(),
+            "3/3 (not initialized)"
+        );
+        for bad in [
+            &[1, 4, 3, 3][..],
+            &[1, 0, 0, 1],
+            &[2, 3, 3, 3],
+            &[1, 3, 3, 7],
+            &[1, 3],
+        ] {
+            assert!(pin_metadata(bad).is_err());
+        }
+    }
     #[test]
     fn list_ignores_padding_and_deduplicates() {
         assert_eq!(

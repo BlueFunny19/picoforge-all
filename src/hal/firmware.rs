@@ -35,6 +35,8 @@ pub struct Response {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ImageInfo {
     pub signed: bool,
+    #[serde(default)]
+    pub nuke: bool,
     pub fingerprint: Option<String>,
     pub hash: String,
 }
@@ -74,6 +76,7 @@ fn property<'a>(text: &'a str, label: &str) -> Option<&'a str> {
 pub fn parse_image(text: &str, digest: String) -> Result<ImageInfo, String> {
     let blocks: Vec<_> = text
         .split("Metadata Block ")
+        .skip(1)
         .filter(|b| property(b, "image type").is_some())
         .collect();
     let signed: Vec<_> = blocks
@@ -106,8 +109,12 @@ pub fn parse_image(text: &str, digest: String) -> Result<ImageInfo, String> {
         None | Some("none") | Some("not present") | Some("unsigned") if public.is_none() => None,
         _ => return Err("Firmware signature could not be verified.".into()),
     };
+    let program = text.split("Metadata Block ").next().unwrap_or("");
+    let nuke = property(program, "name") == Some("flash_nuke")
+        && property(program, "binary start") == Some("0x20000000");
     Ok(ImageInfo {
         signed: fingerprint.is_some(),
+        nuke,
         fingerprint,
         hash: digest,
     })
@@ -144,6 +151,10 @@ fn validate_flash(request: &Request, current: &Assessment) -> Result<(), String>
         return Err("Device or firmware changed. Inspect compatibility again.".into());
     }
     Ok(())
+}
+
+fn update_command(nuke: bool) -> [u8; 5] {
+    [0x80, 0x1f, if nuke { 2 } else { 1 }, 0, 0]
 }
 
 struct Worker {
@@ -286,14 +297,27 @@ impl Worker {
         Ok(ids)
     }
     fn ensure_bootsel(&self) -> Result<(), String> {
+        self.ensure_bootsel_for(false)
+    }
+    fn ensure_bootsel_for(&self, nuke: bool) -> Result<(), String> {
         if self.bootsel()? == vec![self.serial.clone()] {
             return Ok(());
         }
         self.log(
             "INFO",
-            "Press the board button when its light flashes yellow.",
+            if nuke {
+                "Nuke selected: press the board button while its light breathes red."
+            } else {
+                "Press the board button when its light flashes yellow."
+            },
         );
-        management(&self.serial, &[0x80, 0x1f, 1, 0, 0])?;
+        management(&self.serial, &update_command(nuke)).map_err(|e| {
+            if nuke && (e.contains("(6B00)") || e.contains("(6A86)") || e.contains("(6D00)")) {
+                "The installed firmware does not support Nuke confirmation lights. Update Pico All first.".into()
+            } else if nuke && e.contains("(6985)") {
+                "Nuke was not confirmed. Press and release the button during the red breathing prompt, then retry.".into()
+            } else { e }
+        })?;
         let started = Instant::now();
         while started.elapsed() < Duration::from_secs(30) {
             if self.bootsel()? == vec![self.serial.clone()] {
@@ -304,12 +328,12 @@ impl Worker {
         Err("The selected board did not enter update mode.".into())
     }
     fn image(&self, path: &Path) -> Result<ImageInfo, String> {
-        let text = self.command(&["info", "-m", &path.to_string_lossy()])?;
+        let text = self.command(&["info", "-a", &path.to_string_lossy()])?;
         parse_image(&text, hash(&fs::read(path).map_err(|e| e.to_string())?))
     }
     fn assessment(&self, path: &Path) -> Result<Assessment, String> {
         let image = self.image(path)?;
-        self.ensure_bootsel()?;
+        self.ensure_bootsel_for(image.nuke)?;
         let installed = self.device_command(&["info", "-m", "-d"])?;
         let secure_boot = match property(&installed, "secure boot") {
             Some("1") => true,
@@ -564,6 +588,39 @@ mod tests {
         );
     }
     #[test]
+    fn nuke_prompt_uses_program_metadata_not_filename() {
+        let blocks = metadata("");
+        let nuke = parse_image(
+            &format!("Program Information\n name: flash_nuke\n binary start: 0x20000000\n{blocks}"),
+            "".into(),
+        )
+        .unwrap();
+        assert!(nuke.nuke);
+        let ordinary = parse_image(
+            &format!("File flash_nuke.uf2\n name: pico_all\n binary start: 0x10000000\n{blocks}"),
+            "".into(),
+        )
+        .unwrap();
+        assert!(!ordinary.nuke);
+        assert_eq!(update_command(nuke.nuke), [0x80, 0x1f, 2, 0, 0]);
+        assert_eq!(update_command(ordinary.nuke), [0x80, 0x1f, 1, 0, 0]);
+        // The program summary duplicates the signature status in picotool -a.
+        let signed = metadata(&format!(
+            " signature: verified\n public key: {}\n",
+            "ab".repeat(64)
+        ));
+        assert!(
+            parse_image(
+                &format!(
+                    "Program Information\n image type: ARM Secure\n signature: verified\n{signed}"
+                ),
+                "".into(),
+            )
+            .unwrap()
+            .signed
+        );
+    }
+    #[test]
     fn exact_serial() {
         assert!(serial_valid("432D921975CCC729"));
         assert!(!serial_valid("--all"));
@@ -637,6 +694,7 @@ mod confirmation_tests {
     fn mismatch_needs_both_confirmations_and_exact_snapshot() {
         let image = ImageInfo {
             signed: true,
+            nuke: false,
             fingerprint: Some("new".into()),
             hash: "digest".into(),
         };

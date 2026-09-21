@@ -295,6 +295,9 @@ impl OffboardViewModel {
         };
         let phrase = format!("{verb} {}", request.serial);
         let warning = match request.action.as_str() {
+            "flash" if self.assessment.as_ref().is_some_and(|a| a.image.nuke) => {
+                "This runs Nuke and permanently erases all external Flash, including firmware, keys, PINs and settings. Hardware security locks remain. Afterward, install firmware signed with the board's trusted key."
+            }
             "flash" => {
                 "This writes the selected UF2, verifies the readback and restarts this board. Keep it connected until completion."
             }
