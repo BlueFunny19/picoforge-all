@@ -154,6 +154,9 @@ pub fn write_config(
 
 /// Read the LED status configuration via the specified transport method.
 pub fn read_led_config(method: DeviceMethod) -> Result<LedStatusConfig, PFError> {
+    if crate::hal::transport::pcsc::selected_pico_all_serial().is_some() {
+        return rescue::pico_led::read();
+    }
     match method {
         DeviceMethod::Fido => {
             let transport = crate::hal::transport::fido::HidTransport::open()?;
@@ -169,6 +172,9 @@ pub fn write_led_config(
     config: LedStatusConfig,
     pin: Option<String>,
 ) -> Result<String, PFError> {
+    if crate::hal::transport::pcsc::selected_pico_all_serial().is_some() {
+        return rescue::pico_led::write(config);
+    }
     match method {
         DeviceMethod::Fido => {
             let pin = pin.ok_or_else(|| {
@@ -841,14 +847,15 @@ pub fn openpgp_generate(admin: String, slot: openpgp::PgpSlot, choice: u8) -> Re
 }
 
 pub fn openpgp_reset() -> Result<(), PFError> {
-    // Pico All v8.1 preserves shared retry storage during TERMINATE DF.
-    // Blocking both PINs first leaves this firmware locked after activation.
-    if crate::hal::transport::pcsc::selected_pico_all_serial().is_some() {
+    let pico_all = crate::hal::transport::pcsc::selected_pico_all_serial().is_some();
+    let session = openpgp::open()?;
+    if pico_all && !openpgp::isolated_reset_supported(openpgp::get_version(&session)?) {
         return Err(PFError::Device(
-            "OpenPGP reset is unavailable on this Pico All firmware: it retains blocked PIN counters after reset. Update to a firmware with corrected reset handling before using factory reset.".into(),
+            "Update the Pico All firmware to OpenPGP 5.0.1 or later before resetting this applet."
+                .into(),
         ));
     }
-    openpgp::reset(&openpgp::open()?)
+    openpgp::reset(&session)
 }
 
 #[cfg(test)]

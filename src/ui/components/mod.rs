@@ -8,3 +8,6 @@ pub mod form;
 pub mod page_view;
 pub mod sidebar;
 pub mod tag;
+
+pub mod information;
+pub mod notice;

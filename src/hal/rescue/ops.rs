@@ -386,6 +386,9 @@ impl RescueOperations for PcscTransport {
                     PhyTag::LedDriver => {
                         if !field_data.is_empty() {
                             config.led_driver = Some(field_data[0]);
+                            if *fw_type == FirmwareType::PicoAll && field_data.len() >= 2 {
+                                config.led_order = Some(field_data[1]);
+                            }
                         }
                     }
                     PhyTag::LedOrder => {
@@ -539,8 +542,13 @@ impl RescueOperations for PcscTransport {
         // LED Driver (Tag 0x0C)
         if let Some(val) = config.led_driver {
             tlv.push(PhyTag::LedDriver as u8);
-            tlv.push(0x01);
+            let combined_order =
+                self.firmware_type == FirmwareType::PicoAll && config.led_order.is_some();
+            tlv.push(if combined_order { 2 } else { 1 });
             tlv.push(val);
+            if combined_order {
+                tlv.push(config.led_order.unwrap());
+            }
         }
 
         // Product Name (Tag 0x09)
@@ -571,7 +579,10 @@ impl RescueOperations for PcscTransport {
         }
 
         // LED Order (Tag 0x0D) — RS-Key extension, silently preserved
-        if let Some(val) = config.led_order {
+        if let Some(val) = config
+            .led_order
+            .filter(|_| self.firmware_type != FirmwareType::PicoAll)
+        {
             tlv.push(PhyTag::LedOrder as u8);
             tlv.push(0x01);
             tlv.push(val);
@@ -594,6 +605,13 @@ impl RescueOperations for PcscTransport {
             tlv.push(val);
         }
 
+        if self.firmware_type == FirmwareType::PicoAll {
+            let current = super::pico_led::data(self)?;
+            if let Some(block) = super::pico_led::block(&current) {
+                tlv.extend([0x10, block.len() as u8]);
+                tlv.extend_from_slice(block);
+            }
+        }
         // 2. Connect and Send
         if tlv.is_empty() {
             log::warn!("No configuration changes to apply");

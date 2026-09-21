@@ -195,7 +195,7 @@ impl Render for ApplicationRoot {
             }))
             .min_h(px(0.))
             .min_w(px(0.))
-            .overflow_y_scrollbar()
+            .overflow_x_hidden()
             .flex_grow()
             .bg(cx.theme().background)
             .child(match self.active_destination {
@@ -362,6 +362,11 @@ impl Render for ApplicationRoot {
                 }
             });
 
+        let content_area = if matches!(self.active_destination, Destination::Offboard) {
+            content_area.overflow_hidden().into_any_element()
+        } else {
+            content_area.overflow_y_scrollbar().into_any_element()
+        };
         #[cfg(target_os = "macos")]
         let content_column = content_area;
         #[cfg(not(target_os = "macos"))]

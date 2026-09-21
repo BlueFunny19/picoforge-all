@@ -35,16 +35,6 @@ impl SlotsViewModel {
         let configured = info.configured();
         let theme = cx.theme();
 
-        let status_text = if configured {
-            let mut s = info.kind.label().to_string();
-            if info.touch {
-                s.push_str(" · touch");
-            }
-            s
-        } else {
-            "Empty".to_string()
-        };
-
         let program_btn = PFButton::new(if configured { "Reprogram" } else { "Program" })
             .id(format!("prog-{slot}"))
             .with_colors(rgb(0x222225), rgb(0x2a2a2d), rgb(0x333336))
@@ -71,31 +61,35 @@ impl SlotsViewModel {
                 }))
         });
 
-        h_flex()
-            .justify_between()
-            .items_center()
+        v_flex()
+            .min_w_0()
+            .gap_4()
             .p_4()
             .border_1()
             .border_color(theme.border)
             .rounded_lg()
+            .child(div().font_medium().child(format!("Slot {slot}")))
             .child(
-                v_flex()
-                    .gap_0p5()
-                    .child(div().font_medium().child(format!("Slot {slot}")))
-                    .child(
-                        div()
-                            .text_sm()
-                            .text_color(if configured {
-                                theme.foreground
-                            } else {
-                                theme.muted_foreground
-                            })
-                            .child(status_text),
-                    ),
+                crate::ui::components::information::grid()
+                    .child(crate::ui::components::information::field(
+                        "Type",
+                        if configured {
+                            info.kind.label()
+                        } else {
+                            "Empty"
+                        },
+                        theme,
+                    ))
+                    .child(crate::ui::components::information::field(
+                        "Touch confirmation",
+                        if info.touch { "Required" } else { "Off" },
+                        theme,
+                    )),
             )
             .child(
                 h_flex()
                     .gap_2()
+                    .flex_wrap()
                     .child(program_btn)
                     .children(test_btn)
                     .children(delete_btn),

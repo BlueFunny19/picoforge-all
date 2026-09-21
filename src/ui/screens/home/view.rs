@@ -226,13 +226,13 @@ impl HomeViewModel {
                                     .text_color(theme.muted_foreground)
                                     .child("FIDO Versions"),
                             )
-                            .child(div().text_color(theme.foreground).child(
-                                if fido.versions.is_empty() {
-                                    "N/A".to_string()
-                                } else {
-                                    fido.versions.join(" · ")
-                                },
-                            )),
+                            .child(
+                                h_flex().gap_1().flex_wrap().children(
+                                    fido.versions
+                                        .iter()
+                                        .map(|version| Tag::new(version.clone())),
+                                ),
+                            ),
                     )
                     .child(div().h_px().bg(theme.border))
                     .child(

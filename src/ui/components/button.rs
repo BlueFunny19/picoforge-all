@@ -277,3 +277,14 @@ impl RenderOnce for PFIconButton {
         btn.child(content)
     }
 }
+
+/// Standard outlined control shared by applet and firmware pages.
+pub fn standard(id: impl Into<ElementId>, cx: &App) -> Button {
+    Button::new(id).custom(
+        ButtonCustomVariant::new(cx)
+            .color(rgb(0x1b1b1d).into())
+            .hover(rgb(0x232325).into())
+            .active(rgb(0x3f3f46).into())
+            .border(cx.theme().border),
+    )
+}

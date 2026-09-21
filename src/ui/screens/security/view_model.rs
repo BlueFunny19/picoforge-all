@@ -43,6 +43,8 @@ impl SecurityViewModel {
             _task: None,
         };
         this.load(cx);
+        // This view is cached for the application session; no setting is persisted.
+        show_entry_warning(window, cx);
         this
     }
     pub fn load(&mut self, cx: &mut Context<Self>) {
@@ -75,5 +77,93 @@ impl SecurityViewModel {
                 cx.notify();
             });
         }));
+    }
+}
+
+struct SecurityAcknowledgement {
+    opened: std::time::Instant,
+    acknowledged: bool,
+}
+impl SecurityAcknowledgement {
+    fn remaining(&self) -> u64 {
+        10u64.saturating_sub(self.opened.elapsed().as_secs())
+    }
+    fn can_close(&self) -> bool {
+        self.remaining() == 0 && self.acknowledged
+    }
+}
+impl Render for SecurityAcknowledgement {
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        use gpui_component::{Disableable, h_flex, switch::Switch, v_flex};
+        let remaining = self.remaining();
+        v_flex().gap_5()
+            .child(crate::ui::components::notice::warning(
+                "Permanent hardware changes",
+                "Secure Boot and Secure Lock cannot be undone. Keep a backup of the original trusted signing key before changing protection settings.",
+                true))
+            .child(h_flex().gap_3()
+                .child(Switch::new("security-acknowledgement").checked(self.acknowledged)
+                    .on_click(cx.listener(|this, checked, _, cx| {
+                        this.acknowledged = *checked;
+                        cx.notify();
+                    })))
+                .child(div().text_sm().child("I understand that these changes are permanent.")))
+            .child(h_flex().justify_end().child(
+                crate::ui::components::button::standard("security-continue", cx)
+                    .label(if remaining > 0 { format!("Continue in {remaining}s") } else { "Continue".into() })
+                    .disabled(!self.can_close())
+                    .on_click(cx.listener(|this, _, w, cx| {
+                        if this.can_close() { w.close_dialog(cx); }
+                    }))))
+    }
+}
+fn show_entry_warning(window: &mut Window, cx: &mut App) {
+    let acknowledgement = cx.new(|cx| {
+        cx.spawn(async |this: WeakEntity<SecurityAcknowledgement>, cx| {
+            for _ in 0..10 {
+                cx.background_executor()
+                    .timer(std::time::Duration::from_secs(1))
+                    .await;
+                if this.update(cx, |_, cx| cx.notify()).is_err() {
+                    break;
+                }
+            }
+        })
+        .detach();
+        SecurityAcknowledgement {
+            opened: std::time::Instant::now(),
+            acknowledged: false,
+        }
+    });
+    window.open_dialog(cx, move |dialog, _, _| {
+        dialog
+            .title("Before changing security settings")
+            .close_button(false)
+            .overlay_closable(false)
+            .keyboard(false)
+            .on_cancel(|_, _, _| false)
+            .on_ok(|_, _, _| false)
+            .child(acknowledgement.clone())
+    });
+}
+
+#[cfg(test)]
+mod acknowledgement_tests {
+    use super::SecurityAcknowledgement;
+    use std::time::{Duration, Instant};
+
+    #[test]
+    fn acknowledgement_and_ten_seconds_are_both_required() {
+        let mut state = SecurityAcknowledgement {
+            opened: Instant::now(),
+            acknowledged: false,
+        };
+        assert!(!state.can_close());
+        state.acknowledged = true;
+        assert!(!state.can_close());
+        state.opened = Instant::now() - Duration::from_secs(10);
+        assert!(state.can_close());
+        state.acknowledged = false;
+        assert!(!state.can_close());
     }
 }

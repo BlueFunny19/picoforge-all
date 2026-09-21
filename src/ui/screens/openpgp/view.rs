@@ -57,24 +57,25 @@ impl OpenPgpViewModel {
         let slot = k.slot;
         let d = self.loading;
         let has_fp = k.fingerprint.chars().any(|c| c != '0');
-        let status = if k.present {
-            format!("{} · touch {}", k.algo, if k.touch { "on" } else { "off" })
-        } else {
-            "Empty".to_string()
-        };
-
         let mut col = v_flex()
-            .gap_0p5()
+            .gap_3()
             .child(div().font_medium().child(slot.label()))
             .child(
-                div()
-                    .text_sm()
-                    .text_color(if k.present {
-                        theme.foreground
-                    } else {
-                        theme.muted_foreground
-                    })
-                    .child(status),
+                crate::ui::components::information::grid()
+                    .child(kv(
+                        "Algorithm",
+                        if k.present {
+                            k.algo.clone()
+                        } else {
+                            "Empty".into()
+                        },
+                        theme,
+                    ))
+                    .child(kv(
+                        "Touch confirmation",
+                        if k.touch { "Required" } else { "Off" }.into(),
+                        theme,
+                    )),
             );
         if has_fp {
             col = col.child(
@@ -202,20 +203,21 @@ impl Render for OpenPgpViewModel {
             .id("pgp-cardholder")
             .with_colors(rgb(0x222225), rgb(0x2a2a2d), rgb(0x333336))
             .on_click(cx.listener(|this, _, window, cx| this.open_cardholder(window, cx)));
-        let reset_btn =
-            Button::new("pgp-reset")
-                .label(
-                    if self.device.read(cx).status.as_ref().is_some_and(|s| {
-                        s.firmware_type == crate::hal::types::FirmwareType::PicoAll
-                    }) {
-                        "Reset unavailable on Pico All v8.1"
-                    } else {
-                        "Reset OpenPGP applet"
-                    },
-                )
-                .danger()
-                .disabled(self.loading)
-                .on_click(cx.listener(|this, _, window, cx| this.open_reset_dialog(window, cx)));
+        let reset_supported = !self
+            .device
+            .read(cx)
+            .status
+            .as_ref()
+            .is_some_and(|s| s.firmware_type == crate::hal::types::FirmwareType::PicoAll)
+            || self
+                .info
+                .as_ref()
+                .is_some_and(|i| crate::hal::applets::openpgp::isolated_reset_supported(i.version));
+        let reset_btn = Button::new("pgp-reset")
+            .label("Reset OpenPGP applet")
+            .danger()
+            .disabled(self.loading || !reset_supported)
+            .on_click(cx.listener(|this, _, window, cx| this.open_reset_dialog(window, cx)));
 
         let info_card = {
             let body = match &info {
@@ -255,7 +257,11 @@ impl Render for OpenPgpViewModel {
                 None => div()
                     .text_sm()
                     .text_color(theme.muted_foreground)
-                    .child("Reading card…")
+                    .child(if self.loading {
+                        "Reading card…"
+                    } else {
+                        "Card information unavailable. Refresh to retry."
+                    })
                     .into_any_element(),
             };
             Card::new()
@@ -322,7 +328,7 @@ impl Render for OpenPgpViewModel {
                 theme,
             ));
 
-        let reset_card = Card::new()
+        let mut reset_card = Card::new()
             .title("Reset")
             .description("Erase all OpenPGP keys and data")
             .icon(Icon::default().path("icons/trash.svg"))
@@ -333,6 +339,11 @@ impl Render for OpenPgpViewModel {
                 theme,
             ));
 
+        if !reset_supported {
+            reset_card = reset_card.child(crate::ui::components::notice::warning(
+                "Firmware update required",
+                "This firmware does not restore PIN retries after reset. Update to OpenPGP 5.0.1 or later.", false));
+        }
         let content = v_flex()
             .gap_6()
             .child(info_card)

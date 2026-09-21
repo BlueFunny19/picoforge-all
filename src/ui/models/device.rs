@@ -35,8 +35,7 @@ pub use crate::hal::fido::backup;
 pub use crate::hal::io::MgmAuth;
 pub use crate::hal::offboard::OffboardReport;
 pub use crate::hal::rescue::constants::{
-    LedColor, LedStatus, USB_CAP_FIDO2, USB_CAP_OATH, USB_CAP_OPENPGP, USB_CAP_OTP, USB_CAP_PIV,
-    USB_CAP_U2F,
+    LedColor, USB_CAP_FIDO2, USB_CAP_OATH, USB_CAP_OPENPGP, USB_CAP_OTP, USB_CAP_PIV, USB_CAP_U2F,
 };
 pub use types::{
     AppConfigInput, DeviceMethod, FidoDeviceInfo, FirmwareType, FullDeviceStatus, LedStatusConfig,
@@ -453,7 +452,10 @@ impl DeviceRepo {
                 io::read_management_config(status.method.clone()).ok(),
             )
         } else if status.firmware_type == types::FirmwareType::PicoAll {
-            (None, io::read_management_config(status.method.clone()).ok())
+            (
+                io::read_led_config(status.method.clone()).ok(),
+                io::read_management_config(status.method.clone()).ok(),
+            )
         } else {
             (None, None)
         };
@@ -718,7 +720,11 @@ impl DeviceRepo {
                     self.led_status = io::read_led_config(status.method.clone()).ok();
                     self.management_apps = io::read_management_config(status.method.clone()).ok();
                 } else {
-                    self.led_status = None;
+                    self.led_status = if status.firmware_type == types::FirmwareType::PicoAll {
+                        io::read_led_config(status.method.clone()).ok()
+                    } else {
+                        None
+                    };
                     self.management_apps = if status.firmware_type == types::FirmwareType::PicoAll {
                         io::read_management_config(status.method.clone()).ok()
                     } else {

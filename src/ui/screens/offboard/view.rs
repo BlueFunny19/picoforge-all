@@ -1,5 +1,6 @@
 use super::view_model::{FIELDS, OffboardViewModel};
-use crate::ui::components::{card::Card, page_view::PageView};
+use crate::ui::components::{button::standard, card::Card, information};
+use gpui::prelude::FluentBuilder;
 use gpui::*;
 use gpui_component::{
     ActiveTheme, Disableable, Icon,
@@ -17,32 +18,12 @@ impl OffboardViewModel {
                 .disabled(self.loading)
                 .flex_1(),
         );
-        if index != 2 && index != 6 {
+        if index != 1 && index != 4 {
             row = row.child(
-                Button::new(SharedString::from(format!("browse-{index}")))
-                    .outline()
-                    .label(if index == 5 {
-                        "Save as…"
-                    } else {
-                        "Browse…"
-                    })
+                standard(SharedString::from(format!("browse-{index}")), cx)
+                    .label("Browse…")
                     .disabled(self.loading)
-                    .on_click(cx.listener(move |this, _, w, cx| {
-                        if index == 5 {
-                            this.select_output(index, w, cx);
-                        } else {
-                            this.select_file(index, w, cx);
-                        }
-                    })),
-            );
-        }
-        if index == 4 {
-            row = row.child(
-                Button::new("new-key-path")
-                    .outline()
-                    .label("New path…")
-                    .disabled(self.loading)
-                    .on_click(cx.listener(|this, _, w, cx| this.select_output(4, w, cx))),
+                    .on_click(cx.listener(move |this, _, w, cx| this.select_file(index, w, cx))),
             );
         }
         v_flex()
@@ -52,30 +33,31 @@ impl OffboardViewModel {
             .into_any_element()
     }
     fn button(&self, id: &'static str, title: &'static str, cx: &mut Context<Self>) -> AnyElement {
-        Button::new(id)
-            .outline()
+        standard(id, cx)
             .label(title)
             .disabled(self.loading)
             .on_click(cx.listener(move |this, _, w, cx| this.start(id, w, cx)))
             .into_any_element()
     }
-    fn tool_card(&self, cx: &mut Context<Self>) -> Card {
+    fn restart_card(&self, cx: &mut Context<Self>) -> Card {
         Card::new()
-            .title("Local tools")
-            .description("Python with rich, cryptography and pyscard; Raspberry Pi picotool")
-            .icon(Icon::default().path("icons/settings.svg"))
-            .child(self.field(0, cx))
-            .child(self.field(1, cx))
+            .title("Restart device")
+            .icon(Icon::default().path("icons/refresh-cw.svg"))
+            .child(
+                div()
+                    .grid()
+                    .grid_cols(2)
+                    .gap_3()
+                    .child(self.button("reboot", "Normal mode", cx))
+                    .child(self.button("bootsel", "Update mode", cx)),
+            )
     }
-    fn result_card(&self, cx: &mut Context<Self>) -> Card {
-        let mut result = v_flex().min_w_0().gap_2();
-        if let Some(error) = &self.error {
-            result = result.child(div().text_color(cx.theme().danger).child(error.clone()));
-        }
+    fn result_card(&self, height: Option<Pixels>, cx: &mut Context<Self>) -> Div {
+        let mut result = v_flex().min_w_0().gap_0p5();
         for line in self.log.lines() {
             // Keep large public-key/metadata lines within the content width.
             let chars: Vec<_> = line.chars().collect();
-            for part in chars.chunks(88) {
+            for part in chars.chunks(58) {
                 result = result.child(
                     div()
                         .text_sm()
@@ -84,13 +66,47 @@ impl OffboardViewModel {
                 );
             }
         }
-        let mut card = Card::new()
-            .title(if self.loading {
-                "Operation in progress"
-            } else {
-                "Operation details"
-            })
-            .child(result);
+        let mut card = v_flex()
+            .w_full()
+            .min_w_0()
+            .min_h_0()
+            .gap_6()
+            .bg(rgb(0x18181b))
+            .border_1()
+            .border_color(cx.theme().border)
+            .rounded_xl()
+            .p_6()
+            .when_some(height, |this, height| this.h(height))
+            .when(height.is_none(), |this| this.h_full())
+            .child(
+                h_flex()
+                    .justify_between()
+                    .flex_shrink_0()
+                    .child(div().font_weight(FontWeight::BOLD).child("Console"))
+                    .child(
+                        Button::new("clear-console")
+                            .ghost()
+                            .label("Clear")
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.log.clear();
+                                this.error = None;
+                                cx.notify();
+                            })),
+                    ),
+            )
+            .child(
+                div()
+                    .id("firmware-log")
+                    .track_scroll(&self.log_scroll)
+                    .flex_1()
+                    .min_h_0()
+                    .overflow_y_scroll()
+                    .min_w_0()
+                    .p_3()
+                    .rounded_lg()
+                    .bg(rgb(0x101012))
+                    .child(result),
+            );
         if let Some(request) = &self.pending {
             let needs_boot = matches!(request.action.as_str(), "harden" | "enable");
             if needs_boot {
@@ -110,13 +126,13 @@ impl OffboardViewModel {
         card
     }
     pub fn security_controls(&self, locked: bool, cx: &mut Context<Self>) -> AnyElement {
-        let mut body = v_flex().gap_6().w_full().child(self.tool_card(cx)).child(
+        let mut body = v_flex().gap_6().w_full().child(
             Card::new()
                 .title("Provisioning target")
                 .description("Every stage is bound to this serial and signed firmware")
+                .child(self.field(1, cx))
                 .child(self.field(2, cx))
-                .child(self.field(3, cx))
-                .child(self.field(6, cx)),
+                .child(self.field(4, cx)),
         );
         let mut stages = v_flex().gap_3();
         for (id, title, description) in [
@@ -172,8 +188,7 @@ impl OffboardViewModel {
                             .child(description),
                     )
                     .child(
-                        Button::new(id)
-                            .outline()
+                        standard(id, cx)
                             .label(if matches!(id, "status" | "prove") {
                                 "Read / verify"
                             } else if id == "prepare" {
@@ -193,59 +208,140 @@ impl OffboardViewModel {
                 .child(stages),
         );
         if self.loading || !self.log.is_empty() || self.error.is_some() {
-            body = body.child(self.result_card(cx));
+            body = body.child(self.result_card(Some(px(520.)), cx));
         }
         body.into_any_element()
     }
 }
 impl Render for OffboardViewModel {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let status = self.device.read(cx).status.clone();
-        let summary = if let Some(s) = status {
-            format!(
-                "{} · {} · {} · Secure Boot {}",
-                s.info.serial,
-                s.firmware_type,
-                s.info.firmware_version,
-                if s.secure_boot { "enabled" } else { "disabled" }
-            )
+        let status = if self.read_attempted {
+            self.read_status.clone()
         } else {
-            "No device in normal mode. Enter its serial below to manage a board in BOOTSEL mode."
-                .into()
+            self.device.read(cx).status.clone()
         };
-        let mut body = v_flex().w_full().min_w_0().gap_6()
-            .child(Card::new().title("Device firmware").description(summary).icon(Icon::default().path("icons/microchip.svg"))
-                .child(self.field(2, cx))
-                .child(h_flex().gap_2().flex_wrap()
-                    .child(self.button("info", "Read installed image", cx))
-                    .child(self.button("bootsel", "Enter update mode", cx))
-                    .child(self.button("reboot", "Restart firmware", cx)))
-                .child(div().text_sm().text_color(cx.theme().muted_foreground)
-                    .child("Reading the installed image requests BOOTSEL and may need a button press. Restart firmware to return to normal mode.")))
-            .child(self.tool_card(cx))
-            .child(Card::new().title("Firmware image").description("Inspect a UF2 before signing or installing it")
-                .icon(Icon::default().path("icons/file.svg")).child(self.field(3, cx))
-                .child(self.button("inspect", "Inspect image", cx)))
-            .child(Card::new().title("Signing").description("Create a local signing key or sign with an existing key")
-                .icon(Icon::default().path("icons/key.svg"))
-                .child(self.field(4, cx)).child(self.field(5, cx))
-                .child(div().text_sm().text_color(cx.theme().muted_foreground)
-                    .child("A locked board requires its original trusted signing key. A new key cannot replace it. Existing key and output files are never overwritten."))
-                .child(h_flex().gap_2().flex_wrap()
-                    .child(self.button("new-key", "Generate signing key", cx))
-                    .child(self.button("sign", "Sign & verify image", cx))))
-            .child(Card::new().title("Install firmware").description("Write to the selected board, verify the readback and restart")
-                .icon(Icon::default().path("icons/refresh-cw.svg"))
-                .child("Select the signed UF2 in Firmware image above. Keep the board connected throughout the update.")
-                .child(self.button("flash", "Review firmware update…", cx)));
-        if self.loading || !self.log.is_empty() || self.error.is_some() {
-            body = body.child(self.result_card(cx));
+        let selected = self.inputs[1].read(cx).text().to_string();
+        let target = h_flex()
+            .gap_2()
+            .child(Input::new(&self.inputs[1]).flex_1().disabled(self.loading))
+            .child(self.button("info", "Read device", cx));
+        let mut details = information::grid();
+        if let Some(s) = status.filter(|s| s.info.serial.eq_ignore_ascii_case(selected.trim())) {
+            for (label, value) in [
+                ("Serial number", s.info.serial),
+                ("Firmware", s.firmware_type.to_string()),
+                ("Version", s.info.firmware_version),
+                (
+                    "Secure Boot",
+                    if s.secure_boot { "Enabled" } else { "Disabled" }.into(),
+                ),
+                (
+                    "Manufacturer",
+                    s.info.manufacturer.unwrap_or_else(|| "Unavailable".into()),
+                ),
+                ("Product", s.config.product_name),
+            ] {
+                details = details.child(information::field(label, value, cx.theme()));
+            }
+        } else {
+            details = details.child(
+                div()
+                    .text_sm()
+                    .text_color(cx.theme().muted_foreground)
+                    .child("Device information unavailable"),
+            );
         }
-        PageView::build(
-            "Firmware",
-            "Inspect, sign and install Pico All firmware.",
-            body,
-            cx.theme(),
+        let device = Card::new()
+            .title("Device firmware")
+            .icon(Icon::default().path("icons/microchip.svg"))
+            .header_right(
+                standard("firmware-refresh", cx)
+                    .icon(Icon::default().path("icons/refresh-cw.svg"))
+                    .tooltip("Refresh device information")
+                    .disabled(self.loading)
+                    .on_click(cx.listener(|this, _, w, cx| this.start("info", w, cx))),
+            )
+            .child(details)
+            .child(target);
+        let sign_disabled = self.loading || !self.image.as_ref().is_some_and(|i| !i.signed);
+        let flash_disabled = self.image.is_none()
+            || self.loading
+            || self.assessment.as_ref().is_some_and(|a| !a.allowed);
+        let files = Card::new()
+            .title("Firmware image")
+            .icon(Icon::default().path("icons/file.svg"))
+            .child(self.field(2, cx))
+            .child(self.field(3, cx))
+            .child(
+                div()
+                    .grid()
+                    .grid_cols(3)
+                    .gap_2()
+                    .child(self.button("inspect", "Inspect", cx))
+                    .child(
+                        standard("sign", cx)
+                            .label("Sign")
+                            .disabled(sign_disabled)
+                            .on_click(cx.listener(|this, _, w, cx| this.start("sign", w, cx))),
+                    )
+                    .child(
+                        standard("flash", cx)
+                            .label("FLASH")
+                            .disabled(flash_disabled)
+                            .on_click(cx.listener(|this, _, w, cx| this.start("flash", w, cx))),
+                    ),
+            );
+        let left = v_flex()
+            .id("firmware-controls")
+            .h_full()
+            .min_h_0()
+            .flex_1()
+            .overflow_y_scroll()
+            .w_full()
+            .min_w_0()
+            .gap_6()
+            .child(device)
+            .child(files)
+            .child(self.restart_card(cx));
+        let body = h_flex()
+            .w_full()
+            .flex_1()
+            .min_h_0()
+            .min_w_0()
+            .gap_6()
+            .child(left)
+            .child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .h_full()
+                    .child(self.result_card(None, cx)),
+            );
+        v_flex().size_full().min_h_0().items_center().child(
+            v_flex()
+                .size_full()
+                .min_h_0()
+                .max_w(px(1200.))
+                .px_10()
+                .py_5()
+                .gap_8()
+                .child(
+                    v_flex()
+                        .flex_shrink_0()
+                        .child(
+                            div()
+                                .text_3xl()
+                                .font_weight(FontWeight::EXTRA_BOLD)
+                                .child("Firmware"),
+                        )
+                        .child(
+                            div()
+                                .text_sm()
+                                .text_color(cx.theme().muted_foreground)
+                                .child("Manage device firmware."),
+                        ),
+                )
+                .child(body),
         )
     }
 }

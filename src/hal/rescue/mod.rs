@@ -86,3 +86,4 @@ pub fn read_root_status() -> Result<RootStatus, PFError> {
         critical: u32::from_be_bytes(r[3..7].try_into().unwrap()),
     })
 }
+pub mod pico_led;

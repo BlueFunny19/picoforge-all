@@ -58,11 +58,6 @@ impl PivViewModel {
             .meta
             .map(|m| m.origin == piv::ORIGIN_GENERATED)
             .unwrap_or(false);
-        let status_text = match s.meta {
-            Some(m) => format!("{} · {}", piv::algo_label(m.algo), origin_label(m.origin)),
-            None => "Empty".to_string(),
-        };
-        let cert = if s.has_cert { " · certificate" } else { "" };
         let d = self.loading;
 
         macro_rules! btn {
@@ -126,14 +121,26 @@ impl PivViewModel {
                     .gap_0p5()
                     .child(div().font_medium().child(piv::slot_label(slot)))
                     .child(
-                        div()
-                            .text_sm()
-                            .text_color(if has_key {
-                                theme.foreground
-                            } else {
-                                theme.muted_foreground
-                            })
-                            .child(format!("{status_text}{cert}")),
+                        crate::ui::components::information::grid()
+                            .child(kv(
+                                "Algorithm",
+                                s.meta
+                                    .map(|m| piv::algo_label(m.algo).to_string())
+                                    .unwrap_or_else(|| "Empty".into()),
+                                theme,
+                            ))
+                            .child(kv(
+                                "Origin",
+                                s.meta
+                                    .map(|m| origin_label(m.origin).to_string())
+                                    .unwrap_or_else(|| "—".into()),
+                                theme,
+                            ))
+                            .child(kv(
+                                "Certificate",
+                                if s.has_cert { "Installed" } else { "Empty" }.into(),
+                                theme,
+                            )),
                     ),
             )
             .child(h_flex().gap_2().flex_wrap().children(btns))
@@ -277,7 +284,11 @@ impl Render for PivViewModel {
                 None => div()
                     .text_sm()
                     .text_color(theme.muted_foreground)
-                    .child("Reading card…")
+                    .child(if self.loading {
+                        "Reading card…"
+                    } else {
+                        "Card information unavailable. Refresh to retry."
+                    })
                     .into_any_element(),
             };
             Card::new()

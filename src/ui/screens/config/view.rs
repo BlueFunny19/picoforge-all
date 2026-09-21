@@ -1,6 +1,6 @@
 use crate::ui::components::{card::Card, page_view::PageView};
 use crate::ui::models::device::{
-    DeviceMethod, FirmwareType, LedColor, LedStatus, USB_CAP_FIDO2, USB_CAP_OATH, USB_CAP_OPENPGP,
+    DeviceMethod, FirmwareType, LedColor, USB_CAP_FIDO2, USB_CAP_OATH, USB_CAP_OPENPGP,
     USB_CAP_OTP, USB_CAP_PIV, USB_CAP_U2F,
 };
 use crate::ui::screens::config::view_model::ConfigViewModel;
@@ -268,129 +268,178 @@ impl ConfigViewModel {
             .child(content)
     }
 
-    fn render_rskey_led_card(&mut self, cx: &mut Context<Self>, is_fido: bool) -> impl IntoElement {
-        let theme = cx.theme();
-        let mut rows = v_flex().gap_4();
-
-        let steady_listener = cx.listener(|this, checked, _, cx| {
-            this.led_status_steady = *checked;
-            cx.notify();
-        });
-
-        rows = rows.child(
-            h_flex()
-                .items_center()
-                .justify_between()
-                .child(
-                    v_flex().gap_0p5().child("Global Steady Mode").child(
-                        div()
-                            .text_sm()
-                            .text_color(theme.muted_foreground)
-                            .child("Keep status LEDs on constantly"),
-                    ),
-                )
-                .child(
-                    Switch::new("rskey-led-steady")
-                        .checked(self.led_status_steady)
-                        .disabled(is_fido)
-                        .on_click(steady_listener),
-                ),
-        );
-
-        rows = rows.child(div().h_px().bg(theme.border));
-
-        for (i, status) in LedStatus::all().iter().enumerate() {
-            let color_val = self.led_status_colors[i];
-            let brightness_val = self.led_status_brightness[i];
-
-            let cycle_color_listener = cx.listener(move |this, _, _, cx| {
-                let mut c = this.led_status_colors[i];
-                c = (c + 1) % LedColor::all().len() as u8;
-                this.led_status_colors[i] = c;
-                cx.notify();
-            });
-
-            let dec_bright_listener = cx.listener(move |this, _, _, cx| {
-                let b = this.led_status_brightness[i];
-                this.led_status_brightness[i] = b.saturating_sub(LED_BRIGHTNESS_STEP);
-                cx.notify();
-            });
-
-            let inc_bright_listener = cx.listener(move |this, _, _, cx| {
-                let b = this.led_status_brightness[i];
-                this.led_status_brightness[i] = b.saturating_add(LED_BRIGHTNESS_STEP);
-                cx.notify();
-            });
-
-            let color_name = LedColor::from_u8(color_val)
-                .map(|c| c.label())
-                .unwrap_or("Unknown");
-
+    fn render_rskey_led_card(
+        &mut self,
+        cx: &mut Context<Self>,
+        disabled: bool,
+    ) -> impl IntoElement {
+        let available = self.device.read(cx).led_status.is_some();
+        let pico_all = self
+            .device
+            .read(cx)
+            .status
+            .as_ref()
+            .is_some_and(|s| s.firmware_type == FirmwareType::PicoAll);
+        let mut rows = div().grid().grid_cols(2).gap_4();
+        let states = if pico_all {
+            [
+                "Ready",
+                "Processing",
+                "Button confirmation",
+                "Firmware update",
+            ]
+        } else {
+            ["Idle", "Processing", "Touch", "Boot"]
+        };
+        for (i, name) in states.into_iter().enumerate() {
+            let color = self.led_status_colors[i];
+            let brightness = self.led_status_brightness[i];
+            let palette = [
+                0x3f3f46, 0xef4444, 0x22c55e, 0x3b82f6, 0xfacc15, 0xd946ef, 0x22d3ee, 0xffffff,
+            ];
+            let swatch = palette[(color as usize).min(7)];
+            let color_name = if available {
+                LedColor::from_u8(color)
+                    .map(|c| c.label())
+                    .unwrap_or("Unknown")
+            } else {
+                "Unavailable"
+            };
             rows = rows.child(
-                h_flex()
-                    .items_center()
-                    .justify_between()
-                    .child(div().w_24().child(status.label()))
+                v_flex()
+                    .min_w_0()
+                    .gap_3()
+                    .p_4()
+                    .border_1()
+                    .border_color(cx.theme().border)
+                    .rounded_lg()
+                    .child(div().font_semibold().child(name))
                     .child(
-                        h_flex()
-                            .gap_2()
-                            .items_center()
+                        div()
+                            .grid()
+                            .grid_cols(2)
+                            .gap_3()
                             .child(
-                                Button::new(gpui::SharedString::from(format!("color-btn-{}", i)))
-                                    .child(color_name)
-                                    .custom(
-                                        ButtonCustomVariant::new(cx)
-                                            .color(rgb(0x27272a).into())
-                                            .hover(rgb(0x3f3f46).into())
-                                            .active(rgb(0x52525b).into())
-                                            .border(theme.border),
+                                v_flex()
+                                    .gap_2()
+                                    .child(
+                                        div()
+                                            .text_sm()
+                                            .text_color(cx.theme().muted_foreground)
+                                            .child("Color"),
                                     )
-                                    .disabled(is_fido)
-                                    .on_click(cycle_color_listener),
-                            )
-                            .child(div().w_4())
-                            .child(
-                                Button::new(gpui::SharedString::from(format!("bdec-btn-{}", i)))
-                                    .child("-")
-                                    .custom(
-                                        ButtonCustomVariant::new(cx)
-                                            .color(rgb(0x1b1b1d).into())
-                                            .hover(rgb(0x232325).into())
-                                            .active(rgb(0x3f3f46).into())
-                                            .border(theme.border),
-                                    )
-                                    .disabled(is_fido || brightness_val == 0)
-                                    .on_click(dec_bright_listener),
-                            )
-                            .child(
-                                div()
-                                    .w_8()
-                                    .flex()
-                                    .justify_center()
-                                    .child(brightness_val.to_string()),
+                                    .child(
+                                        Button::new(SharedString::from(format!("led-color-{i}")))
+                                            .outline()
+                                            .disabled(disabled || !available)
+                                            .child(
+                                                h_flex()
+                                                    .gap_2()
+                                                    .items_center()
+                                                    .child(div().size_3().rounded_full().bg(rgb(
+                                                        if available { swatch } else { 0x3f3f46 },
+                                                    )))
+                                                    .child(color_name),
+                                            )
+                                            .on_click(cx.listener(move |this, _, _, cx| {
+                                                this.led_status_colors[i] =
+                                                    (this.led_status_colors[i] + 1) % 8;
+                                                cx.notify();
+                                            })),
+                                    ),
                             )
                             .child(
-                                Button::new(gpui::SharedString::from(format!("binc-btn-{}", i)))
-                                    .child("+")
-                                    .custom(
-                                        ButtonCustomVariant::new(cx)
-                                            .color(rgb(0x1b1b1d).into())
-                                            .hover(rgb(0x232325).into())
-                                            .active(rgb(0x3f3f46).into())
-                                            .border(theme.border),
+                                v_flex()
+                                    .gap_2()
+                                    .child(
+                                        div()
+                                            .text_sm()
+                                            .text_color(cx.theme().muted_foreground)
+                                            .child("Brightness"),
                                     )
-                                    .disabled(is_fido || brightness_val == LED_BRIGHTNESS_MAX)
-                                    .on_click(inc_bright_listener),
+                                    .child(
+                                        h_flex()
+                                            .gap_2()
+                                            .items_center()
+                                            .child(
+                                                Button::new(SharedString::from(format!(
+                                                    "led-less-{i}"
+                                                )))
+                                                .outline()
+                                                .label("−")
+                                                .disabled(disabled || !available || brightness == 0)
+                                                .on_click(cx.listener(move |this, _, _, cx| {
+                                                    this.led_status_brightness[i] = this
+                                                        .led_status_brightness[i]
+                                                        .saturating_sub(LED_BRIGHTNESS_STEP);
+                                                    cx.notify();
+                                                })),
+                                            )
+                                            .child(div().w_12().text_center().child(if available {
+                                                format!(
+                                                    "{}%",
+                                                    (brightness as u32 * 100 + 127) / 255
+                                                )
+                                            } else {
+                                                "—".into()
+                                            }))
+                                            .child(
+                                                Button::new(SharedString::from(format!(
+                                                    "led-more-{i}"
+                                                )))
+                                                .outline()
+                                                .label("+")
+                                                .disabled(
+                                                    disabled
+                                                        || !available
+                                                        || brightness == LED_BRIGHTNESS_MAX,
+                                                )
+                                                .on_click(cx.listener(move |this, _, _, cx| {
+                                                    this.led_status_brightness[i] = this
+                                                        .led_status_brightness[i]
+                                                        .saturating_add(LED_BRIGHTNESS_STEP);
+                                                    cx.notify();
+                                                })),
+                                            ),
+                                    ),
                             ),
                     ),
             );
         }
-
-        Card::new()
-            .title("Status LED Colors")
-            .description("Configure LED colors and brightness per device state")
+        let mut card = Card::new()
+            .title("Status light")
             .icon(Icon::default().path("icons/palette.svg"))
             .child(rows)
+            .child(
+                h_flex()
+                    .justify_between()
+                    .child(if pico_all {
+                        "Steady ready light"
+                    } else {
+                        "Steady light"
+                    })
+                    .child(
+                        Switch::new("status-steady")
+                            .checked(self.led_status_steady)
+                            .disabled(disabled || !available)
+                            .on_click(cx.listener(|this, checked, _, cx| {
+                                this.led_status_steady = *checked;
+                                cx.notify();
+                            })),
+                    ),
+            );
+        if !available {
+            card = card.child(crate::ui::components::notice::warning(
+                "Status colors unavailable",
+                if pico_all {
+                    "Update the device firmware to read and save status colors."
+                } else {
+                    "Refresh the device to retry reading status colors."
+                },
+                false,
+            ));
+        }
+        card
     }
 
     fn render_rskey_apps_card(
@@ -462,14 +511,13 @@ impl ConfigViewModel {
         // Only the interfaces the firmware actually instantiates (USB_ITF_SUPPORTED
         // = CCID | HID | KB). WCID (WebUSB) and LWIP are pico-fido concepts RS-Key
         // never builds, so toggling them would be a no-op — don't offer them.
-        let mut rows = v_flex().gap_4().child(
-            div()
-                .text_sm()
-                .text_color(rgb(0xf59e0b))
-                .w_full()
-                .max_w(px(800.0))
-                .child("Advanced. HID is required for FIDO2/U2F. CCID is kept enabled here so the management and smart-card applications remain accessible."),
-        );
+        let mut rows = v_flex()
+            .gap_4()
+            .child(crate::ui::components::notice::warning(
+                "USB interfaces",
+                "Turning off HID disables passkeys. CCID stays on for device management.",
+                false,
+            ));
 
         let interfaces = [
             (
@@ -613,24 +661,12 @@ impl Render for ConfigViewModel {
 
         inner = inner.child(led_card);
 
-        if is_rskey {
-            inner = inner.child(self.render_rskey_led_card(cx, false));
-        }
-
-        if status
-            .as_ref()
-            .is_some_and(|s| s.firmware_type == FirmwareType::PicoAll)
+        if is_rskey
+            || status
+                .as_ref()
+                .is_some_and(|s| s.firmware_type == FirmwareType::PicoAll)
         {
-            inner = inner.child(Card::new().title("Status light")
-                .description("Colors and blink patterns are controlled by Pico All")
-                .icon(Icon::default().path("icons/palette.svg"))
-                .child(v_flex().gap_3()
-                    .child("Green breathing · Ready")
-                    .child("Yellow flashing · Press the device button to confirm")
-                    .child("Red double flash · Confirmation timed out")
-                    .child("Blue · Firmware update mode")
-                    .child(div().text_sm().text_color(cx.theme().muted_foreground)
-                        .child("Use LED Configuration to adjust overall brightness. This firmware does not expose per-state color overrides."))));
+            inner = inner.child(self.render_rskey_led_card(cx, self.loading));
         }
         inner = inner.child(touch_card).child(options_card);
 

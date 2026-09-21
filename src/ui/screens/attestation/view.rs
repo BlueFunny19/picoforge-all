@@ -98,25 +98,25 @@ impl Render for AttestationViewModel {
         let status_card = {
             let body = match &status {
                 Some(s) => {
-                    let mut col = v_flex().gap_2().child(
-                        h_flex()
-                            .gap_2()
-                            .items_center()
-                            .child(
-                                div()
-                                    .text_color(if s.installed {
-                                        theme.green
-                                    } else {
-                                        theme.muted_foreground
-                                    })
-                                    .child("●"),
-                            )
-                            .child(div().text_sm().child(if s.installed {
-                                "Org attestation installed"
+                    let mut col = crate::ui::components::information::grid()
+                        .child(crate::ui::components::information::field(
+                            "Organisation keychain",
+                            if s.installed {
+                                "Installed"
                             } else {
-                                "Not installed — self-signed device certificate in use"
-                            })),
-                    );
+                                "Not installed"
+                            },
+                            theme,
+                        ))
+                        .child(crate::ui::components::information::field(
+                            "Certificate source",
+                            if s.installed {
+                                "Organisation"
+                            } else {
+                                "Device · Self-signed"
+                            },
+                            theme,
+                        ));
                     if let Some(h) = &s.chain_hash {
                         col = col.child(
                             v_flex()
@@ -140,7 +140,7 @@ impl Render for AttestationViewModel {
             };
             Card::new()
                 .title("Attestation status")
-                .description("Whether an org attestation key + chain is installed")
+                .description("Org attestation keychain status")
                 .icon(Icon::default().path("icons/building-2.svg"))
                 .header_right(refresh_btn)
                 .child(body)

@@ -1,4 +1,4 @@
-use crate::ui::components::{card::Card, page_view::PageView, tag::Tag};
+use crate::ui::components::{card::Card, information, page_view::PageView, tag::Tag};
 use crate::ui::screens::about::view_model::AboutViewModel;
 use gpui::*;
 use gpui_component::{ActiveTheme, Icon, StyledExt, button::Button, h_flex, v_flex};
@@ -30,11 +30,9 @@ impl Render for AboutViewModel {
                                             .h(px(256.0)),
                                     )
                                     .child(
-                                        div()
-                                            .text_2xl()
-                                            .font_bold()
-                                            .text_color(theme.foreground)
-                                            .child("PicoForge All"),
+                                        h_flex().items_center().justify_center().gap_2()
+                                            .child(div().text_2xl().font_bold().text_color(theme.foreground).child("PicoForge"))
+                                            .child(img("appIcons/all-patch.svg").w(px(72.)).h(px(46.))),
                                     )
                                     .child(Tag::new(concat!("v", env!("CARGO_PKG_VERSION"))))
                                     .child(div().font_bold().text_color(rgb(0xE34C2D)).child("UNOFFICIAL FORK"))
@@ -47,43 +45,10 @@ impl Render for AboutViewModel {
                                             ),
                                     )
                                     .child(
-                                        div()
-                                            .text_sm()
-                                            .text_color(theme.muted_foreground)
-                                            .gap_1()
-                                            .pt_4()
-                                            .border_t_1()
-                                            .border_color(theme.border)
-                                            .border_t_1()
-                                            .border_color(theme.border)
-                                            .w_full().max_w(px(450.0))
-                                            .child(
-                                                h_flex()
-                                                    .justify_between()
-                                                    .items_start()
-                                                    .child("Code By:")
-                                                    .child(
-                                                        v_flex()
-                                                            .font_medium()
-                                                            .text_color(theme.foreground)
-                                                            .items_end()
-                                                            .child("PicoForge Contributers & BlueFunny"),
-                                                    ),
-                                            )
-                                            .child(
-                                                h_flex()
-                                                    .justify_between()
-                                                    .items_center()
-                                                    .pt_2()
-                                                    .mt_2()
-                                                    .child(h_flex().items_center().gap_1().child("Copyright:"))
-                                                    .child(
-                                                        div()
-                                                            .font_medium()
-                                                            .text_color(theme.foreground)
-                                                            .child("©2026 Suyog Tandel"),
-                                                    ),
-                                            ),
+                                        div().w(px(450.)).max_w_full().pt_4().border_t_1().border_color(theme.border)
+                                            .child(information::grid()
+                                                .child(information::field("Code By", "PicoForge Contributers & BlueFunny", theme))
+                                                .child(information::field("Copyright", "©2026 Suyog Tandel", theme)))
                                     )
                                     .child(
                                         h_flex()

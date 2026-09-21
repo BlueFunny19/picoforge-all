@@ -3,9 +3,11 @@ use crate::hal::applets::hsm;
 use crate::hal::types::FirmwareType;
 use crate::ui::app::AppModels;
 use crate::ui::components::{
+    button::standard,
     card::Card,
     dialog,
     form::{select_state, selected_key},
+    information,
     page_view::PageView,
 };
 use crate::ui::models::device::{DeviceEvent, DeviceRepo};
@@ -46,7 +48,7 @@ impl Action {
             Self::Wrap => "Export wrapped key",
             Self::Unwrap => "Import wrapped key",
             Self::Dkek => "DKEK shares",
-            Self::Initialize => "Initialize HSM",
+            Self::Initialize => "Reset HSM",
         }
     }
     fn fields(self) -> Vec<(&'static str, bool)> {
@@ -160,6 +162,7 @@ impl HsmViewModel {
             return;
         }
         self.loading = true;
+        self.info = None;
         self.error = None;
         cx.notify();
         self._task = Some(cx.spawn(async move |this, cx| {
@@ -178,6 +181,15 @@ impl HsmViewModel {
         }));
     }
     fn open_action(&mut self, action: Action, window: &mut Window, cx: &mut Context<Self>) {
+        self.open_action_for(action, None, window, cx);
+    }
+    fn open_action_for(
+        &mut self,
+        action: Action,
+        id: Option<u16>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let fields: Vec<_> = action
             .fields()
             .into_iter()
@@ -186,6 +198,19 @@ impl HsmViewModel {
                 (label, input)
             })
             .collect();
+        if let Some(id) = id {
+            fields[1].1.update(cx, |input, cx| {
+                input.set_value(
+                    if matches!(action, Action::Crypto | Action::Delete | Action::Wrap) {
+                        format!("{:02X}", id & 0xff)
+                    } else {
+                        format!("{id:04X}")
+                    },
+                    window,
+                    cx,
+                )
+            });
+        }
         let options = match action {
             Action::Generate => hsm::KEY_ALGORITHMS,
             Action::Crypto => hsm::CRYPTO_OPERATIONS,
@@ -335,6 +360,140 @@ fn execute(action: Action, args: &[String], choice: u8) -> Result<Vec<u8>, Strin
     Ok(Vec::new())
 }
 impl HsmViewModel {
+    fn stored_list(&self, keys: bool, cx: &mut Context<Self>) -> Card {
+        let ids: Vec<_> = self
+            .info
+            .as_ref()
+            .map(|i| {
+                i.files
+                    .iter()
+                    .copied()
+                    .filter(|id| !matches!(*id, 0xC400 | 0xCC00) && ((*id >> 8 == 0xCC) == keys))
+                    .collect()
+            })
+            .unwrap_or_default();
+        let action = if keys {
+            Action::Generate
+        } else {
+            Action::Write
+        };
+        let mut rows = v_flex().gap_2();
+        if ids.is_empty() {
+            rows = rows.child(
+                div()
+                    .p_4()
+                    .text_sm()
+                    .text_color(cx.theme().muted_foreground)
+                    .child(if self.info.is_none() {
+                        "Card information unavailable"
+                    } else if keys {
+                        "No stored keys"
+                    } else {
+                        "No stored objects"
+                    }),
+            );
+        }
+        for id in &ids {
+            let id = *id;
+            let kind = match id >> 8 {
+                0xCC => "Private / secret key",
+                0xC4 => "Public certificate",
+                0xCE => "Key description",
+                0xCA => "Data object",
+                0xC8 => "Certificate",
+                0xC9 => "Certificate description",
+                0xCF => "Data description",
+                0xCD => "Protected data",
+                _ => "Object",
+            };
+            let mut actions = h_flex().gap_2().flex_shrink_0();
+            for (action, icon) in if keys {
+                vec![
+                    (Action::Crypto, "icons/key.svg"),
+                    (Action::Wrap, "icons/save.svg"),
+                    (Action::Delete, "icons/trash-2.svg"),
+                ]
+            } else {
+                vec![
+                    (Action::Read, "icons/file.svg"),
+                    (Action::Write, "icons/replace.svg"),
+                    (Action::DeleteObject, "icons/trash-2.svg"),
+                ]
+            } {
+                actions = actions.child(
+                    standard(
+                        SharedString::from(format!("hsm-{id}-{}", action.title())),
+                        cx,
+                    )
+                    .icon(Icon::default().path(icon))
+                    .tooltip(action.title())
+                    .disabled(self.loading)
+                    .on_click(cx.listener(move |this, _, w, cx| {
+                        this.open_action_for(action, Some(id), w, cx)
+                    })),
+                );
+            }
+            rows = rows.child(
+                h_flex()
+                    .w_full()
+                    .justify_between()
+                    .gap_4()
+                    .p_4()
+                    .border_1()
+                    .border_color(cx.theme().border)
+                    .rounded_lg()
+                    .child(
+                        h_flex()
+                            .gap_3()
+                            .child(div().p_2().rounded_lg().bg(rgb(0x252528)).child(
+                                Icon::default().path(if keys {
+                                    "icons/key.svg"
+                                } else {
+                                    "icons/file.svg"
+                                }),
+                            ))
+                            .child(
+                                v_flex()
+                                    .gap_1()
+                                    .child(if keys {
+                                        format!("Key {:02X}", id & 0xff)
+                                    } else {
+                                        format!("Object {id:04X}")
+                                    })
+                                    .child(
+                                        div()
+                                            .text_sm()
+                                            .text_color(cx.theme().muted_foreground)
+                                            .child(kind),
+                                    ),
+                            ),
+                    )
+                    .child(actions),
+            );
+        }
+        Card::new()
+            .title(if keys { "Keys" } else { "Objects" })
+            .description(format!("{} stored", ids.len()))
+            .icon(Icon::default().path(if keys {
+                "icons/key.svg"
+            } else {
+                "icons/file.svg"
+            }))
+            .header_right(
+                standard(
+                    if keys {
+                        "hsm-add-key"
+                    } else {
+                        "hsm-add-object"
+                    },
+                    cx,
+                )
+                .label(action.title())
+                .disabled(self.loading || self.info.is_none())
+                .on_click(cx.listener(move |this, _, w, cx| this.open_action(action, w, cx))),
+            )
+            .child(rows)
+    }
     fn action_row(
         &self,
         title: &'static str,
@@ -344,9 +503,8 @@ impl HsmViewModel {
     ) -> AnyElement {
         let mut buttons = h_flex().gap_2().flex_wrap().min_w_0();
         for &action in actions {
-            let button = Button::new(SharedString::from(action.title()))
+            let button = standard(SharedString::from(action.title()), cx)
                 .label(action.title())
-                .outline()
                 .disabled(self.loading || self.info.is_none())
                 .on_click(cx.listener(move |this, _, w, cx| this.open_action(action, w, cx)));
             buttons = buttons.child(if matches!(action, Action::Initialize) {
@@ -355,10 +513,12 @@ impl HsmViewModel {
                 button
             });
         }
-        v_flex()
+        h_flex()
             .w_full()
             .min_w_0()
-            .gap_3()
+            .justify_between()
+            .items_center()
+            .gap_4()
             .p_4()
             .border_1()
             .border_color(cx.theme().border)
@@ -384,25 +544,33 @@ impl Render for HsmViewModel {
                     "Connect a Pico All device with its smart-card interface enabled.",
                 ));
         } else {
-            let mut details = div().grid().grid_cols(2).gap_6();
+            let mut details = information::grid();
             if let Some(info) = &self.info {
                 for (label, value) in [
                     ("Firmware", info.version.clone()),
                     ("Free memory", format!("{} bytes", info.free_memory)),
                     ("User PIN", info.pin.to_string()),
                     ("Security officer PIN", info.so_pin.to_string()),
+                    (
+                        "Identity certificate",
+                        if info.files.contains(&0xC400) {
+                            "C400 · Installed"
+                        } else {
+                            "Not installed"
+                        }
+                        .into(),
+                    ),
+                    (
+                        "Identity key",
+                        if info.files.contains(&0xCC00) {
+                            "CC00 · Installed"
+                        } else {
+                            "Not installed"
+                        }
+                        .into(),
+                    ),
                 ] {
-                    details = details.child(
-                        v_flex()
-                            .gap_1()
-                            .child(
-                                div()
-                                    .text_sm()
-                                    .text_color(cx.theme().muted_foreground)
-                                    .child(label),
-                            )
-                            .child(value),
-                    );
+                    details = details.child(information::field(label, value, cx.theme()));
                 }
             } else {
                 details = details.child(if self.loading {
@@ -414,88 +582,30 @@ impl Render for HsmViewModel {
             body = body.child(
                 Card::new()
                     .title("Card information")
-                    .description("SmartCard-HSM status")
+                    .description("HSM card status")
                     .icon(Icon::default().path("icons/microchip.svg"))
                     .header_right(
-                        Button::new("hsm-refresh")
-                            .outline()
+                        standard("hsm-refresh", cx)
                             .icon(Icon::default().path("icons/refresh-cw.svg"))
-                            .label("Refresh")
                             .disabled(self.loading)
                             .on_click(cx.listener(|this, _, _, cx| this.load(cx))),
                     )
                     .child(details),
             );
             if let Some(e) = &self.error {
-                body = body.child(div().text_color(cx.theme().danger).child(e.clone()));
-            }
-            let mut objects = v_flex().gap_2();
-            if let Some(info) = &self.info {
-                if info.files.is_empty() {
-                    objects = objects.child(
-                        div()
-                            .text_sm()
-                            .text_color(cx.theme().muted_foreground)
-                            .child("No stored objects"),
-                    );
-                }
-                for &id in &info.files {
-                    let kind = match id >> 8 {
-                        0xCC => "Private / secret key",
-                        0xC4 => "Public certificate",
-                        0xCE => "Key description",
-                        0xCA => "Data object",
-                        0xC8 => "Certificate",
-                        0xC9 => "Certificate description",
-                        0xCF => "Data description",
-                        0xCD => "Protected data",
-                        _ => "Object",
-                    };
-                    objects = objects.child(
-                        h_flex()
-                            .justify_between()
-                            .gap_4()
-                            .p_4()
-                            .border_1()
-                            .border_color(cx.theme().border)
-                            .rounded_lg()
-                            .child(format!("{id:04X}"))
-                            .child(
-                                div()
-                                    .text_sm()
-                                    .text_color(cx.theme().muted_foreground)
-                                    .child(if id & 0xff == 0 {
-                                        format!("{kind} · device identity")
-                                    } else {
-                                        kind.to_string()
-                                    }),
-                            ),
-                    );
-                }
+                body = body.child(
+                    div()
+                        .text_sm()
+                        .text_color(cx.theme().muted_foreground)
+                        .child(e.clone()),
+                );
             }
             body = body
+                .child(self.stored_list(true, cx))
+                .child(self.stored_list(false, cx))
                 .child(
                     Card::new()
-                        .title("Keys & objects")
-                        .description("Keys, certificates and data stored on this HSM")
-                        .icon(Icon::default().path("icons/key.svg"))
-                        .child(objects)
-                        .child(self.action_row(
-                            "Key management",
-                            "Generate a key in an unused slot, use it, or remove it.",
-                            &[Action::Generate, Action::Crypto, Action::Delete],
-                            cx,
-                        ))
-                        .child(self.action_row(
-                            "Certificates & data",
-                            "Read, replace or delete an object by its hexadecimal ID.",
-                            &[Action::Read, Action::Write, Action::DeleteObject],
-                            cx,
-                        )),
-                )
-                .child(
-                    Card::new()
-                        .title("PIN & recovery")
+                        .title("PIN")
                         .description("Manage the HSM user and security officer PINs")
                         .icon(Icon::default().path("icons/lock.svg"))
                         .child(self.action_row(
@@ -531,11 +641,11 @@ impl Render for HsmViewModel {
                 )
                 .child(
                     Card::new()
-                        .title("Initialize HSM")
+                        .title("Reset")
                         .description("Erase HSM contents and configure new PINs")
                         .icon(Icon::default().path("icons/trash-2.svg"))
                         .child(self.action_row(
-                            "Initialize or reset",
+                            "Factory reset HSM",
                             "Deletes all HSM keys and objects. This cannot be undone.",
                             &[Action::Initialize],
                             cx,
@@ -547,16 +657,13 @@ impl Render for HsmViewModel {
                         Card::new()
                             .title("Operation result")
                             .description("Hexadecimal output")
-                            .header_right(
-                                Button::new("copy-hsm-result")
-                                    .outline()
-                                    .label("Copy")
-                                    .on_click(cx.listener(|this, _, _, cx| {
-                                        cx.write_to_clipboard(ClipboardItem::new_string(
-                                            this.result.clone(),
-                                        ))
-                                    })),
-                            )
+                            .header_right(standard("copy-hsm-result", cx).label("Copy").on_click(
+                                cx.listener(|this, _, _, cx| {
+                                    cx.write_to_clipboard(ClipboardItem::new_string(
+                                        this.result.clone(),
+                                    ))
+                                }),
+                            ))
                             .child(v_flex().gap_1().children(
                                 self.result.as_bytes().chunks(64).map(|line| {
                                     div()

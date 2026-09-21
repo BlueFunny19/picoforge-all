@@ -178,12 +178,28 @@ impl AuditViewModel {
                     .child(div().w(px(10.)).h(px(10.)).rounded_full().bg(color))
                     .child(div().font_semibold().text_color(color).child(label)),
             )
-            .child(div().text_sm().child(format!(
-                "Signature {} · chain head {} · checkpoint over seq {}",
-                if v.signature_ok { "OK" } else { "INVALID" },
-                if v.head_matches { "bound" } else { "MISMATCH" },
-                v.seq_signed,
-            )))
+            .child(
+                crate::ui::components::information::grid()
+                    .child(crate::ui::components::information::field(
+                        "Signature",
+                        if v.signature_ok {
+                            "Verified"
+                        } else {
+                            "Invalid"
+                        },
+                        theme,
+                    ))
+                    .child(crate::ui::components::information::field(
+                        "Chain head",
+                        if v.head_matches { "Bound" } else { "Mismatch" },
+                        theme,
+                    ))
+                    .child(crate::ui::components::information::field(
+                        "Checkpoint sequence",
+                        v.seq_signed.to_string(),
+                        theme,
+                    )),
+            )
             .child(kv("Attestation key", v.pubkey_hex.clone()))
             .child(kv(
                 "Fingerprint (pin later with Expected key)",

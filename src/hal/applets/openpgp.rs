@@ -227,6 +227,10 @@ fn get_data(session: &CcidSession, tag: u16) -> Result<Vec<u8>, PFError> {
     ))
 }
 
+/// Pico All patch 5.0.1 restores OpenPGP retries while preserving PIV state.
+pub fn isolated_reset_supported(version: [u8; 3]) -> bool {
+    version >= [5, 0, 1]
+}
 pub fn get_version(session: &CcidSession) -> Result<[u8; 3], PFError> {
     let r = session.transceive_full(&Apdu::read(CLA_ISO, INS_GET_VERSION, 0, 0, &[]))?;
     let mut v = [0u8; 3];
@@ -542,5 +546,16 @@ mod tests {
         let c4 = tlv::find(d, 0xC4).unwrap();
         assert_eq!((c4[4], c4[5], c4[6]), (0x03, 0x00, 0x02)); // pw1/rc/pw3 retries
         assert_eq!(algo_label(tlv::find(d, 0xC1).unwrap()), "RSA-2048");
+    }
+}
+
+#[cfg(test)]
+mod reset_version_tests {
+    #[test]
+    fn gate_legacy_and_unreadable_firmware() {
+        assert!(!super::isolated_reset_supported([0, 0, 0]));
+        assert!(!super::isolated_reset_supported([5, 0, 0]));
+        assert!(super::isolated_reset_supported([5, 0, 1]));
+        assert!(super::isolated_reset_supported([5, 1, 0]));
     }
 }

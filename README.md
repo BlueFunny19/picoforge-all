@@ -75,9 +75,9 @@ To contribute to PicoForge, you'll need:
 ### Firmware management
 
 Firmware signing and security setup use the bundled Pico All management engine.
-Install Python with rich, cryptography and pyscard, and Raspberry Pi picotool; select their paths under Local tools if they are not on PATH.
+Firmware and security workflows run natively in Rust. Install Raspberry Pi picotool, place it on PATH or set the PICOTOOL environment variable to its executable. No Python runtime is required. Signing uses an existing secp256k1 PEM key; key generation is external. Signed firmware is checked against the selected board before flashing.
 A locked device requires its original trusted signing key.
-Pico All v8.1 OpenPGP factory reset is currently disabled because the firmware retains blocked PIN counters after reset.
+Pico All OpenPGP factory reset requires applet version 5.0.1 or later, which restores OpenPGP PIN retries while preserving PIV state.
 
 ## Building from Source
 
