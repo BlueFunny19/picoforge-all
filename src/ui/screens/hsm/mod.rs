@@ -457,12 +457,12 @@ impl HsmViewModel {
             let id = *id;
             let kind = match id >> 8 {
                 0xCC => "Private / secret key",
-                0xC4 => "Public certificate",
-                0xCE => "Key description",
-                0xCA => "Data object",
-                0xC8 => "Certificate",
-                0xC9 => "Certificate description",
-                0xCF => "Data description",
+                0xC4 => "Key description",
+                0xCE => "End-entity certificate",
+                0xCA => "CA certificate",
+                0xC8 => "Certificate description",
+                0xC9 => "Data description",
+                0xCF => "Readable data",
                 0xCD => "Protected data",
                 _ => "Object",
             };
@@ -613,7 +613,7 @@ impl Render for HsmViewModel {
                     ("User PIN tries", info.pin.to_string()),
                     ("Security officer PIN tries", info.so_pin.to_string()),
                     (
-                        "Identity certificate",
+                        "Identity key description",
                         if info.files.contains(&0xC400) {
                             "C400"
                         } else {
