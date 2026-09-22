@@ -243,6 +243,13 @@ impl OpenPgpViewModel {
                 let av = a.read(cx).text().to_string();
                 let bv = b.read(cx).text().to_string();
                 if av.is_empty() || bv.is_empty() {
+                    window.push_notification(
+                        format!(
+                            "{} is required.",
+                            if av.is_empty() { label_a } else { label_b }
+                        ),
+                        cx,
+                    );
                     return;
                 }
                 window.close_dialog(cx);
@@ -260,6 +267,7 @@ impl OpenPgpViewModel {
             let btn = submit.clone();
             dialog
                 .title(title)
+                .child("Factory defaults, only if unchanged: user PIN 123456; admin PIN 12345678. No reset code is set by default.")
                 .child(
                     gpui_component::v_flex()
                         .gap_3()
@@ -311,11 +319,16 @@ impl OpenPgpViewModel {
             std::rc::Rc::new(move |window: &mut Window, cx: &mut App| {
                 let admin_pin = admin.read(cx).text().to_string();
                 if admin_pin.is_empty() {
+                    window.push_notification(
+                        "Admin PIN is required. Factory default: 12345678, only if unchanged.",
+                        cx,
+                    );
                     return;
                 }
                 let choice = selected_key(&algo_sel, algos, cx);
                 window.close_dialog(cx);
                 let status = dialog::open_status_dialog("Generating Key", window, cx);
+                let _ = status.update(cx, |d, cx| d.set_loading("Generating the key on the device. RSA may take several minutes; keep it connected.", cx));
                 let _ = view.update(cx, |this, cx| {
                     this.run(
                         move || DeviceRepo::openpgp_generate_blocking(admin_pin, slot, choice),
@@ -333,7 +346,7 @@ impl OpenPgpViewModel {
             let btn = submit.clone();
             dialog
                 .title(format!("Generate — {}", slot.label()))
-                .child("Generates a new key pair in this slot (overwrites any existing key). This can take several seconds for RSA.")
+                .child("Generates a new key pair in this slot (overwrites any existing key). RSA generation may take several minutes. Keep the device connected until it finishes.")
                 .child(
                     gpui_component::v_flex()
                         .gap_3()
@@ -344,7 +357,7 @@ impl OpenPgpViewModel {
                                 .w_full()
                                 .bg(rgb(0x222225)),
                         )
-                        .child("Admin PIN (PW3)")
+                        .child("Admin PIN (PW3; factory default 12345678 if unchanged)")
                         .child(gpui_component::input::Input::new(&admin)),
                 )
                 .on_ok(move |_, window, cx| {
@@ -390,6 +403,10 @@ impl OpenPgpViewModel {
             std::rc::Rc::new(move |window: &mut Window, cx: &mut App| {
                 let admin_pin = admin.read(cx).text().to_string();
                 if admin_pin.is_empty() {
+                    window.push_notification(
+                        "Admin PIN is required. Factory default: 12345678, only if unchanged.",
+                        cx,
+                    );
                     return;
                 }
                 let on = selected_key(&touch_sel, OPT_TOUCH, cx) == 1;
@@ -423,7 +440,7 @@ impl OpenPgpViewModel {
                                 .w_full()
                                 .bg(rgb(0x222225)),
                         )
-                        .child("Admin PIN (PW3)")
+                        .child("Admin PIN (PW3; factory default 12345678 if unchanged)")
                         .child(gpui_component::input::Input::new(&admin)),
                 )
                 .on_ok(move |_, window, cx| {
@@ -490,6 +507,10 @@ impl OpenPgpViewModel {
             std::rc::Rc::new(move |window: &mut Window, cx: &mut App| {
                 let admin_pin = admin.read(cx).text().to_string();
                 if admin_pin.is_empty() {
+                    window.push_notification(
+                        "Admin PIN is required. Factory default: 12345678, only if unchanged.",
+                        cx,
+                    );
                     return;
                 }
                 let name_v = name.read(cx).text().to_string();
@@ -539,7 +560,7 @@ impl OpenPgpViewModel {
                         .child(gpui_component::input::Input::new(&lang))
                         .child("Sex")
                         .child(gpui_component::select::Select::new(&sex))
-                        .child("Admin PIN (PW3)")
+                        .child("Admin PIN (PW3; factory default 12345678 if unchanged)")
                         .child(gpui_component::input::Input::new(&admin)),
                 )
                 .on_ok(move |_, window, cx| {

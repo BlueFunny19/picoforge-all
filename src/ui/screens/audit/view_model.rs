@@ -154,7 +154,9 @@ impl AuditViewModel {
         let repo = self.device.read(cx);
         match &repo.status {
             None => AppletGate::Unsupported,
-            Some(s) if s.firmware_type != FirmwareType::RSKey => AppletGate::Unsupported,
+            Some(s) if !matches!(s.firmware_type, FirmwareType::RSKey | FirmwareType::PicoAll) => {
+                AppletGate::Unsupported
+            }
             Some(_) => AppletGate::Ready,
         }
     }

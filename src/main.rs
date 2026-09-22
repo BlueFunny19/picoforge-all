@@ -902,6 +902,10 @@ fn main() {
     let app = Application::new().with_assets(ui::assets::Assets);
 
     app.run(move |cx| {
+        cx.on_app_quit(|_| async {
+            hal::firmware::cleanup_signed_images();
+        })
+        .detach();
         gpui_component::init(cx);
         Theme::change(ThemeMode::Dark, None, cx);
 

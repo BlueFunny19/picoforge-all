@@ -602,10 +602,6 @@ impl DeviceRepo {
         io::read_device_details().ok().map(|s| s.info.serial)
     }
 
-    pub fn check_hid_available_blocking() -> bool {
-        crate::hal::transport::fido::HidTransport::open().is_ok()
-    }
-
     /// Cheap, non-intrusive presence fingerprint of the attached FIDO device
     /// (`vid:pid:serial`, or `None` when absent). Enumerates only — does not
     /// open the device — so it is safe to poll from the hot-plug watcher.
@@ -627,7 +623,7 @@ impl DeviceRepo {
         self.status = Some(state.status);
         self.led_status = state.led_status;
         self.management_apps = state.management_apps;
-        self.fido_info = Self::get_fido_info_blocking().ok();
+        self.update_fido_info(cx);
         cx.emit(DeviceEvent::Updated);
         cx.notify();
     }
@@ -635,9 +631,20 @@ impl DeviceRepo {
     /// Re-read FIDO info from the device and emit [`DeviceEvent::Updated`].
     /// ViewModels should call this instead of manually setting `repo.fido_info`.
     pub fn update_fido_info(&mut self, cx: &mut Context<Self>) {
-        self.fido_info = Self::get_fido_info_blocking().ok();
-        cx.emit(DeviceEvent::Updated);
-        cx.notify();
+        cx.spawn(async |this, cx| {
+            let result = cx
+                .background_executor()
+                .spawn(async { Self::get_fido_info_blocking() })
+                .await;
+            let _ = this.update(cx, |this, cx| {
+                if let Ok(info) = result {
+                    this.fido_info = Some(info);
+                }
+                cx.emit(DeviceEvent::Updated);
+                cx.notify();
+            });
+        })
+        .detach();
     }
 
     // ── Polling cycle ──────────────────────────────────────────────────────
@@ -699,48 +706,53 @@ impl DeviceRepo {
         self.begin_load();
 
         let old_serial = self.status.as_ref().map(|s| s.info.serial.clone());
-
-        match io::read_device_details() {
-            Ok(status) => {
-                self.device_changed = old_serial
-                    .as_ref()
-                    .map(|s| *s != status.info.serial)
-                    .unwrap_or(true);
-                self.status = Some(status.clone());
-
-                match io::get_fido_info() {
-                    Ok(fido) => self.fido_info = Some(fido),
-                    Err(e) => {
-                        log::error!("FIDO Info fetch failed: {}", e);
-                        self.fido_info = None;
-                    }
-                }
-
-                if status.firmware_type == types::FirmwareType::RSKey {
-                    self.led_status = io::read_led_config(status.method.clone()).ok();
-                    self.management_apps = io::read_management_config(status.method.clone()).ok();
-                } else {
-                    self.led_status = if status.firmware_type == types::FirmwareType::PicoAll {
+        cx.notify();
+        cx.spawn(async move |this, cx| {
+            let result = cx
+                .background_executor()
+                .spawn(async {
+                    let status = io::read_device_details()?;
+                    let fido = io::get_fido_info().ok();
+                    let managed = matches!(
+                        status.firmware_type,
+                        types::FirmwareType::RSKey | types::FirmwareType::PicoAll
+                    );
+                    let led = if managed {
                         io::read_led_config(status.method.clone()).ok()
                     } else {
                         None
                     };
-                    self.management_apps = if status.firmware_type == types::FirmwareType::PicoAll {
+                    let apps = if managed {
                         io::read_management_config(status.method.clone()).ok()
                     } else {
                         None
                     };
+                    Ok::<_, crate::error::PFError>((status, fido, led, apps))
+                })
+                .await;
+            let _ = this.update(cx, |this, cx| {
+                match result {
+                    Ok((status, fido, led, apps)) => {
+                        this.device_changed = old_serial.as_ref() != Some(&status.info.serial);
+                        this.status = Some(status);
+                        this.fido_info = fido;
+                        this.led_status = led;
+                        this.management_apps = apps;
+                    }
+                    Err(e) => {
+                        // Busy is transient; keep the selected device and its capabilities.
+                        if !e.to_string().contains("Device busy") {
+                            this.set_error(e.to_string());
+                        }
+                        this.device_changed = false;
+                    }
                 }
-            }
-            Err(e) => {
-                self.set_error(format!("{}", e));
-                self.device_changed = false;
-            }
-        }
-
-        self.end_load();
-        cx.emit(DeviceEvent::Updated);
-        cx.notify();
+                this.end_load();
+                cx.emit(DeviceEvent::Updated);
+                cx.notify();
+            });
+        })
+        .detach();
     }
 
     // ── State lifecycle helpers ────────────────────────────────────────────

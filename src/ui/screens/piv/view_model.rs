@@ -483,6 +483,13 @@ impl PivViewModel {
                 let av = a.read(cx).text().to_string();
                 let bv = b.read(cx).text().to_string();
                 if av.is_empty() || bv.is_empty() {
+                    window.push_notification(
+                        format!(
+                            "{} is required.",
+                            if av.is_empty() { label_a } else { label_b }
+                        ),
+                        cx,
+                    );
                     return;
                 }
                 window.close_dialog(cx);
@@ -500,6 +507,7 @@ impl PivViewModel {
             let btn = submit.clone();
             dialog
                 .title(title)
+                .child("Factory defaults, only if unchanged: PIN 123456; PUK 12345678.")
                 .child(
                     gpui_component::v_flex()
                         .gap_3()
@@ -618,6 +626,10 @@ impl PivViewModel {
                 };
                 let pin_v = pin.read(cx).text().to_string();
                 if pin_v.is_empty() {
+                    window.push_notification(
+                        "PIN is required. The factory default is 123456 if unchanged.",
+                        cx,
+                    );
                     return;
                 }
                 let pt = selected_key(&pin_tries, OPT_TRIES, cx);

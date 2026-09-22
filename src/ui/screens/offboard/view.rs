@@ -302,6 +302,12 @@ impl Render for OffboardViewModel {
             .child(self.field(3, cx))
             .child(
                 div()
+                    .text_sm()
+                    .text_color(cx.theme().muted_foreground)
+                    .child("Signed firmware is temporary and is deleted when PicoForge closes."),
+            )
+            .child(
+                div()
                     .grid()
                     .grid_cols(3)
                     .gap_2()

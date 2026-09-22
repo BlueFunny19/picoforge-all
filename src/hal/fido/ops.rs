@@ -1559,53 +1559,22 @@ impl FidoOperations for HidTransport {
         params: Option<Value>,
         pin: Option<&str>,
     ) -> Result<(u8, Option<Value>), PFError> {
-        let params_bytes = match &params {
-            Some(v) => to_vec(v).map_err(|e| PFError::Io(e.to_string()))?,
-            None => Vec::new(),
-        };
-
-        let mut outer = BTreeMap::new();
-        outer.insert(Value::Integer(1), Value::Integer(sub_cmd as i128));
-        if let Some(v) = params {
-            outer.insert(Value::Integer(2), v);
-        }
-        // With a PIN, authorise via a PERM_ACFG token + MAC — the proven
-        // CONFIG_WRITE path (protocol 1, 16-byte tag). Without one, the firmware
-        // gates on a physical touch instead, so no auth fields are sent.
-        if let Some(pin) = pin {
-            let token = self.get_pin_token_with_permission(
-                pin,
-                PinUvAuthTokenPermissions::AUTHENTICATOR_CONFIG,
-                None,
-            )?;
-            let mut input = vec![0xFFu8; 32];
-            input.push(RSKEY_CTAPHID_VENDOR_CMD);
-            input.push(sub_cmd);
-            input.extend(&params_bytes);
-            let hmac_key = hmac::Key::new(hmac::HMAC_SHA256, &token);
-            let mac = hmac::sign(&hmac_key, &input).as_ref()[..16].to_vec();
-            outer.insert(Value::Integer(3), Value::Integer(1));
-            outer.insert(Value::Integer(4), Value::Bytes(mac));
-        }
-
-        let inner = to_vec(&Value::Map(outer)).map_err(|e| PFError::Io(e.to_string()))?;
-        let mut full_payload = vec![RSKEY_CTAPHID_VENDOR_CMD];
-        full_payload.extend(inner);
+        let token = pin
+            .map(|pin| {
+                self.get_pin_token_with_permission(
+                    pin,
+                    PinUvAuthTokenPermissions::AUTHENTICATOR_CONFIG,
+                    None,
+                )
+            })
+            .transpose()?;
+        let full_payload = vendor_payload(sub_cmd, params, token.as_deref())?;
 
         // Touch-gated variants block until the button is pressed — allow ~30 s.
         const VENDOR_TOUCH_TIMEOUT_MS: i32 = 32_000;
         let resp =
             self.send_raw_with_timeout(CTAPHID_CBOR, &full_payload, VENDOR_TOUCH_TIMEOUT_MS)?;
-        if resp.is_empty() {
-            return Err(PFError::Device("empty vendor response".into()));
-        }
-        let status = resp[0];
-        let map = if status == 0 && resp.len() > 1 {
-            from_slice::<Value>(&resp[1..]).ok()
-        } else {
-            None
-        };
-        Ok((status, map))
+        vendor_response(&resp)
     }
 
     fn authconfig_vendor(
@@ -1782,4 +1751,55 @@ mod tests {
             "Encryption did not modify the block — the old bug is back!"
         );
     }
+}
+
+// Shared wire boundary: called by the live HID operation and native firmware tests.
+pub(crate) fn vendor_payload(
+    sub_cmd: u8,
+    params: Option<Value>,
+    pin_token: Option<&[u8]>,
+) -> Result<Vec<u8>, PFError> {
+    let params_bytes = match &params {
+        Some(v) => to_vec(v).map_err(|e| PFError::Io(e.to_string()))?,
+        None => Vec::new(),
+    };
+
+    let mut outer = BTreeMap::new();
+    outer.insert(Value::Integer(1), Value::Integer(sub_cmd as i128));
+    if let Some(v) = params {
+        outer.insert(Value::Integer(2), v);
+    }
+    // With a PIN, authorise via a PERM_ACFG token + MAC — the proven
+    // CONFIG_WRITE path (protocol 1, 16-byte tag). Without one, the firmware
+    // gates on a physical touch instead, so no auth fields are sent.
+    if let Some(token) = pin_token {
+        let mut input = vec![0xFFu8; 32];
+        input.push(RSKEY_CTAPHID_VENDOR_CMD);
+        input.push(sub_cmd);
+        input.extend(&params_bytes);
+        let hmac_key = hmac::Key::new(hmac::HMAC_SHA256, &token);
+        let mac = hmac::sign(&hmac_key, &input).as_ref()[..16].to_vec();
+        outer.insert(Value::Integer(3), Value::Integer(1));
+        outer.insert(Value::Integer(4), Value::Bytes(mac));
+    }
+
+    let inner = to_vec(&Value::Map(outer)).map_err(|e| PFError::Io(e.to_string()))?;
+    let mut full_payload = vec![RSKEY_CTAPHID_VENDOR_CMD];
+    full_payload.extend(inner);
+
+    Ok(full_payload)
+}
+pub(crate) fn vendor_response(resp: &[u8]) -> Result<(u8, Option<Value>), PFError> {
+    let (&status, body) = resp
+        .split_first()
+        .ok_or_else(|| PFError::Device("empty vendor response".into()))?;
+    let map = if status == 0 && !body.is_empty() {
+        Some(
+            from_slice::<Value>(body)
+                .map_err(|e| PFError::Device(format!("Malformed vendor response: {e}")))?,
+        )
+    } else {
+        None
+    };
+    Ok((status, map))
 }

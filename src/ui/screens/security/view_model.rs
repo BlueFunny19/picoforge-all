@@ -94,9 +94,8 @@ impl SecurityAcknowledgement {
 }
 impl Render for SecurityAcknowledgement {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        use gpui_component::{ActiveTheme, Disableable, h_flex, switch::Switch, v_flex};
-        let remaining = self.remaining();
-        v_flex().w_full().gap_5()
+        use gpui_component::{ActiveTheme, h_flex, switch::Switch, v_flex};
+        v_flex().w_full().gap_5().pb_4()
             .child(crate::ui::components::notice::warning(
                 "Permanent hardware changes",
                 "Secure Boot and Secure Lock cannot be undone. Keep a backup of the original trusted signing key before changing protection settings.",
@@ -109,13 +108,6 @@ impl Render for SecurityAcknowledgement {
                         cx.notify();
                     })))
                 .child(div().flex_1().text_sm().child("I understand these changes are permanent.")))
-            .child(h_flex().justify_end().child(
-                crate::ui::components::button::standard("security-continue", cx)
-                    .label(if remaining > 0 { format!("Continue in {remaining}s") } else { "Continue".into() })
-                    .disabled(!self.can_close())
-                    .on_click(cx.listener(|this, _, w, cx| {
-                        if this.can_close() { w.close_dialog(cx); }
-                    }))))
     }
 }
 fn show_entry_warning(window: &mut Window, cx: &mut App) {
@@ -136,9 +128,15 @@ fn show_entry_warning(window: &mut Window, cx: &mut App) {
             acknowledged: false,
         }
     });
+    // The fixed footer must follow both the timer and the acknowledgement switch.
+    window
+        .observe(&acknowledgement, cx, |_, window, _| window.refresh())
+        .detach();
     window.open_dialog(cx, move |dialog, window, _| {
         dialog
             .title("Before changing security settings")
+            .border_1()
+            .border_color(rgb(0xef4444))
             .width(px(560.).min(window.viewport_size().width - px(48.)))
             .margin_top(((window.viewport_size().height - px(340.)) / 2.).max(px(24.)))
             .overlay(true)
@@ -148,6 +146,30 @@ fn show_entry_warning(window: &mut Window, cx: &mut App) {
             .on_cancel(|_, _, _| false)
             .on_ok(|_, _, _| false)
             .child(acknowledgement.clone())
+            .footer({
+                let acknowledgement = acknowledgement.clone();
+                move |_, _, _, cx| {
+                    use gpui_component::Disableable;
+                    let state = acknowledgement.read(cx);
+                    let remaining = state.remaining();
+                    let enabled = state.can_close();
+                    let acknowledgement = acknowledgement.clone();
+                    vec![
+                        crate::ui::components::button::standard("security-continue", cx)
+                            .label(if remaining > 0 {
+                                format!("Continue in {remaining}s")
+                            } else {
+                                "Continue".into()
+                            })
+                            .disabled(!enabled)
+                            .on_click(move |_, window, cx| {
+                                if acknowledgement.read(cx).can_close() {
+                                    window.close_dialog(cx);
+                                }
+                            }),
+                    ]
+                }
+            })
     });
 }
 

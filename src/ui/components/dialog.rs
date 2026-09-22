@@ -63,11 +63,16 @@ impl PinPromptContent {
     }
 
     fn trigger_confirm(&mut self, cx: &mut Context<Self>) {
-        if matches!(self.phase, DialogPhase::Loading | DialogPhase::Success(_)) {
+        if matches!(
+            self.phase,
+            DialogPhase::Loading | DialogPhase::LoadingWithMessage(_) | DialogPhase::Success(_)
+        ) {
             return;
         }
         let pin = self.pin_input.read(cx).text().to_string();
-        if !pin.is_empty() {
+        if pin.is_empty() {
+            self.set_error("PIN is required.".into(), cx);
+        } else {
             let handle = cx.entity().downgrade();
             self.set_loading(cx);
             (self.on_confirm)(pin, handle, cx);
@@ -195,7 +200,13 @@ impl Render for PinPromptContent {
                                     .label(confirm_label)
                                     .on_click(move |_, _, cx| {
                                         let pin = pin_input.read(cx).text().to_string();
-                                        if !pin.is_empty() {
+                                        if pin.is_empty() {
+                                            if let Some(h) = handle.upgrade() {
+                                                h.update(cx, |this, cx| {
+                                                    this.set_error("PIN is required.".into(), cx)
+                                                });
+                                            }
+                                        } else {
                                             if let Some(h) = handle.upgrade() {
                                                 h.update(cx, |this, cx| this.set_loading(cx));
                                             }
@@ -262,7 +273,13 @@ impl Render for PinPromptContent {
                                     .label(confirm_label)
                                     .on_click(move |_, _, cx| {
                                         let pin = pin_input.read(cx).text().to_string();
-                                        if !pin.is_empty() {
+                                        if pin.is_empty() {
+                                            if let Some(h) = handle.upgrade() {
+                                                h.update(cx, |this, cx| {
+                                                    this.set_error("PIN is required.".into(), cx)
+                                                });
+                                            }
+                                        } else {
                                             if let Some(h) = handle.upgrade() {
                                                 h.update(cx, |this, cx| this.set_loading(cx));
                                             }
@@ -323,9 +340,23 @@ pub fn open_pin_prompt(
         }
     });
 
-    window.open_dialog(cx, move |dialog, _, _| {
+    // The title and keyboard policy live outside the content entity.
+    window
+        .observe(&content, cx, |_, window, _| window.refresh())
+        .detach();
+    window.open_dialog(cx, move |dialog, _, cx| {
+        let phase = &content.read(cx).phase;
+        let busy = matches!(
+            phase,
+            DialogPhase::Loading | DialogPhase::LoadingWithMessage(_)
+        );
         dialog
-            .title(dialog_title.clone())
+            .title(if matches!(phase, DialogPhase::Error(_)) {
+                SharedString::from("Error")
+            } else {
+                dialog_title.clone()
+            })
+            .keyboard(!busy)
             .child(content.clone())
             .overlay_closable(false)
             .close_button(false)
@@ -510,9 +541,23 @@ pub fn open_confirm(
         on_ok: std::rc::Rc::new(on_ok),
     });
 
-    window.open_dialog(cx, move |dialog, _, _| {
+    // The title and keyboard policy live outside the content entity.
+    window
+        .observe(&content, cx, |_, window, _| window.refresh())
+        .detach();
+    window.open_dialog(cx, move |dialog, _, cx| {
+        let phase = &content.read(cx).phase;
+        let busy = matches!(
+            phase,
+            DialogPhase::Loading | DialogPhase::LoadingWithMessage(_)
+        );
         dialog
-            .title(dialog_title.clone())
+            .title(if matches!(phase, DialogPhase::Error(_)) {
+                SharedString::from("Error")
+            } else {
+                dialog_title.clone()
+            })
+            .keyboard(!busy)
             .child(content.clone())
             .overlay_closable(false)
             .close_button(false)
@@ -548,7 +593,10 @@ impl ChangePinContent {
     }
 
     fn trigger_confirm(&mut self, cx: &mut Context<Self>) {
-        if matches!(self.phase, DialogPhase::Loading | DialogPhase::Success(_)) {
+        if matches!(
+            self.phase,
+            DialogPhase::Loading | DialogPhase::LoadingWithMessage(_) | DialogPhase::Success(_)
+        ) {
             return;
         }
 
@@ -835,9 +883,22 @@ pub fn open_change_pin(
         }
     });
 
-    window.open_dialog(cx, move |dialog, _, _| {
+    // The title and keyboard policy live outside the content entity.
+    window
+        .observe(&content, cx, |_, window, _| window.refresh())
+        .detach();
+    window.open_dialog(cx, move |dialog, _, cx| {
+        let phase = &content.read(cx).phase;
         dialog
-            .title("Change PIN")
+            .title(if matches!(phase, DialogPhase::Error(_)) {
+                "Error"
+            } else {
+                "Change PIN"
+            })
+            .keyboard(!matches!(
+                phase,
+                DialogPhase::Loading | DialogPhase::LoadingWithMessage(_)
+            ))
             .child(content.clone())
             .overlay_closable(false)
             .close_button(false)
@@ -872,7 +933,10 @@ impl SetPinContent {
     }
 
     fn trigger_confirm(&mut self, cx: &mut Context<Self>) {
-        if matches!(self.phase, DialogPhase::Loading | DialogPhase::Success(_)) {
+        if matches!(
+            self.phase,
+            DialogPhase::Loading | DialogPhase::LoadingWithMessage(_) | DialogPhase::Success(_)
+        ) {
             return;
         }
 
@@ -1128,9 +1192,22 @@ pub fn open_setup_pin(
         }
     });
 
-    window.open_dialog(cx, move |dialog, _, _| {
+    // The title and keyboard policy live outside the content entity.
+    window
+        .observe(&content, cx, |_, window, _| window.refresh())
+        .detach();
+    window.open_dialog(cx, move |dialog, _, cx| {
+        let phase = &content.read(cx).phase;
         dialog
-            .title("Set Up PIN")
+            .title(if matches!(phase, DialogPhase::Error(_)) {
+                "Error"
+            } else {
+                "Set Up PIN"
+            })
+            .keyboard(!matches!(
+                phase,
+                DialogPhase::Loading | DialogPhase::LoadingWithMessage(_)
+            ))
             .child(content.clone())
             .overlay_closable(false)
             .close_button(false)
@@ -1140,6 +1217,7 @@ pub fn open_setup_pin(
 pub struct StatusContent {
     phase: DialogPhase,
     title: SharedString,
+    started: std::time::Instant,
 }
 
 impl StatusContent {
@@ -1196,17 +1274,6 @@ impl Render for StatusContent {
                 v_flex()
                     .gap_4()
                     .child(
-                        h_flex()
-                            .gap_2()
-                            .items_center()
-                            .child(
-                                gpui_component::Icon::new(gpui_component::IconName::CircleX)
-                                    .text_color(cx.theme().danger)
-                                    .with_size(gpui_component::Size::Large),
-                            )
-                            .child(self.title.clone()),
-                    )
-                    .child(
                         div()
                             .px_3()
                             .py_2()
@@ -1232,6 +1299,16 @@ impl Render for StatusContent {
                 .gap_4()
                 .items_center()
                 .child(msg.clone())
+                .child(
+                    div()
+                        .text_sm()
+                        .text_color(cx.theme().muted_foreground)
+                        .child(format!(
+                            "Elapsed: {}m {:02}s",
+                            self.started.elapsed().as_secs() / 60,
+                            self.started.elapsed().as_secs() % 60
+                        )),
+                )
                 .child(
                     Button::new("loading")
                         .primary()
@@ -1264,16 +1341,57 @@ pub fn open_status_dialog(
     let title_str = SharedString::from(title.to_string());
     let dialog_title = title_str.clone();
 
-    let content = cx.new(|_cx| StatusContent {
-        phase: DialogPhase::Loading,
-        title: title_str,
+    let content = cx.new(|cx| {
+        cx.spawn(async |this: WeakEntity<StatusContent>, cx| {
+            loop {
+                cx.background_executor()
+                    .timer(std::time::Duration::from_secs(1))
+                    .await;
+                if this
+                    .update(cx, |this, cx| {
+                        let busy = matches!(
+                            this.phase,
+                            DialogPhase::Loading | DialogPhase::LoadingWithMessage(_)
+                        );
+                        if busy {
+                            cx.notify();
+                        }
+                        busy
+                    })
+                    .ok()
+                    != Some(true)
+                {
+                    break;
+                }
+            }
+        })
+        .detach();
+        StatusContent {
+            phase: DialogPhase::Loading,
+            title: title_str,
+            started: std::time::Instant::now(),
+        }
     });
 
     let handle = content.downgrade();
 
-    window.open_dialog(cx, move |dialog, _, _| {
+    // The title and keyboard policy live outside the content entity.
+    window
+        .observe(&content, cx, |_, window, _| window.refresh())
+        .detach();
+    window.open_dialog(cx, move |dialog, _, cx| {
+        let phase = &content.read(cx).phase;
+        let busy = matches!(
+            phase,
+            DialogPhase::Loading | DialogPhase::LoadingWithMessage(_)
+        );
         dialog
-            .title(dialog_title.clone())
+            .title(if matches!(phase, DialogPhase::Error(_)) {
+                SharedString::from("Error")
+            } else {
+                dialog_title.clone()
+            })
+            .keyboard(!busy)
             .child(content.clone())
             .overlay_closable(false)
             .close_button(false)

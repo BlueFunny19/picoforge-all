@@ -5,6 +5,15 @@ use pcsc::{Context, Protocols, Scope, ShareMode};
 use std::ffi::CString;
 use std::sync::{Mutex, MutexGuard};
 
+/// pcsc 2.9 panics on unmapped Windows driver status values (for example
+/// ERROR_GEN_FAILURE during removal). Convert that library boundary to an
+/// operation error so the view model can release its busy state.
+pub(crate) fn driver_call<T>(call: impl FnOnce() -> Result<T, pcsc::Error>) -> Result<T, PFError> {
+    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(call)) {
+        Ok(result) => result.map_err(PFError::Pcsc),
+        Err(_) => Err(PFError::Device("The smart-card driver interrupted the operation. Reconnect the device, then refresh its status.".into())),
+    }
+}
 static CARD_SESSION: Mutex<()> = Mutex::new(());
 
 /// Serialize HID and smart-card operations without blocking the UI thread.
@@ -58,7 +67,7 @@ fn select(card: &pcsc::Card, aid: &[u8]) -> Result<Vec<u8>, PFError> {
     let mut apdu = vec![0, 0xA4, 4, 4, aid.len() as u8];
     apdu.extend_from_slice(aid);
     let mut buf = [0; 4096];
-    let rx = card.transmit(&apdu, &mut buf)?;
+    let rx = driver_call(|| card.transmit(&apdu, &mut buf))?;
     if !rx.ends_with(&SW_SUCCESS) {
         return Err(PFError::Device(
             "Application not available on the selected device".into(),
@@ -73,8 +82,8 @@ pub(crate) fn connect_selected() -> Result<(pcsc::Card, MutexGuard<'static, ()>)
     let target = SELECTED.lock().unwrap().clone().ok_or_else(|| {
         PFError::Device("Refresh the device before opening an application".into())
     })?;
-    let ctx = Context::establish(Scope::User)?;
-    let card = ctx.connect(&target.reader, ShareMode::Shared, Protocols::ANY)?;
+    let ctx = driver_call(|| Context::establish(Scope::User))?;
+    let card = driver_call(|| ctx.connect(&target.reader, ShareMode::Shared, Protocols::ANY))?;
     let response = select(&card, RESCUE_AID)?;
     if response[..response.len() - 2] != target.identity {
         return Err(PFError::Device(
@@ -97,7 +106,7 @@ impl PcscTransport {
     pub fn discover() -> Result<Self, PFError> {
         let guard = lock_device()?;
         *SELECTED.lock().unwrap() = None;
-        let ctx = Context::establish(Scope::User)?;
+        let ctx = driver_call(|| Context::establish(Scope::User))?;
         let mut buf = [0; 4096];
         let mut candidates = Vec::new();
         for reader in ctx.list_readers(&mut buf)? {
@@ -152,7 +161,7 @@ impl PcscTransport {
     }
 
     pub fn transmit<'a>(&self, apdu: &[u8], rx_buf: &'a mut [u8]) -> Result<&'a [u8], PFError> {
-        self.card.transmit(apdu, rx_buf).map_err(PFError::Pcsc)
+        driver_call(|| self.card.transmit(apdu, rx_buf))
     }
 }
 
@@ -170,5 +179,16 @@ mod tests {
         data[2] = 7;
         assert_eq!(identify("FIDO", &data), FirmwareType::PicoFido);
         assert_eq!(identify("FIDO", &[]), FirmwareType::Unknown);
+    }
+}
+
+#[cfg(test)]
+mod driver_tests {
+    use super::*;
+    #[test]
+    fn unexpected_driver_code_is_an_operation_error() {
+        let result: Result<(), PFError> = driver_call(|| panic!("unmapped PC/SC error"));
+        assert!(result.unwrap_err().to_string().contains("Reconnect"));
+        assert_eq!(driver_call(|| Ok(42)).unwrap(), 42);
     }
 }

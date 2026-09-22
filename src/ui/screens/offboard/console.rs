@@ -1,8 +1,5 @@
 //! Timestamped console records, shared by UI reads and native firmware output.
-use std::{
-    collections::VecDeque,
-    time::{SystemTime, UNIX_EPOCH},
-};
+use std::collections::VecDeque;
 
 #[derive(Debug)]
 pub(super) struct Entry {
@@ -19,18 +16,8 @@ impl Console {
         self.entries.clear();
     }
     pub fn push(&mut self, level: &str, message: impl Into<String>) {
-        let seconds = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs()
-            % 86400;
         self.append(Entry {
-            timestamp: format!(
-                "{:02}:{:02}:{:02} UTC",
-                seconds / 3600,
-                seconds / 60 % 60,
-                seconds % 60
-            ),
+            timestamp: crate::logging::local_timestamp(),
             level: level.to_string(),
             message: message.into(),
         });
@@ -82,9 +69,9 @@ mod tests {
     #[test]
     fn worker_time_and_multiline_output_are_preserved() {
         let mut log = Console::default();
-        log.worker("[12:34:56 UTC] [picotool] serial:\n  432D921975CCC729".into());
+        log.worker("[12:34:56 +08:00] [picotool] serial:\n  432D921975CCC729".into());
         let entry = log.entries.front().unwrap();
-        assert_eq!(entry.timestamp, "12:34:56 UTC");
+        assert_eq!(entry.timestamp, "12:34:56 +08:00");
         assert_eq!(entry.level, "picotool");
         assert_eq!(entry.message, "serial:\n  432D921975CCC729");
         log.worker("unprefixed output".into());

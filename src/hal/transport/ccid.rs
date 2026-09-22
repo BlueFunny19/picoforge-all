@@ -54,7 +54,29 @@ impl CcidSession {
     pub fn transceive(&self, apdu: &Apdu) -> Result<(Vec<u8>, StatusWord), PFError> {
         let tx = apdu.encode();
         let mut rx = [0u8; RX_BUF];
-        let resp = self.card.transmit(&tx, &mut rx).map_err(PFError::Pcsc)?;
+        let started = std::time::Instant::now();
+        log::debug!(
+            "Smart-card command INS={:02X} P1={:02X} P2={:02X}, {} bytes",
+            apdu.ins,
+            apdu.p1,
+            apdu.p2,
+            tx.len()
+        );
+        let resp =
+            super::pcsc::driver_call(|| self.card.transmit(&tx, &mut rx)).map_err(|error| {
+                log::error!(
+                    "Smart-card INS={:02X} failed after {:.1}s: {error}",
+                    apdu.ins,
+                    started.elapsed().as_secs_f32()
+                );
+                error
+            })?;
+        log::debug!(
+            "Smart-card INS={:02X} completed after {:.1}s ({} bytes)",
+            apdu.ins,
+            started.elapsed().as_secs_f32(),
+            resp.len()
+        );
         if resp.len() < 2 {
             return Err(PFError::Device("Truncated APDU response".into()));
         }
@@ -83,26 +105,7 @@ impl CcidSession {
     }
 
     fn transceive_paged(&self, apdu: &Apdu, continue_ins: u8) -> Result<Vec<u8>, PFError> {
-        let mut cmd = apdu.clone();
-        let mut out = Vec::new();
-        loop {
-            let (data, sw) = self.transceive(&cmd)?;
-            if let Some(n) = sw.wrong_le() {
-                // 6Cxx: resend the same command with the corrected Le, no data yet.
-                cmd.le = Some(if n == 0 { 256 } else { n as u16 });
-                continue;
-            }
-            out.extend_from_slice(&data);
-            if let Some(n) = sw.more_data() {
-                cmd = Apdu::read(CLA_ISO, continue_ins, 0, 0, &[]);
-                cmd.le = Some(if n == 0 { 256 } else { n as u16 });
-                continue;
-            }
-            if sw.is_ok() {
-                return Ok(out);
-            }
-            return Err(sw.to_error());
-        }
+        assemble_response(apdu, continue_ins, |cmd| self.transceive(cmd))
     }
 
     /// Send a command whose data exceeds 255 bytes via ISO command-chaining
@@ -136,5 +139,94 @@ impl CcidSession {
             le: apdu.le,
         };
         self.transceive_full(&last)
+    }
+}
+
+fn assemble_response(
+    apdu: &Apdu,
+    continue_ins: u8,
+    mut transmit: impl FnMut(&Apdu) -> Result<(Vec<u8>, StatusWord), PFError>,
+) -> Result<Vec<u8>, PFError> {
+    let mut cmd = apdu.clone();
+    let mut out = Vec::new();
+    let mut corrected = false;
+    for _ in 0..512 {
+        let (data, sw) = transmit(&cmd)?;
+        if let Some(n) = sw.wrong_le() {
+            // 6Cxx: resend the same command with the corrected Le, no data yet.
+            if corrected {
+                return Err(PFError::Device(
+                    "Card repeatedly rejected the response length.".into(),
+                ));
+            }
+            corrected = true;
+            cmd.le = Some(if n == 0 { 256 } else { n as u16 });
+            continue;
+        }
+        if out.len() + data.len() > 65536 {
+            return Err(PFError::Device("Card response exceeds 64 KiB.".into()));
+        }
+        out.extend_from_slice(&data);
+        if let Some(n) = sw.more_data() {
+            corrected = false;
+            cmd = Apdu::read(CLA_ISO, continue_ins, 0, 0, &[]);
+            cmd.le = Some(if n == 0 { 256 } else { n as u16 });
+            continue;
+        }
+        if sw.is_ok() {
+            return Ok(out);
+        }
+        return Err(sw.to_error());
+    }
+    Err(PFError::Device(
+        "Card response did not finish after 512 pages.".into(),
+    ))
+}
+#[cfg(test)]
+mod response_tests {
+    use super::*;
+    #[test]
+    fn length_retry_and_response_pages_use_real_assembler() {
+        let request = Apdu::read(0, 0x47, 0x81, 0, &[0xb6, 0]);
+        let mut count = 0;
+        let result = assemble_response(&request, INS_GET_RESPONSE, |cmd| {
+            count += 1;
+            Ok(match count {
+                1 => (vec![], StatusWord(0x6c02)),
+                2 => {
+                    assert_eq!(cmd.le, Some(2));
+                    (vec![1, 2], StatusWord(0x6101))
+                }
+                3 => {
+                    assert_eq!(cmd.ins, INS_GET_RESPONSE);
+                    (vec![3], StatusWord(0x9000))
+                }
+                _ => panic!("unexpected extra command"),
+            })
+        })
+        .unwrap();
+        assert_eq!(result, [1, 2, 3]);
+    }
+    #[test]
+    fn nonterminating_firmware_responses_are_bounded() {
+        let command = Apdu::read(0, 0x47, 0x80, 0, &[]);
+        let mut calls = 0;
+        assert!(
+            assemble_response(&command, INS_GET_RESPONSE, |_| {
+                calls += 1;
+                Ok((vec![], StatusWord(0x6c00)))
+            })
+            .is_err()
+        );
+        assert_eq!(calls, 2);
+        calls = 0;
+        assert!(
+            assemble_response(&command, INS_GET_RESPONSE, |_| {
+                calls += 1;
+                Ok((vec![], StatusWord(0x6100)))
+            })
+            .is_err()
+        );
+        assert_eq!(calls, 512);
     }
 }

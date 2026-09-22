@@ -4276,6 +4276,7 @@ dependencies = [
  "bitflags 2.13.1",
  "byteorder",
  "cbc 0.2.1",
+ "chrono",
  "directories",
  "gpui",
  "gpui-component",

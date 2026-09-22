@@ -265,7 +265,6 @@ impl PasskeysViewModel {
             )
             .child(
                 Button::new("reset-device")
-                    .icon(Icon::default().path("icons/circle-alert.svg"))
                     .child("Reset Device")
                     .custom(
                         ButtonCustomVariant::new(cx)

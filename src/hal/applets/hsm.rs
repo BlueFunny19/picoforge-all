@@ -15,6 +15,7 @@ pub struct HsmInfo {
     pub pin: String,
     pub so_pin: String,
     pub files: Vec<u16>,
+    pub initialized: Option<bool>,
 }
 
 pub const KEY_ALGORITHMS: &[(&str, u8)] = &[
@@ -62,28 +63,31 @@ fn pin_metadata(data: &[u8]) -> Result<String, PFError> {
     Ok(format!("{}/{}{}", data[1], data[2], state))
 }
 
-fn pin_status(s: &CcidSession, reference: u8) -> Result<String, PFError> {
+fn pin_status(s: &CcidSession, reference: u8) -> Result<(String, Option<bool>), PFError> {
     let (metadata, status) = s.transceive(&Apdu::read(0x80, 0xF7, 0, reference, &[]))?;
     if status.is_ok() {
-        return pin_metadata(&metadata);
+        return Ok((pin_metadata(&metadata)?, Some(metadata[3] & 1 != 0)));
     }
     // Older firmware exposes only remaining retries; never invent the limit.
     if !matches!(status.0, 0x6D00 | 0x6A86 | 0x6B00 | 0x6E00) {
         return Err(status.to_error());
     }
     let (_, sw) = s.transceive(&Apdu::read(0, 0x20, 0, reference, &[]))?;
-    Ok(match sw.0 {
-        0x9000 => "Verified".into(),
-        0x6983 => "Blocked".into(),
-        0x6A88 => "Not initialized".into(),
-        _ => {
-            if let Some(n) = sw.retries_left() {
-                format!("{n}/—")
-            } else {
-                return Err(sw.to_error());
+    Ok((
+        match sw.0 {
+            0x9000 => "Verified".into(),
+            0x6983 => "Blocked".into(),
+            0x6A88 => "Not initialized".into(),
+            _ => {
+                if let Some(n) = sw.retries_left() {
+                    format!("{n}/—")
+                } else {
+                    return Err(sw.to_error());
+                }
             }
-        }
-    })
+        },
+        if sw.0 == 0x6A88 { Some(false) } else { None },
+    ))
 }
 pub fn parse_files(data: &[u8]) -> Result<Vec<u16>, PFError> {
     if data.len() % 2 != 0 {
@@ -108,11 +112,13 @@ pub fn read_info() -> Result<HsmInfo, PFError> {
     if r.len() != 7 {
         return Err(error("Invalid HSM version response"));
     }
+    let (pin, initialized) = pin_status(&s, 0x81)?;
     Ok(HsmInfo {
         version: format!("{}.{}", r[5], r[6]),
         free_memory: u32::from_be_bytes(r[..4].try_into().unwrap()),
-        pin: pin_status(&s, 0x81)?,
-        so_pin: pin_status(&s, 0x88)?,
+        pin,
+        initialized,
+        so_pin: pin_status(&s, 0x88)?.0,
         files: list_files(&s)?,
     })
 }
@@ -180,8 +186,23 @@ pub fn key_template(choice: u8) -> Result<Vec<u8>, PFError> {
     tlv::write(&mut data, 0x7F49, &public);
     Ok(data)
 }
+pub fn next_key_id(files: &[u16]) -> Result<u8, PFError> {
+    (1..=255u8)
+        .find(|id| {
+            !files
+                .iter()
+                .any(|fid| matches!(fid >> 8, 0xCC | 0xC4 | 0xCE) && *fid as u8 == *id)
+        })
+        .ok_or_else(|| error("All HSM key slots are occupied. Delete an unused key first."))
+}
+pub fn generate_auto(pin: &[u8], choice: u8) -> Result<Vec<u8>, PFError> {
+    generate_in_slot(pin, None, choice)
+}
 pub fn generate(pin: &[u8], id: u8, choice: u8) -> Result<Vec<u8>, PFError> {
     key_id(id)?;
+    generate_in_slot(pin, Some(id), choice)
+}
+fn generate_in_slot(pin: &[u8], requested: Option<u8>, choice: u8) -> Result<Vec<u8>, PFError> {
     let template = if choice <= 4 {
         key_template(choice)?
     } else if choice <= 7 {
@@ -190,8 +211,13 @@ pub fn generate(pin: &[u8], id: u8, choice: u8) -> Result<Vec<u8>, PFError> {
         return Err(error("Invalid algorithm"));
     };
     let s = open()?;
+    let files = list_files(&s)?;
+    let id = match requested {
+        Some(id) => id,
+        None => next_key_id(&files)?,
+    };
     // Never overwrite a key as a side effect of generation.
-    if list_files(&s)?.contains(&(0xCC00 | id as u16)) {
+    if files.contains(&(0xCC00 | id as u16)) {
         return Err(error("Key ID is occupied; choose an unused ID"));
     }
     verify(&s, pin, 0x81)?;
@@ -298,13 +324,24 @@ pub fn wrap_key(pin: &[u8], id: u8) -> Result<Vec<u8>, PFError> {
     verify(&s, pin, 0x81)?;
     s.transceive_full(&Apdu::read(0x80, 0x72, id, 0x92, &[]))
 }
+pub fn unwrap_auto(pin: &[u8], data: &[u8]) -> Result<(), PFError> {
+    unwrap_in_slot(pin, None, data)
+}
 pub fn unwrap_key(pin: &[u8], id: u8, data: &[u8]) -> Result<(), PFError> {
     key_id(id)?;
+    unwrap_in_slot(pin, Some(id), data)
+}
+fn unwrap_in_slot(pin: &[u8], requested: Option<u8>, data: &[u8]) -> Result<(), PFError> {
     if data.is_empty() || data.len() > 1800 {
         return Err(error("Wrapped key must contain 1 to 1800 bytes"));
     }
     let s = open()?;
-    if list_files(&s)?.contains(&(0xCC00 | id as u16)) {
+    let files = list_files(&s)?;
+    let id = match requested {
+        Some(id) => id,
+        None => next_key_id(&files)?,
+    };
+    if files.contains(&(0xCC00 | id as u16)) {
         return Err(error("Choose an unused key ID"));
     }
     verify(&s, pin, 0x81)?;
@@ -312,6 +349,12 @@ pub fn unwrap_key(pin: &[u8], id: u8, data: &[u8]) -> Result<(), PFError> {
     Ok(())
 }
 pub fn initialize(pin: &[u8], so: &[u8], shares: u8) -> Result<(), PFError> {
+    initialize_card(pin, so, shares, false)
+}
+pub fn setup(pin: &[u8], so: &[u8], shares: u8) -> Result<(), PFError> {
+    initialize_card(pin, so, shares, true)
+}
+fn initialize_card(pin: &[u8], so: &[u8], shares: u8, first_use: bool) -> Result<(), PFError> {
     validate_pin(pin)?;
     validate_pin(so)?;
     if shares > 16 {
@@ -326,6 +369,16 @@ pub fn initialize(pin: &[u8], so: &[u8], shares: u8) -> Result<(), PFError> {
         tlv::write(&mut data, 0x92, &[shares]);
     }
     let s = open()?;
+    if first_use
+        && (pin_status(&s, 0x81)?.1 != Some(false)
+            || list_files(&s)?
+                .iter()
+                .any(|f| !matches!(*f, 0xC400 | 0xCC00)))
+    {
+        return Err(error(
+            "HSM already contains user data or is initialized. Refresh its status before continuing.",
+        ));
+    }
     s.send_chained(&Apdu::write(0x80, 0x50, 0, 0, &data))?;
     Ok(())
 }
@@ -390,5 +443,21 @@ mod tests {
                 len
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod allocation_tests {
+    use super::*;
+    #[test]
+    fn automatic_id_skips_identity_and_all_key_related_objects() {
+        assert_eq!(next_key_id(&[0xCC00, 0xC400]).unwrap(), 1);
+        assert_eq!(next_key_id(&[0xCC01, 0xC402, 0xCE03, 0xCC05]).unwrap(), 4);
+        assert_eq!(next_key_id(&[0xCA01]).unwrap(), 1);
+    }
+    #[test]
+    fn automatic_id_does_not_overwrite_a_full_card() {
+        let files: Vec<_> = (1..=255u16).map(|id| 0xCC00 | id).collect();
+        assert!(next_key_id(&files).is_err());
     }
 }

@@ -1497,6 +1497,15 @@ pub(crate) fn enable_enterprise_attestation(pin: String) -> Result<String, Strin
         .send_config_enable_ea(&pin_token)
         .map_err(|e| format!("Failed to enable enterprise attestation: {}", e))?;
 
+    // Read back through the same live session before reporting success.
+    let response = transport
+        .send_cbor(CTAPHID_CBOR, &[CtapCommand::GetInfo as u8])
+        .map_err(|e| {
+            format!("Enterprise attestation was written, but reading its state failed: {e}")
+        })?;
+    let value: Value = from_slice(&response).map_err(|e| e.to_string())?;
+    let info = parse_fido_get_info(&value)?;
+    verify_enterprise_attestation_enabled(&info)?;
     Ok("Enterprise attestation enabled successfully.".into())
 }
 
@@ -1590,6 +1599,10 @@ fn read_journal(
     let (status, map) = transport
         .rs_key_vendor(RSKEY_VENDOR_AUDIT_READ, None, pin)
         .map_err(|e| e.to_string())?;
+    parse_journal_response(status, map)
+}
+
+fn parse_journal_response(status: u8, map: Option<Value>) -> Result<audit::AuditJournal, String> {
     let m = vendor_map(status, map, "audit read")?;
     let start = m_int(&m, 1).ok_or("audit read: missing start")? as u32;
     let seq_next = m_int(&m, 2).ok_or("audit read: missing seq_next")? as u32;
@@ -2549,5 +2562,30 @@ mod tests {
         // tag 0x0E len 0x01 val 0x03, and tag 0x0D len 0x01 val 0x01
         assert!(tlv.windows(3).any(|w| w == [0x0E, 0x01, 0x03]));
         assert!(tlv.windows(3).any(|w| w == [0x0D, 0x01, 0x01]));
+    }
+}
+
+fn verify_enterprise_attestation_enabled(info: &FidoDeviceInfo) -> Result<(), String> {
+    if info.options.get("ep") == Some(&true) {
+        Ok(())
+    } else {
+        Err("The device did not confirm enterprise attestation is enabled. Update its firmware and retry.".into())
+    }
+}
+
+#[cfg(test)]
+mod client_integration_tests;
+
+pub(crate) mod reconnect;
+pub(crate) fn wait_for_reset_reconnection() -> Result<(), String> {
+    let expected = HidTransport::selected_fingerprint()
+        .ok_or("Connect the selected security key before resetting it.")?;
+    let start = std::time::Instant::now();
+    let mut state = reconnect::Reconnection::default();
+    loop {
+        if state.observe(HidTransport::has_fingerprint(&expected), start.elapsed())? {
+            return Ok(());
+        }
+        std::thread::sleep(std::time::Duration::from_millis(150));
     }
 }

@@ -26,7 +26,7 @@ fn vote(values: &[u32], threshold: usize) -> u32 {
 fn lock_vote(value: u32) -> u32 {
     vote(&[value & 255, (value >> 8) & 255, (value >> 16) & 255], 2)
 }
-fn read(w: &Worker, row: u16, ecc: bool) -> Result<u32, String> {
+pub(super) fn read(w: &Worker, row: u16, ecc: bool) -> Result<u32, String> {
     let text = w.device_command(&[
         "otp",
         "get",
@@ -63,12 +63,45 @@ fn parse_row(text: &str, row: u16, ecc: bool) -> Result<u32, String> {
     }
     Ok(value)
 }
-pub(super) fn secure_boot_enabled(w: &Worker) -> Result<bool, String> {
+pub(super) fn secure_boot_enabled(
+    mut read_word: impl FnMut(u16, bool) -> Result<u32, String>,
+) -> Result<bool, String> {
     let critical = CRIT
         .iter()
-        .map(|r| read(w, *r, false))
+        .map(|r| read_word(*r, false))
         .collect::<Result<Vec<_>, _>>()?;
     Ok(vote(&critical, 3) & 1 != 0)
+}
+/// Trust comes from valid, non-revoked OTP slots, including on an empty board.
+pub(super) fn trusted_boot_key(
+    fingerprint: Option<&str>,
+    mut read_word: impl FnMut(u16, bool) -> Result<u32, String>,
+) -> Result<Option<String>, String> {
+    let Some(fingerprint) = fingerprint else {
+        return Ok(None);
+    };
+    let flags = FLAGS
+        .iter()
+        .map(|row| read_word(*row, false))
+        .collect::<Result<Vec<_>, _>>()?;
+    let flags = vote(&flags, 2);
+    let active = (flags & 15) & !((flags >> 8) & 15);
+    let mut matched = None;
+    for slot in 0..4 {
+        if active & (1 << slot) == 0 {
+            continue;
+        }
+        let mut bytes = Vec::with_capacity(32);
+        for row in 0x80 + slot * 16..0x90 + slot * 16 {
+            let word = read_word(row, true)
+                .map_err(|e| format!("Cannot verify OTP signing key {slot}: {e}"))?;
+            bytes.extend_from_slice(&(word as u16).to_le_bytes());
+        }
+        if hex::encode(bytes) == fingerprint {
+            matched = Some(fingerprint.to_owned());
+        }
+    }
+    Ok(matched)
 }
 pub(super) fn factory_serial(w: &Worker) -> Result<String, String> {
     let words = (0..4)

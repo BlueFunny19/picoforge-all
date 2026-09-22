@@ -10,6 +10,28 @@ use std::{
 };
 mod security;
 
+#[derive(Default)]
+struct SigningArtifacts {
+    closing: bool,
+    files: Vec<PathBuf>,
+}
+static SIGNING_ARTIFACTS: std::sync::Mutex<SigningArtifacts> =
+    std::sync::Mutex::new(SigningArtifacts {
+        closing: false,
+        files: Vec::new(),
+    });
+pub fn cleanup_signed_images() {
+    let mut artifacts = SIGNING_ARTIFACTS.lock().unwrap_or_else(|e| e.into_inner());
+    artifacts.closing = true;
+    for path in artifacts.files.drain(..) {
+        if let Err(error) = fs::remove_file(&path) {
+            if error.kind() != std::io::ErrorKind::NotFound {
+                log::warn!("Could not remove temporary signed image: {error}");
+            }
+        }
+    }
+}
+
 #[derive(Clone, Default, Serialize)]
 pub struct Request {
     pub action: String,
@@ -45,7 +67,8 @@ pub struct Assessment {
     pub image: ImageInfo,
     pub serial: String,
     pub secure_boot: bool,
-    pub installed_key: Option<String>,
+    /// Matching OTP key when Secure Boot is enabled; installed key otherwise.
+    pub board_key: Option<String>,
     pub allowed: bool,
     pub mismatch: bool,
 }
@@ -119,19 +142,50 @@ pub fn parse_image(text: &str, digest: String) -> Result<ImageInfo, String> {
         hash: digest,
     })
 }
+fn installed_image(text: &str) -> Result<Option<ImageInfo>, String> {
+    let mut lines = text.lines().map(str::trim).filter(|line| !line.is_empty());
+    if !text.contains("Metadata Block ")
+        && lines.any(|line| line == "Metadata Blocks")
+        && lines.next() == Some("none")
+    {
+        return Ok(None);
+    }
+    parse_image(text, String::new()).map(Some)
+}
+
+fn assess_device(
+    image: ImageInfo,
+    serial: String,
+    installed: &str,
+    mut read_otp: impl FnMut(u16, bool) -> Result<u32, String>,
+) -> Result<Assessment, String> {
+    let secure_boot = match property(installed, "secure boot") {
+        Some("1") => true,
+        Some("0") => false,
+        _ => return Err("Cannot determine the board's Secure Boot state.".into()),
+    };
+    let secure_boot = secure_boot || security::secure_boot_enabled(&mut read_otp)?;
+    let board_key = if secure_boot {
+        security::trusted_boot_key(image.fingerprint.as_deref(), &mut read_otp)?
+    } else {
+        installed_image(installed)?.and_then(|image| image.fingerprint)
+    };
+    Ok(assess(image, serial, secure_boot, board_key))
+}
+
 pub fn assess(
     image: ImageInfo,
     serial: String,
     secure_boot: bool,
-    installed_key: Option<String>,
+    board_key: Option<String>,
 ) -> Assessment {
-    let mismatch = image.fingerprint != installed_key;
-    let allowed = !secure_boot || (image.signed && installed_key.is_some() && !mismatch);
+    let mismatch = image.fingerprint != board_key;
+    let allowed = !secure_boot || (image.signed && board_key.is_some() && !mismatch);
     Assessment {
         image,
         serial,
         secure_boot,
-        installed_key,
+        board_key,
         allowed,
         mismatch,
     }
@@ -164,16 +218,9 @@ struct Worker {
 }
 impl Worker {
     fn log(&self, level: &str, message: impl AsRef<str>) {
-        let secs = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs()
-            % 86400;
         let _ = self.log.send(format!(
-            "[{:02}:{:02}:{:02} UTC] [{level}] {}",
-            secs / 3600,
-            secs / 60 % 60,
-            secs % 60,
+            "[{}] [{level}] {}",
+            crate::logging::local_timestamp(),
             message.as_ref()
         ));
     }
@@ -201,16 +248,9 @@ impl Worker {
                     Ok(line) => {
                         result.push_str(&line);
                         result.push('\n');
-                        let secs = std::time::SystemTime::now()
-                            .duration_since(std::time::UNIX_EPOCH)
-                            .unwrap_or_default()
-                            .as_secs()
-                            % 86400;
                         let _ = tx.send(format!(
-                            "[{:02}:{:02}:{:02} UTC] [picotool] {line}",
-                            secs / 3600,
-                            secs / 60 % 60,
-                            secs % 60
+                            "[{}] [picotool] {line}",
+                            crate::logging::local_timestamp()
                         ));
                     }
                     Err(_) => break,
@@ -335,19 +375,16 @@ impl Worker {
         let image = self.image(path)?;
         self.ensure_bootsel_for(image.nuke)?;
         let installed = self.device_command(&["info", "-m", "-d"])?;
-        let secure_boot = match property(&installed, "secure boot") {
-            Some("1") => true,
-            Some("0") => false,
-            _ => return Err("Cannot determine the board's Secure Boot state.".into()),
-        };
-        let secure_boot = secure_boot || security::secure_boot_enabled(self)?;
-        let old = parse_image(&installed, String::new())?;
-        let a = assess(image, self.serial.clone(), secure_boot, old.fingerprint);
+        let a = assess_device(image, self.serial.clone(), &installed, |row, ecc| {
+            security::read(self, row, ecc)
+        })?;
         self.log(if a.allowed {"INFO"} else {"WARN"},if !a.allowed {
-            "FLASH disabled: Secure Boot requires the board's original trusted signing key."
+            "FLASH disabled: the firmware must match an active OTP signing key."
+        } else if a.secure_boot {
+            "Firmware signing key matches an active OTP signing key."
         } else if a.mismatch {
-            "Signing key differs from installed firmware. Secure Boot is off; FLASH requires an extra confirmation."
-        } else { "Firmware signing key matches the installed image." });
+            "Signing key differs from installed firmware or no installed key is available. Secure Boot is off; FLASH requires an extra confirmation."
+        } else { "Firmware is compatible with the board's current signing policy." });
         Ok(a)
     }
 }
@@ -456,14 +493,15 @@ pub fn run(request: Request, log: Sender<String>) -> Result<Response, String> {
             }
             let key = fs::canonicalize(&request.key)
                 .map_err(|_| "Choose an existing signing key PEM.")?;
-            let dest = if request.output.is_empty() {
-                source.with_file_name(format!(
-                    "{}.signed.uf2",
-                    source.file_stem().unwrap().to_string_lossy()
-                ))
-            } else {
-                PathBuf::from(&request.output)
-            };
+            let mut artifacts = SIGNING_ARTIFACTS.lock().unwrap_or_else(|e| e.into_inner());
+            if artifacts.closing {
+                return Err("Application is closing.".into());
+            }
+            let dest = std::env::temp_dir().join(format!(
+                "picoforge-signed-{}-{:032x}.uf2",
+                std::process::id(),
+                rand::random::<u128>()
+            ));
             if dest.exists() || dest == key || source == key {
                 return Err(
                     "Choose a new output path; existing files are never overwritten.".into(),
@@ -473,6 +511,7 @@ pub fn run(request: Request, log: Sender<String>) -> Result<Response, String> {
             if tmp.exists() {
                 return Err("A signing temporary file already exists.".into());
             }
+            artifacts.files.extend([dest.clone(), tmp.clone()]);
             let signed = (|| {
                 w.command(&[
                     "seal",
@@ -480,7 +519,11 @@ pub fn run(request: Request, log: Sender<String>) -> Result<Response, String> {
                     &source.to_string_lossy(),
                     &tmp.to_string_lossy(),
                     &key.to_string_lossy(),
-                ])?;
+                ]).map_err(|error| {
+                    if error.contains("Signature verification failed") {
+                        format!("{error}. RP2350 firmware signing requires a secp256k1 private key; a PIV P-256 key cannot be used.")
+                    } else { error }
+                })?;
                 let info = w.image(&tmp)?;
                 if !info.signed {
                     return Err("Output signature was not verified.".into());
@@ -500,7 +543,13 @@ pub fn run(request: Request, log: Sender<String>) -> Result<Response, String> {
             })();
             let _ = fs::remove_file(tmp);
             signed?;
-            w.log("INFO", format!("Signed image: {}", dest.display()));
+            w.log(
+                "INFO",
+                format!(
+                    "Temporary signed image (deleted when PicoForge closes): {}",
+                    dest.display()
+                ),
+            );
         }
         "check" | "flash" => {
             let path = image_path(&request.firmware)?;
@@ -575,6 +624,143 @@ mod tests {
         assert!(assess(signed.clone(), "s".into(), true, signed.fingerprint.clone()).allowed);
         assert!(!assess(signed, "s".into(), true, Some("different".into())).allowed);
     }
+    fn signed_image() -> ImageInfo {
+        parse_image(
+            &metadata(&format!(
+                " signature: verified\n public key: {}\n",
+                "ab".repeat(64)
+            )),
+            "digest".into(),
+        )
+        .unwrap()
+    }
+    fn empty_board(secure: bool) -> String {
+        format!(
+            "Metadata Blocks\n none\nDevice Information\n type: RP2350\n secure boot: {}\n",
+            u8::from(secure)
+        )
+    }
+    fn otp(
+        fingerprint: String,
+        flags: [u32; 3],
+        critical: u32,
+    ) -> impl FnMut(u16, bool) -> Result<u32, String> {
+        let bytes = hex::decode(fingerprint).unwrap();
+        move |row, ecc| match row {
+            0x40..=0x47 => {
+                assert!(!ecc);
+                Ok(critical)
+            }
+            0x4b..=0x4d => {
+                assert!(!ecc);
+                Ok(flags[(row - 0x4b) as usize])
+            }
+            0x80..=0xbf => {
+                assert!(ecc);
+                let i = ((row - 0x80) % 16) as usize * 2;
+                Ok(u16::from_le_bytes([bytes[i], bytes[i + 1]]) as u32)
+            }
+            _ => panic!("unexpected OTP read: {row:x}"),
+        }
+    }
+    #[test]
+    fn empty_secure_board_recovers_only_with_active_otp_key() {
+        let image = signed_image();
+        let fp = image.fingerprint.clone().unwrap();
+        for (flags, expected) in [
+            ([1, 1, 1], true),
+            ([8, 8, 0], true), // Slot 3, majority-valid
+            ([1, 0, 0], false),
+            ([0, 0, 0], false),
+            ([0x101, 0x101, 1], false), // Majority-revoked
+        ] {
+            let result = assess_device(
+                image.clone(),
+                "serial".into(),
+                &empty_board(true),
+                otp(fp.clone(), flags, 1),
+            )
+            .unwrap();
+            assert_eq!(result.allowed, expected, "flags {flags:?}");
+        }
+        let wrong = assess_device(
+            image.clone(),
+            "serial".into(),
+            &empty_board(true),
+            otp("11".repeat(32), [1; 3], 1),
+        )
+        .unwrap();
+        assert!(!wrong.allowed);
+        let unreadable = assess_device(image, "serial".into(), &empty_board(true), |_, _| {
+            Err("OTP read failed".into())
+        });
+        assert!(unreadable.is_err());
+    }
+    #[test]
+    fn installed_metadata_cannot_substitute_for_otp_trust() {
+        let image = signed_image();
+        let installed = format!(
+            "{}Device Information\n secure boot: 1\n",
+            metadata(&format!(
+                " signature: verified\n public key: {}\n",
+                "ab".repeat(64)
+            ))
+        );
+        let result = assess_device(
+            image,
+            "serial".into(),
+            &installed,
+            otp("11".repeat(32), [1; 3], 1),
+        )
+        .unwrap();
+        assert!(!result.allowed);
+    }
+    #[test]
+    fn empty_unlocked_board_and_otp_secure_boot_fallback() {
+        let image = signed_image();
+        let fp = image.fingerprint.clone().unwrap();
+        let unlocked = assess_device(
+            image.clone(),
+            "serial".into(),
+            &empty_board(false),
+            otp(fp.clone(), [0; 3], 0),
+        )
+        .unwrap();
+        assert!(unlocked.allowed && unlocked.mismatch);
+        assert_eq!(unlocked.board_key, None);
+        let locked = assess_device(
+            image,
+            "serial".into(),
+            &empty_board(false),
+            otp(fp, [0; 3], 1),
+        )
+        .unwrap();
+        assert!(locked.secure_boot);
+        assert!(!locked.allowed);
+        let unsigned = parse_image(&metadata(""), String::new()).unwrap();
+        let locked = assess_device(unsigned, "serial".into(), &empty_board(true), |_, _| {
+            panic!("unsigned image needs no key lookup")
+        })
+        .unwrap();
+        assert!(!locked.allowed);
+    }
+    #[test]
+    fn missing_installed_image_is_not_an_invalid_input_image() {
+        assert!(installed_image(&empty_board(false)).unwrap().is_none());
+        assert!(parse_image(&empty_board(false), String::new()).is_err());
+        assert!(installed_image("Device Information\n secure boot: 0\n").is_err());
+        assert!(installed_image(&metadata(" signature: invalid\n")).is_err());
+        let image = signed_image();
+        assert!(
+            assess_device(
+                image,
+                "serial".into(),
+                "Metadata Blocks\n none\n",
+                |_, _| Ok(0)
+            )
+            .is_err()
+        );
+    }
     #[test]
     fn reject_invalid_and_multiple_images() {
         assert!(parse_image(&metadata(" signature: invalid\n"), "".into()).is_err());
@@ -637,7 +823,8 @@ mod native_integration {
         let input = std::env::var("PICOFORGE_TEST_UF2").unwrap();
         let tool = std::env::var("PICOTOOL").unwrap();
         let key = std::env::var("PICOFORGE_TEST_KEY").unwrap();
-        let output = std::env::var("PICOFORGE_TEST_OUTPUT").unwrap();
+        let external_output = std::env::temp_dir().join("picoforge-must-not-write-external.uf2");
+        let input_path = PathBuf::from(&input);
         let (tx, _rx) = std::sync::mpsc::channel();
         let unsigned = run(
             Request {
@@ -656,13 +843,20 @@ mod native_integration {
                 picotool: tool.clone(),
                 firmware: input,
                 key,
-                output: output.clone(),
+                output: external_output.to_string_lossy().into_owned(),
                 ..Default::default()
             },
             tx.clone(),
         )
         .unwrap();
         assert!(signed.image.unwrap().signed);
+        let output = signed.output.unwrap();
+        assert_ne!(PathBuf::from(&output), external_output);
+        assert_eq!(
+            Path::new(&output).parent(),
+            Some(std::env::temp_dir().as_path())
+        );
+        assert!(Path::new(&output).exists());
         let inspected = run(
             Request {
                 action: "inspect".into(),
@@ -678,12 +872,18 @@ mod native_integration {
             Request {
                 action: "sign".into(),
                 picotool: tool,
-                firmware: output,
+                firmware: output.clone(),
                 ..Default::default()
             },
             tx,
         );
         assert!(rejected.unwrap_err().contains("already signed"));
+        cleanup_signed_images();
+        assert!(!Path::new(&output).exists());
+        assert!(
+            input_path.exists(),
+            "cleanup must preserve the user's original firmware"
+        );
     }
 }
 
@@ -713,7 +913,7 @@ mod confirmation_tests {
         let mut changed = current.clone();
         changed.image.hash = "changed".into();
         assert!(validate_flash(&r, &changed).is_err());
-        let locked = assess(current.image, current.serial, true, current.installed_key);
+        let locked = assess(current.image, current.serial, true, current.board_key);
         assert!(validate_flash(&r, &locked).is_err());
     }
     #[test]

@@ -108,6 +108,8 @@ pub fn event_name(event: u8) -> Option<&'static str> {
         0x13 => "ATT_CLEAR",
         0x14 => "CFG_ALWAYS_UV",
         0x15 => "CONFIG_WRITE",
+        0x16 => "AUDIT_CONFIG",
+        0x17 => "CFG_ENTERPRISE_RP_IDS",
         _ => return None,
     })
 }

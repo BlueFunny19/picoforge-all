@@ -34,7 +34,7 @@ pub(super) const FIELDS: [&str; 5] = [
     "picotool",
     "Device serial",
     "Firmware UF2",
-    "Signing key PEM",
+    "Signing key PEM (secp256k1)",
     "Boot key slot (0–3)",
 ];
 impl OffboardViewModel {
@@ -265,7 +265,7 @@ impl OffboardViewModel {
                 let request = request.clone();
                 let weak = weak.clone();
                 dialog.title("Different firmware signing key")
-                    .child("This firmware uses a different signing key. Secure Boot is off, so installation is possible, but the image may be untrusted or incompatible. Continue only if you trust its source.")
+                    .child("The signing key differs from the installed firmware, or no installed key is available. Secure Boot is off. Continue only if you trust this firmware's source.")
                     .footer(move |_, _, _, _| {
                         let request = request.clone(); let weak = weak.clone();
                         vec![

@@ -31,7 +31,8 @@ PicoForge All is an unofficial fork of PicoForge, a desktop application for conf
 - Reading device information and firmware details
 - Configuring USB VID/PID and product names
 - Adjusting LED settings (GPIO, brightness, driver)
-- Inspecting, signing and installing Pico All firmware\n- Reviewing and applying staged Secure Boot provisioning
+- Inspecting, signing and installing Pico All firmware
+- Reviewing and applying staged Secure Boot provisioning
 - Real-time system logging and diagnostics
 - Support for multiple hardware variants and vendors
 
@@ -74,9 +75,9 @@ To contribute to PicoForge, you'll need:
 
 ### Firmware management
 
-Firmware signing and security setup use the bundled Pico All management engine.
 Firmware and security workflows run natively in Rust. Install Raspberry Pi picotool, place it on PATH or set the PICOTOOL environment variable to its executable. No Python runtime is required. Signing uses an existing secp256k1 PEM key; key generation is external. Signed firmware is checked against the selected board before flashing.
-A locked device requires its original trusted signing key.
+Secure Boot checks the signing key against active OTP keys, including when restoring an empty board. Signed copies are temporary and removed when the application exits normally.
+Audit logging is available with matching Pico All development firmware and is off by default.
 Pico All OpenPGP factory reset requires applet version 5.0.1 or later, which restores OpenPGP PIN retries while preserving PIV state.
 
 ## Building from Source

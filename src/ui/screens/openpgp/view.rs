@@ -313,19 +313,19 @@ impl Render for OpenPgpViewModel {
         let mut reset_card = Card::new()
             .title("Reset")
             .description("Erase all OpenPGP keys and data")
-            .icon(Icon::default().path("icons/trash.svg"))
-            .child(self.action_row(
-                "Factory reset OpenPGP",
-                "Blocks both PINs then wipes everything. Cannot be undone.",
-                reset_btn,
-                theme,
-            ));
+            .icon(Icon::default().path("icons/trash.svg"));
 
         if !reset_supported {
             reset_card = reset_card.child(crate::ui::components::notice::warning(
                 "Firmware update required",
                 "This firmware does not restore PIN retries after reset. Update to OpenPGP 5.0.1 or later.", false));
         }
+        reset_card = reset_card.child(self.action_row(
+            "Factory reset OpenPGP",
+            "Blocks both PINs then wipes everything. Cannot be undone.",
+            reset_btn,
+            theme,
+        ));
         let content = v_flex()
             .gap_6()
             .child(info_card)

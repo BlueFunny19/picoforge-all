@@ -781,12 +781,13 @@ impl PasskeysViewModel {
         }
         self.loading = true;
 
-        let status_handle = dialog::open_status_dialog("Resetting Device...", window, cx);
+        let status_handle = dialog::open_status_dialog("Resetting FIDO", window, cx);
         let weak_self = cx.entity().downgrade();
+        self.device.update(cx, |d, _| d.loading = true);
 
         let _ = status_handle.update(cx, |d, cx| {
             d.set_loading(
-                "Unplug your security key, then plug it back in within 10 seconds.",
+                "Unplug this security key, then reconnect it. You have 30 seconds. Press and release its button when the light requests confirmation.",
                 cx,
             );
         });
@@ -794,34 +795,13 @@ impl PasskeysViewModel {
         self._task = Some(cx.spawn(async move |_, cx| {
             let reconnected = cx
                 .background_executor()
-                .spawn(async move {
-                    let start = std::time::Instant::now();
-                    while start.elapsed().as_secs() < 15 {
-                        std::thread::sleep(std::time::Duration::from_millis(200));
-                        if !DeviceRepo::check_hid_available_blocking() {
-                            break;
-                        }
-                    }
-
-                    while start.elapsed().as_secs() < 15 {
-                        std::thread::sleep(std::time::Duration::from_millis(500));
-                        if DeviceRepo::check_hid_available_blocking() {
-                            return true;
-                        }
-                    }
-                    false
-                })
+                .spawn(async move { crate::hal::fido::wait_for_reset_reconnection() })
                 .await;
-
-            if !reconnected {
+            if let Err(error) = reconnected {
                 let _ = weak_self.update(cx, |this, cx| {
                     this.loading = false;
-                    let _ = status_handle.update(cx, |d, cx| {
-                        d.set_error(
-                            "Timeout waiting for device reconnection. Reset canceled.".to_string(),
-                            cx,
-                        );
-                    });
+                    this.device.update(cx, |d, _| d.loading = false);
+                    let _ = status_handle.update(cx, |d, cx| d.set_error(error, cx));
                     cx.notify();
                 });
                 return;
@@ -836,26 +816,29 @@ impl PasskeysViewModel {
                 .spawn(async move { DeviceRepo::reset_device_blocking() })
                 .await;
 
-            let _ = weak_self.update(cx, |this, cx| match result {
-                Ok(msg) => {
-                    log::info!("Device Reset: {}", msg);
-                    this.lock_storage(cx);
-                    let _ = status_handle.update(cx, |d, cx| {
-                        d.set_success(msg, cx);
-                    });
-                    cx.emit(PasskeysEvent::Notification(
-                        "Device reset successfully".into(),
-                    ));
-                    this.lock_storage(cx);
-                    this.sync_fido_state(None, cx);
-                }
-                Err(e) => {
-                    log::error!("Error resetting device: {}", e);
-                    this.loading = false;
-                    let _ = status_handle.update(cx, |d, cx| {
-                        d.set_error(format!("Reset failed: {}", e), cx);
-                    });
-                    cx.notify();
+            let _ = weak_self.update(cx, |this, cx| {
+                this.device.update(cx, |d, _| d.loading = false);
+                match result {
+                    Ok(msg) => {
+                        log::info!("Device Reset: {}", msg);
+                        this.lock_storage(cx);
+                        let _ = status_handle.update(cx, |d, cx| {
+                            d.set_success(msg, cx);
+                        });
+                        cx.emit(PasskeysEvent::Notification(
+                            "Device reset successfully".into(),
+                        ));
+                        this.lock_storage(cx);
+                        this.sync_fido_state(None, cx);
+                    }
+                    Err(e) => {
+                        log::error!("Error resetting device: {}", e);
+                        this.loading = false;
+                        let _ = status_handle.update(cx, |d, cx| {
+                            d.set_error(format!("Reset failed: {}", e), cx);
+                        });
+                        cx.notify();
+                    }
                 }
             });
         }));

@@ -301,6 +301,10 @@ impl ConfigViewModel {
             &["Idle", "Processing", "Touch", "Boot"]
         };
         for (i, &name) in states.iter().enumerate() {
+            // Timeout shares Error's configuration; keep the wire indices stable.
+            if pico_all && i == 5 {
+                continue;
+            }
             let available = available && (i < 4 || notifications_available);
             let color = self.led_status_colors[i];
             let brightness = self.led_status_brightness[i];
@@ -441,7 +445,7 @@ impl ConfigViewModel {
         if pico_all && available && !notifications_available {
             card = card.child(crate::ui::components::notice::warning(
                 "Notification colors unavailable",
-                "Update the device firmware to edit Success, Timeout and Error colors.",
+                "Update the device firmware to edit Success and Error colors.",
                 false,
             ));
         }

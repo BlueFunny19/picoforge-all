@@ -20,6 +20,7 @@ use gpui_component::{ActiveTheme, Disableable, Icon, WindowExt, h_flex, v_flex};
 
 #[derive(Clone, Copy)]
 enum Action {
+    Setup,
     Generate,
     Delete,
     Crypto,
@@ -37,6 +38,7 @@ enum Action {
 impl Action {
     fn title(self) -> &'static str {
         match self {
+            Self::Setup => "Set up HSM",
             Self::Generate => "Generate key",
             Self::Delete => "Delete key",
             Self::Crypto => "Use key",
@@ -86,6 +88,11 @@ impl Action {
                 ("User PIN (required for import)", true),
                 ("DKEK share (64 hex digits; empty reads status)", true),
             ],
+            Self::Setup => vec![
+                ("New user PIN (6–16 characters)", true),
+                ("New SO PIN (6–16 characters)", true),
+                ("DKEK shares (0 disables key backup)", false),
+            ],
             Self::Initialize => vec![
                 ("New user PIN", true),
                 ("New SO PIN", true),
@@ -96,19 +103,24 @@ impl Action {
     }
     fn description(self) -> &'static str {
         match self {
+            Self::Setup => {
+                "Choose a user PIN for everyday key operations and a separate security officer PIN for PIN recovery. Leave DKEK shares at 0 unless you need encrypted key backups. Keep both PINs safely."
+            }
             Self::Initialize => {
                 "Deletes all HSM keys and objects and sets new PINs. Other applications and hardware locks are preserved."
             }
             Self::Delete => "Permanently deletes this HSM key. Check the key ID before continuing.",
             Self::Generate => {
-                "Creates a key in an unused slot. Asymmetric keys return a public CVC certificate."
+                "Choose an algorithm and enter your HSM user PIN. PicoForge assigns a free key ID automatically. The private key stays on the device."
             }
             Self::DeleteObject => "Permanently deletes this certificate, metadata or data object.",
             Self::Write => "Replaces the selected certificate, metadata or data object.",
             Self::Wrap => {
                 "Exports a DKEK-encrypted key backup; configured DKEK shares and physical confirmation may be required."
             }
-            Self::Unwrap => "Restores a DKEK-encrypted key into an unused slot.",
+            Self::Unwrap => {
+                "Enter your HSM user PIN and the wrapped backup bytes. PicoForge assigns a free key ID. Import the matching DKEK shares first."
+            }
             Self::Crypto => {
                 "Uses an existing key. Input and output are bytes encoded as hex; the private key stays on the device."
             }
@@ -200,6 +212,15 @@ impl HsmViewModel {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if self
+            .info
+            .as_ref()
+            .is_some_and(|i| i.initialized == Some(false))
+            && !matches!(action, Action::Setup | Action::Initialize | Action::Read)
+        {
+            self.open_action(Action::Setup, window, cx);
+            return;
+        }
         let fields: Vec<_> = action
             .fields()
             .into_iter()
@@ -208,6 +229,11 @@ impl HsmViewModel {
                 (label, input)
             })
             .collect();
+        if matches!(action, Action::Setup | Action::Initialize) {
+            fields[2]
+                .1
+                .update(cx, |input, cx| input.set_value("0", window, cx));
+        }
         if let Some(id) = id {
             fields[1].1.update(cx, |input, cx| {
                 input.set_value(
@@ -240,6 +266,16 @@ impl HsmViewModel {
                     .iter()
                     .map(|(_, f)| f.read(cx).text().to_string())
                     .collect();
+                for (index, (label, _)) in fields.iter().enumerate() {
+                    let optional = (index == 1
+                        && matches!(action, Action::Generate | Action::Unwrap))
+                        || (index == 0 && matches!(action, Action::Read | Action::Dkek))
+                        || (index == 1 && matches!(action, Action::Dkek));
+                    if !optional && args[index].is_empty() {
+                        window.push_notification(format!("{label} is required."), cx);
+                        return;
+                    }
+                }
                 let selected = choice
                     .as_ref()
                     .map(|s| selected_key(s, options, cx))
@@ -254,8 +290,15 @@ impl HsmViewModel {
             if let Some(choice) = &choice {
                 form = form.child("Algorithm").child(Select::new(choice).w_full());
             }
-            for (label, input) in &fields {
-                form = form.child(*label).child(Input::new(input));
+            for (index, (label, input)) in fields.iter().enumerate() {
+                if index == 1 && matches!(action, Action::Generate | Action::Unwrap) {
+                    continue;
+                }
+                if index == 1 && id.is_some() {
+                    form = form.child(format!("Selected ID: {:02X}", id.unwrap()));
+                } else {
+                    form = form.child(*label).child(Input::new(input));
+                }
             }
             let ok = submit.clone();
             let button = submit.clone();
@@ -336,7 +379,7 @@ fn execute(action: Action, args: &[String], choice: u8) -> Result<Vec<u8>, Strin
     };
     let pin = args[0].as_bytes();
     match action {
-        Action::Generate => return hsm::generate(pin, id()?, choice).map_err(err),
+        Action::Generate => return hsm::generate_auto(pin, choice).map_err(err),
         Action::Delete => hsm::delete_key(pin, id()?).map_err(err)?,
         Action::Crypto => return hsm::crypto(pin, id()?, choice, &bytes(&args[2])?).map_err(err),
         Action::Read => return hsm::read_object(pin, fid()?).map_err(err),
@@ -354,8 +397,15 @@ fn execute(action: Action, args: &[String], choice: u8) -> Result<Vec<u8>, Strin
             }
         }
         Action::Wrap => return hsm::wrap_key(pin, id()?).map_err(err),
-        Action::Unwrap => hsm::unwrap_key(pin, id()?, &bytes(&args[2])?).map_err(err)?,
+        Action::Unwrap => hsm::unwrap_auto(pin, &bytes(&args[2])?).map_err(err)?,
         Action::Dkek => return hsm::dkek_share(pin, &bytes(&args[1])?).map_err(err),
+        Action::Setup => {
+            let shares = args[2]
+                .trim()
+                .parse()
+                .map_err(|_| "Enter a DKEK share count from 0 to 16")?;
+            hsm::setup(pin, args[1].as_bytes(), shares).map_err(err)?;
+        }
         Action::Initialize => {
             if args[3] != "ERASE HSM" {
                 return Err("Type ERASE HSM to confirm initialization".into());
@@ -622,6 +672,17 @@ impl Render for HsmViewModel {
                     )
                     .child(details),
             );
+            if self
+                .info
+                .as_ref()
+                .is_some_and(|i| i.initialized == Some(false))
+            {
+                body = body.child(Card::new().title("Set up HSM")
+                    .description("Set your PINs before creating or importing keys")
+                    .child(div().text_sm().child("1. Set a user PIN and a security officer PIN. 2. Generate a key; its ID is assigned automatically. 3. Use the key from its row in the Keys list. HSM has no default PIN before setup."))
+                    .child(standard("hsm-setup", cx).label("Set up HSM").disabled(self.loading)
+                        .on_click(cx.listener(|this, _, w, cx| this.open_action(Action::Setup, w, cx)))));
+            }
             body = body
                 .child(self.stored_list(true, cx))
                 .child(self.stored_list(false, cx))

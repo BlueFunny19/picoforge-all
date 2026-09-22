@@ -23,6 +23,10 @@ use log4rs::{
 };
 use std::fs;
 
+pub(crate) fn local_timestamp() -> String {
+    chrono::Local::now().format("%H:%M:%S %:z").to_string()
+}
+
 /// Initializes log4rs with custom configuration for stdout and file logging.
 pub fn logger_init() {
     let qual = "in";

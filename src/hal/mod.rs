@@ -47,3 +47,6 @@ pub mod types;
 
 #[cfg(test)]
 mod write_test;
+
+#[cfg(test)]
+mod client_hardware_tests;

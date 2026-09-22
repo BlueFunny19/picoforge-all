@@ -985,6 +985,9 @@ impl ConfigViewModel {
         // The Status LED Colors and USB Applications cards write their own device
         // targets (EF_LED_CONF / the management mask); fold them into this one Save
         // so the screen has a single Apply, not a mix of per-card buttons.
+        // Error also controls timeouts, including older seven-state firmware.
+        self.led_status_colors[5] = self.led_status_colors[6];
+        self.led_status_brightness[5] = self.led_status_brightness[6];
         let led_changed = match &current_led {
             Some(led) => {
                 led.steady != self.led_status_steady

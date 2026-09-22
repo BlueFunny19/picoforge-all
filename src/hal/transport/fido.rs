@@ -246,6 +246,37 @@ impl HidTransport {
     /// USB descriptors — it does not open the device or run `CTAPHID_INIT`, so it
     /// is safe to poll on a timer even while another handle holds the device open.
     /// A change in the returned value signals a plug / unplug / swap.
+    pub fn selected_fingerprint() -> Option<String> {
+        let serial = super::pcsc::selected_pico_all_serial();
+        let api = hidapi::HidApi::new().ok()?;
+        let info = api.device_list().find(|d| {
+            d.usage_page() == HID_USAGE_PAGE_FIDO
+                && serial
+                    .as_ref()
+                    .is_none_or(|s| d.serial_number().is_some_and(|n| n.eq_ignore_ascii_case(s)))
+        })?;
+        Some(format!(
+            "{:04x}:{:04x}:{}",
+            info.vendor_id(),
+            info.product_id(),
+            info.serial_number().unwrap_or("")
+        ))
+    }
+
+    pub fn has_fingerprint(expected: &str) -> bool {
+        hidapi::HidApi::new().ok().is_some_and(|api| {
+            api.device_list().any(|info| {
+                info.usage_page() == HID_USAGE_PAGE_FIDO
+                    && format!(
+                        "{:04x}:{:04x}:{}",
+                        info.vendor_id(),
+                        info.product_id(),
+                        info.serial_number().unwrap_or("")
+                    ) == expected
+            })
+        })
+    }
+
     pub fn fingerprint() -> Option<String> {
         let api = hidapi::HidApi::new().ok()?;
         let info = api

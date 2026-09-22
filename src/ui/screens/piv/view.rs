@@ -94,14 +94,21 @@ impl PivViewModel {
             btns.push(btn!("mv", "Move", open_move_key));
         }
         if s.has_cert {
-            btns.push(btn!("delc", "Delete cert", open_delete_cert));
+            btns.push(
+                Button::new(SharedString::from(format!("delc-{slot:02x}")))
+                    .label("Delete cert")
+                    .danger()
+                    .disabled(d)
+                    .on_click(cx.listener(move |this, _, w, cx| this.open_delete_cert(slot, w, cx)))
+                    .into_any_element(),
+            );
         }
         if has_key {
             btns.push(
                 Button::new(SharedString::from(format!("delk-{slot:02x}")))
                     .icon(Icon::default().path("icons/trash-2.svg"))
                     .label("Delete key")
-                    .ghost()
+                    .danger()
                     .disabled(d)
                     .on_click(cx.listener(move |this, _, window, cx| {
                         this.open_delete_key(slot, window, cx);
