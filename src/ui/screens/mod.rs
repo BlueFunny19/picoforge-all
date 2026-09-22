@@ -13,3 +13,5 @@ pub mod passkeys;
 pub mod piv;
 pub mod security;
 pub mod slots;
+
+pub mod settings;

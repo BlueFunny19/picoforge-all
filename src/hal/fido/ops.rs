@@ -1547,8 +1547,8 @@ impl FidoOperations for HidTransport {
         let mut full_payload = vec![RSKEY_CTAPHID_VENDOR_CMD];
         full_payload.extend(inner);
         // CONFIG_WRITE can involve flash erasure/write which takes
-        // several seconds on RP2040 — use a generous timeout.
-        const CONFIG_WRITE_TIMEOUT_MS: i32 = 30_000;
+        // several seconds on RP2040, after up to 60 seconds of button confirmation.
+        const CONFIG_WRITE_TIMEOUT_MS: i32 = 70_000;
         self.send_cbor_with_timeout(CTAPHID_CBOR, &full_payload, CONFIG_WRITE_TIMEOUT_MS)
             .map(|_| ())
     }
@@ -1571,7 +1571,7 @@ impl FidoOperations for HidTransport {
         let full_payload = vendor_payload(sub_cmd, params, token.as_deref())?;
 
         // Touch-gated variants block until the button is pressed — allow ~30 s.
-        const VENDOR_TOUCH_TIMEOUT_MS: i32 = 32_000;
+        const VENDOR_TOUCH_TIMEOUT_MS: i32 = 70_000;
         let resp =
             self.send_raw_with_timeout(CTAPHID_CBOR, &full_payload, VENDOR_TOUCH_TIMEOUT_MS)?;
         vendor_response(&resp)
@@ -1625,7 +1625,7 @@ impl FidoOperations for HidTransport {
         let mut payload = vec![CtapCommand::Config as u8];
         payload.extend(cbor);
         // A soft-lock toggle waits on a touch — allow ~30 s.
-        const AUTCFG_TIMEOUT_MS: i32 = 32_000;
+        const AUTCFG_TIMEOUT_MS: i32 = 70_000;
         self.send_cbor_with_timeout(CTAPHID_CBOR, &payload, AUTCFG_TIMEOUT_MS)
             .map(|_| ())
     }

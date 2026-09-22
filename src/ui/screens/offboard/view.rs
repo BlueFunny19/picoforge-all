@@ -7,6 +7,7 @@ use gpui_component::{
     button::{Button, ButtonVariants},
     h_flex,
     input::Input,
+    select::Select,
     switch::Switch,
     v_flex,
 };
@@ -21,45 +22,51 @@ impl OffboardViewModel {
         if index != 1 && index != 4 {
             row = row.child(
                 standard(SharedString::from(format!("browse-{index}")), cx)
-                    .label("Browse…")
+                    .label(crate::i18n::tr("Browse…"))
                     .disabled(self.loading)
                     .on_click(cx.listener(move |this, _, w, cx| this.select_file(index, w, cx))),
             );
         }
         v_flex()
             .gap_2()
-            .child(FIELDS[index])
+            .child(crate::i18n::tr(FIELDS[index]))
             .child(row)
             .into_any_element()
     }
     fn button(&self, id: &'static str, title: &'static str, cx: &mut Context<Self>) -> AnyElement {
         standard(id, cx)
-            .label(title)
+            .label(crate::i18n::text(title))
             .disabled(self.loading)
             .on_click(cx.listener(move |this, _, w, cx| this.start(id, w, cx)))
             .into_any_element()
     }
     fn restart_card(&self, cx: &mut Context<Self>) -> Card {
         Card::new()
-            .title("Restart device")
+            .title(crate::i18n::tr("Restart device"))
             .icon(Icon::default().path("icons/refresh-cw.svg"))
             .child(
                 div()
                     .grid()
                     .grid_cols(2)
                     .gap_3()
-                    .child(self.button("reboot", "Normal mode", cx))
-                    .child(self.button("bootsel", "Update mode", cx)),
+                    .child(self.button("reboot", crate::i18n::tr("Normal mode"), cx))
+                    .child(self.button("bootsel", crate::i18n::tr("Update mode"), cx)),
             )
     }
     fn result_card(&self, height: Option<Pixels>, cx: &mut Context<Self>) -> Div {
         let mut result = v_flex().w_full().min_w_0().gap_4();
-        for entry in &self.log.entries {
+        let minimum = super::console::LEVELS[self
+            .log_level
+            .read(cx)
+            .selected_value()
+            .copied()
+            .unwrap_or(2) as usize];
+        for entry in self.log.entries.iter().filter(|e| e.visible(minimum)) {
             let color = match entry.level.as_str() {
                 "ERROR" => rgb(0xf87171),
                 "WARN" => rgb(0xfbbf24),
-                "SUCCESS" => rgb(0x4ade80),
-                "DATA" | "picotool" | "OUTPUT" => rgb(0xc4b5fd),
+                "INFO" => rgb(0x67e8f9),
+                "DEBUG" | "TRACE" => rgb(0xa1a1aa),
                 _ => rgb(0x67e8f9),
             };
             let mut record = v_flex()
@@ -89,10 +96,18 @@ impl OffboardViewModel {
                         } else {
                             rgb(0xe4e4e7)
                         })
-                        .child(super::console::wrap_tokens(line)),
+                        .child(super::console::wrap_tokens(&crate::i18n::text(line))),
                 );
             }
             result = result.child(record);
+        }
+        if !self.log.entries.iter().any(|e| e.visible(minimum)) {
+            result = result.child(
+                div()
+                    .text_sm()
+                    .text_color(cx.theme().muted_foreground)
+                    .child(crate::i18n::tr("No messages at this log level.")),
+            );
         }
         let mut card = v_flex()
             .w_full()
@@ -110,30 +125,55 @@ impl OffboardViewModel {
                 h_flex()
                     .justify_between()
                     .flex_shrink_0()
-                    .child(div().font_weight(FontWeight::BOLD).child("Console"))
                     .child(
-                        Button::new("clear-console")
-                            .ghost()
-                            .label("Clear")
-                            .on_click(cx.listener(|this, _, _, cx| {
-                                this.log.clear();
-                                this.error = None;
-                                cx.notify();
-                            })),
+                        div()
+                            .font_weight(FontWeight::BOLD)
+                            .child(crate::i18n::tr("Console")),
+                    )
+                    .child(
+                        h_flex()
+                            .gap_2()
+                            .flex_shrink_0()
+                            .child(Select::new(&self.log_level).w(px(115.)))
+                            .child(
+                                standard("clear-console", cx)
+                                    .icon(Icon::default().path("icons/trash-2.svg"))
+                                    .tooltip(crate::i18n::tr("Clear"))
+                                    .on_click(cx.listener(|this, _, _, cx| {
+                                        this.log.clear();
+                                        this.error = None;
+                                        cx.notify();
+                                    })),
+                            ),
                     ),
             )
             .child(
                 div()
-                    .id("firmware-log")
-                    .track_scroll(&self.log_scroll)
+                    .id("firmware-log-frame")
+                    .relative()
                     .flex_1()
                     .min_h_0()
-                    .overflow_y_scroll()
                     .min_w_0()
-                    .p_3()
+                    .w_full()
                     .rounded_lg()
+                    .border_1()
+                    .border_color(cx.theme().border)
                     .bg(rgb(0x101012))
-                    .child(result),
+                    .on_scroll_wheel(|_, _, cx| cx.stop_propagation())
+                    .child(
+                        div()
+                            .id("firmware-log")
+                            .track_scroll(&self.log_scroll)
+                            .size_full()
+                            .overflow_y_scroll()
+                            .p_3()
+                            .pr_5()
+                            .child(result),
+                    )
+                    .child(
+                        gpui_component::scroll::Scrollbar::vertical(&self.log_scroll)
+                            .scrollbar_show(gpui_component::scroll::ScrollbarShow::Always),
+                    ),
             );
         if let Some(request) = &self.pending {
             let needs_boot = matches!(request.action.as_str(), "harden" | "enable");
@@ -141,12 +181,12 @@ impl OffboardViewModel {
                 card = card.child(h_flex().gap_3()
                     .child(Switch::new("boot-tested").checked(self.boot_tested)
                         .on_click(cx.listener(|this, checked, _, cx| { this.boot_tested = *checked; cx.notify(); })))
-                    .child("I power-cycled and tested the signed firmware after the previous stage."));
+                    .child(crate::i18n::tr("I power-cycled and tested the signed firmware after the previous stage.")));
             }
             card = card.child(
                 Button::new("apply-stage")
                     .danger()
-                    .label("Confirm reviewed stage")
+                    .label(crate::i18n::tr("Confirm reviewed stage"))
                     .disabled(self.loading || (needs_boot && !self.boot_tested))
                     .on_click(cx.listener(|this, _, w, cx| this.confirm_pending(w, cx))),
             );
@@ -156,8 +196,10 @@ impl OffboardViewModel {
     pub fn security_controls(&self, locked: bool, cx: &mut Context<Self>) -> AnyElement {
         let mut body = v_flex().gap_6().w_full().child(
             Card::new()
-                .title("Provisioning target")
-                .description("Every stage is bound to this serial and signed firmware")
+                .title(crate::i18n::tr("Provisioning target"))
+                .description(crate::i18n::tr(
+                    "Every stage is bound to this serial and signed firmware",
+                ))
                 .child(self.field(1, cx))
                 .child(self.field(2, cx))
                 .child(self.field(4, cx)),
@@ -166,38 +208,50 @@ impl OffboardViewModel {
         for (id, title, description) in [
             (
                 "status",
-                "Read OTP status",
-                "Requests update mode to read the actual fuse state.",
+                crate::i18n::tr("Read OTP status"),
+                crate::i18n::tr("Requests update mode to read the actual fuse state."),
             ),
             (
                 "load-key",
-                "1 · Register signing key",
-                "Permanently trust the public key in the signed image using the selected key slot.",
+                crate::i18n::tr("1 · Register signing key"),
+                crate::i18n::tr(
+                    "Permanently trust the public key in the signed image using the selected key slot.",
+                ),
             ),
             (
                 "harden",
-                "2 · Harden device",
-                "Permanently disable debug and enable glitch detection. Power-cycle and test afterwards.",
+                crate::i18n::tr("2 · Harden device"),
+                crate::i18n::tr(
+                    "Permanently disable debug and enable glitch detection. Power-cycle and test afterwards.",
+                ),
             ),
             (
                 "prepare",
-                "3 · Prepare storage",
-                "Erase all application credentials and PINs before enabling Secure Boot. Starts from normal mode.",
+                crate::i18n::tr("3 · Prepare storage"),
+                crate::i18n::tr(
+                    "Erase all application credentials and PINs before enabling Secure Boot. Starts from normal mode.",
+                ),
             ),
             (
                 "enable",
-                "4 · Enable Secure Boot",
-                "Require signed firmware permanently. Empty storage and installed-image verification are required.",
+                crate::i18n::tr("4 · Enable Secure Boot"),
+                crate::i18n::tr(
+                    "Require signed firmware permanently. Empty storage and installed-image verification are required.",
+                ),
             ),
             (
                 "prove",
-                "5 · Verify protected boot",
-                "After a power cycle, check the normal-mode OTP root and save the boot verification.",
+                crate::i18n::tr("5 · Verify protected boot"),
+                crate::i18n::tr(
+                    "After a power cycle, check the normal-mode OTP root and save the boot verification.",
+                ),
             ),
             (
                 "lock",
-                "6 · Lock boot configuration",
-                "Permanently revoke other key slots and prevent changes to boot configuration.",
+                crate::i18n::tr("6 · Lock boot configuration"),
+                crate::i18n::tr(
+                    "Permanently revoke other key slots and prevent changes to boot configuration.",
+                ),
             ),
         ] {
             let disabled = self.loading || (locked && !matches!(id, "status" | "prove"));
@@ -218,11 +272,11 @@ impl OffboardViewModel {
                     .child(
                         standard(id, cx)
                             .label(if matches!(id, "status" | "prove") {
-                                "Read / verify"
+                                crate::i18n::tr("Read / verify")
                             } else if id == "prepare" {
-                                "Review erase…"
+                                crate::i18n::tr("Review erase…")
                             } else {
-                                "Review stage…"
+                                crate::i18n::tr("Review stage…")
                             })
                             .disabled(disabled)
                             .on_click(cx.listener(move |this, _, w, cx| this.start(id, w, cx))),
@@ -231,8 +285,10 @@ impl OffboardViewModel {
         }
         body = body.child(
             Card::new()
-                .title("Security setup")
-                .description("Complete stages in order; review each change before applying")
+                .title(crate::i18n::tr("Security setup"))
+                .description(crate::i18n::tr(
+                    "Complete stages in order; review each change before applying",
+                ))
                 .child(stages),
         );
         if self.loading || !self.log.entries.is_empty() || self.error.is_some() {
@@ -252,22 +308,29 @@ impl Render for OffboardViewModel {
         let target = h_flex()
             .gap_2()
             .child(Input::new(&self.inputs[1]).flex_1().disabled(self.loading))
-            .child(self.button("info", "Read device", cx));
+            .child(self.button("info", crate::i18n::tr("Read device"), cx));
         let mut details = information::grid();
         if let Some(s) = status.filter(|s| s.info.serial.eq_ignore_ascii_case(selected.trim())) {
             for (label, value) in [
-                ("Serial number", s.info.serial),
-                ("Firmware", s.firmware_type.to_string()),
-                ("Version", s.info.firmware_version),
+                (crate::i18n::tr("Serial number"), s.info.serial),
+                (crate::i18n::tr("Firmware"), s.firmware_type.to_string()),
+                (crate::i18n::tr("Version"), s.info.firmware_version),
                 (
-                    "Secure Boot",
-                    if s.secure_boot { "Enabled" } else { "Disabled" }.into(),
+                    crate::i18n::tr("Secure Boot"),
+                    if s.secure_boot {
+                        crate::i18n::tr("Enabled")
+                    } else {
+                        crate::i18n::tr("Disabled")
+                    }
+                    .into(),
                 ),
                 (
-                    "Manufacturer",
-                    s.info.manufacturer.unwrap_or_else(|| "Unavailable".into()),
+                    crate::i18n::tr("Manufacturer"),
+                    s.info
+                        .manufacturer
+                        .unwrap_or_else(|| crate::i18n::tr("Unavailable").into()),
                 ),
-                ("Product", s.config.product_name),
+                (crate::i18n::tr("Product"), s.config.product_name),
             ] {
                 details = details.child(information::field(label, value, cx.theme()));
             }
@@ -276,16 +339,16 @@ impl Render for OffboardViewModel {
                 div()
                     .text_sm()
                     .text_color(cx.theme().muted_foreground)
-                    .child("Device information unavailable"),
+                    .child(crate::i18n::tr("Device information unavailable")),
             );
         }
         let device = Card::new()
-            .title("Device firmware")
+            .title(crate::i18n::tr("Device firmware"))
             .icon(Icon::default().path("icons/microchip.svg"))
             .header_right(
                 standard("firmware-refresh", cx)
                     .icon(Icon::default().path("icons/refresh-cw.svg"))
-                    .tooltip("Refresh device information")
+                    .tooltip(crate::i18n::tr("Refresh device information"))
                     .disabled(self.loading)
                     .on_click(cx.listener(|this, _, w, cx| this.start("info", w, cx))),
             )
@@ -296,31 +359,25 @@ impl Render for OffboardViewModel {
             || self.loading
             || self.assessment.as_ref().is_some_and(|a| !a.allowed);
         let files = Card::new()
-            .title("Firmware image")
+            .title(crate::i18n::tr("Firmware image"))
             .icon(Icon::default().path("icons/file.svg"))
             .child(self.field(2, cx))
             .child(self.field(3, cx))
             .child(
                 div()
-                    .text_sm()
-                    .text_color(cx.theme().muted_foreground)
-                    .child("Signed firmware is temporary and is deleted when PicoForge closes."),
-            )
-            .child(
-                div()
                     .grid()
                     .grid_cols(3)
                     .gap_2()
-                    .child(self.button("inspect", "Inspect", cx))
+                    .child(self.button("inspect", crate::i18n::tr("Inspect"), cx))
                     .child(
                         standard("sign", cx)
-                            .label("Sign")
+                            .label(crate::i18n::tr("Sign"))
                             .disabled(sign_disabled)
                             .on_click(cx.listener(|this, _, w, cx| this.start("sign", w, cx))),
                     )
                     .child(
                         standard("flash", cx)
-                            .label("FLASH")
+                            .label(crate::i18n::tr("Flash"))
                             .disabled(flash_disabled)
                             .on_click(cx.listener(|this, _, w, cx| this.start("flash", w, cx))),
                     ),
@@ -360,20 +417,12 @@ impl Render for OffboardViewModel {
                 .py_5()
                 .gap_8()
                 .child(
-                    v_flex()
-                        .flex_shrink_0()
-                        .child(
-                            div()
-                                .text_3xl()
-                                .font_weight(FontWeight::EXTRA_BOLD)
-                                .child("Firmware"),
-                        )
-                        .child(
-                            div()
-                                .text_sm()
-                                .text_color(cx.theme().muted_foreground)
-                                .child("Manage device firmware."),
-                        ),
+                    v_flex().flex_shrink_0().child(
+                        div()
+                            .text_3xl()
+                            .font_weight(FontWeight::EXTRA_BOLD)
+                            .child(crate::i18n::tr("Firmware")),
+                    ),
                 )
                 .child(body),
         )

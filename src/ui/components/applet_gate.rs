@@ -51,21 +51,21 @@ impl AppletGate {
         match self {
             Self::Ready => None,
             Self::CcidOff => Some((
-                "Smart-card interface off",
-                "Enable the CCID interface in Configuration → Hardware Endpoints, then reconnect the device."
+                crate::i18n::tr("Smart-card interface off"),
+                crate::i18n::tr("Enable the CCID interface in Compose → Hardware Endpoints, then reconnect the device.")
                     .into(),
             )),
             Self::Disabled(name) => Some((
-                "Applet disabled",
-                format!("{name} is turned off. Enable it in Configuration → USB Applications."),
+                crate::i18n::tr("Applet disabled"),
+                crate::i18n::format("{0} is turned off. Enable it in Compose → USB Applications.", &[format!("{}", name)]),
             )),
             Self::ClientUnsupported(name) => Some((
-                "Not yet supported",
-                format!("{name} is not yet supported for Pico All in this build."),
+                crate::i18n::tr("Not yet supported"),
+                crate::i18n::format("{0} is not yet supported for Pico All in this build.", &[format!("{}", name)]),
             )),
             Self::Unsupported => Some((
-                "Not available",
-                "This firmware does not expose this applet.".into(),
+                crate::i18n::tr("Not available"),
+                crate::i18n::tr("This firmware does not expose this applet.").into(),
             )),
         }
     }

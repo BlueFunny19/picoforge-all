@@ -4,7 +4,7 @@
   <metadata_license>CC0-1.0</metadata_license>
   <project_license>AGPL-3.0-only</project_license>
 
-  <name>PicoForge</name>
+  <name>PicoForge All</name>
   <summary>Security keys configuration tool</summary>
   <description>
     <p
@@ -15,9 +15,9 @@
     <name>Suyog Tandel</name>
   </developer>
 
-  <url type="homepage">https://github.com/librekeys/picoforge</url>
-  <url type="vcs-browser">https://github.com/librekeys/picoforge</url>
-  <url type="bugtracker">https://github.com/librekeys/picoforge/issues</url>
+  <url type="homepage">https://github.com/BlueFunny19/picoforge-all</url>
+  <url type="vcs-browser">https://github.com/BlueFunny19/picoforge-all</url>
+  <url type="bugtracker">https://github.com/BlueFunny19/picoforge-all/issues</url>
   <url type="help">https://github.com/librekeys/picoforge/wiki</url>
   <url type="donation">https://ko-fi.com/lockedmutex</url>
   <url type="contact">https://matrix.to/#/%23librekeys:matrix.org</url>
@@ -59,13 +59,13 @@
   </screenshots>
 
   <releases>
-    <release version="0.9.1" date="2026-09-21">
+    <release version="0.10.0" date="2026-09-23">
       <description translate="no">
-        <p>PicoForge All 0.9.1</p>
+        <p>PicoForge All 0.10.0</p>
         <ul>
           <li>Add Pico All applet and native firmware management.</li>
           <li>Expand status-light controls and improve security dialogs and diagnostic logs.</li>
-          <li>Unify applet status and unavailable layouts.</li>
+          <li>Add English, Simplified Chinese and IANA time-zone settings.</li>
         </ul>
       </description>
     </release>

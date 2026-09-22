@@ -1,5 +1,6 @@
 //! View model for the passkeys screen — credential listing and management.
 
+use crate::i18n::LocalizedPlaceholder;
 use crate::ui::app::AppModels;
 use crate::ui::components::dialog;
 use crate::ui::components::dialog::{
@@ -81,13 +82,19 @@ impl PasskeysViewModel {
                         this.cached_pin = Some(pin);
                         this.credentials = creds;
                         let _ = dialog_handle.update(cx, |d, cx| {
-                            d.set_success("Storage unlocked successfully.".to_string(), cx);
+                            d.set_success(
+                                crate::i18n::tr("Storage unlocked successfully.").to_string(),
+                                cx,
+                            );
                         });
                     }
                     Err(e) => {
                         log::error!("Failed to unlock storage: {}", e);
                         let _ = dialog_handle.update(cx, |d, cx| {
-                            d.set_error(format!("Failed to unlock: {}", e), cx);
+                            d.set_error(
+                                crate::i18n::format("Failed to unlock: {0}", &[format!("{}", e)]),
+                                cx,
+                            );
                         });
                     }
                 }
@@ -129,7 +136,10 @@ impl PasskeysViewModel {
                 Ok(_) => {
                     log::info!("Credential deleted successfully.");
                     let _ = dialog_handle.update(cx, |d, cx| {
-                        d.set_success("Credential deleted successfully.".to_string(), cx);
+                        d.set_success(
+                            crate::i18n::tr("Credential deleted successfully.").to_string(),
+                            cx,
+                        );
                     });
                     this.sync_fido_state(None, cx);
                 }
@@ -137,7 +147,10 @@ impl PasskeysViewModel {
                     log::error!("Error deleting credential: {}", e);
                     this.loading = false;
                     let _ = dialog_handle.update(cx, |d, cx| {
-                        d.set_error(format!("Error deleting: {}", e), cx);
+                        d.set_error(
+                            crate::i18n::format("Error deleting: {0}", &[format!("{}", e)]),
+                            cx,
+                        );
                     });
                     cx.notify();
                 }
@@ -208,11 +221,11 @@ impl PasskeysViewModel {
         let view_handle = cx.entity().downgrade();
 
         dialog::open_pin_prompt(
-            "Unlock Storage",
-            "Enter your device PIN to view saved passkeys",
-            "Enter FIDO PIN",
+            crate::i18n::tr("Unlock Storage"),
+            crate::i18n::tr("Enter your device PIN to view saved passkeys"),
+            crate::i18n::tr("Enter FIDO PIN"),
             None,
-            "Unlock",
+            crate::i18n::tr("Unlock"),
             window,
             cx,
             move |pin, dialog_handle, cx| {
@@ -236,9 +249,12 @@ impl PasskeysViewModel {
         let view_handle = cx.entity().downgrade();
 
         dialog::open_confirm(
-            "Delete Passkey",
-            format!("Are you sure you want to delete the passkey for {}?", name),
-            "Delete",
+            crate::i18n::tr("Delete Passkey"),
+            crate::i18n::format(
+                "Are you sure you want to delete the passkey for {0}?",
+                &[format!("{}", name)],
+            ),
+            crate::i18n::tr("Delete"),
             gpui_component::button::ButtonVariant::Danger,
             window,
             cx,
@@ -295,7 +311,10 @@ impl PasskeysViewModel {
                 Ok(msg) => {
                     log::info!("PIN configured: {}", msg);
                     let _ = dialog_handle.update(cx, |d, cx| {
-                        d.set_success("PIN configured successfully.".to_string(), cx);
+                        d.set_success(
+                            crate::i18n::tr("PIN configured successfully.").to_string(),
+                            cx,
+                        );
                     });
                     this.sync_fido_state(None, cx);
                 }
@@ -303,7 +322,7 @@ impl PasskeysViewModel {
                     log::error!("PIN setup failed: {}", e);
                     this.loading = false;
                     let _ = dialog_handle.update(cx, |d, cx| {
-                        d.set_error(format!("Error: {}", e), cx);
+                        d.set_error(crate::i18n::format("Error: {0}", &[format!("{}", e)]), cx);
                     });
                     cx.notify();
                 }
@@ -334,17 +353,17 @@ impl PasskeysViewModel {
 
         let current_pin = cx.new(|cx| {
             gpui_component::input::InputState::new(window, cx)
-                .placeholder("Enter current PIN")
+                .localized_placeholder("Enter current PIN", cx)
                 .masked(true)
         });
         let new_pin = cx.new(|cx| {
             gpui_component::input::InputState::new(window, cx)
-                .placeholder("Enter new PIN")
+                .localized_placeholder("Enter new PIN", cx)
                 .masked(true)
         });
         let confirm_pin = cx.new(|cx| {
             gpui_component::input::InputState::new(window, cx)
-                .placeholder("Confirm new PIN")
+                .localized_placeholder("Confirm new PIN", cx)
                 .masked(true)
         });
 
@@ -373,23 +392,28 @@ impl PasskeysViewModel {
                 if !new_val.is_empty() {
                     if new_val != confirm_val {
                         let _ = view2.update(cx, |_, cx| {
-                            cx.emit(PasskeysEvent::Notification("PINs do not match".to_string()));
+                            cx.emit(PasskeysEvent::Notification(
+                                crate::i18n::tr("PINs do not match").to_string(),
+                            ));
                         });
                         return;
                     }
                     if new_val.len() < min_len as usize {
                         let _ = view2.update(cx, |_, cx| {
-                            cx.emit(PasskeysEvent::Notification(format!(
-                                "PIN must be at least {} characters",
-                                min_len
+                            cx.emit(PasskeysEvent::Notification(crate::i18n::format(
+                                "PIN must be at least {0} characters",
+                                &[format!("{}", min_len)],
                             )));
                         });
                         return;
                     }
                 }
                 window.close_dialog(cx);
-                let status_handle =
-                    dialog::open_status_dialog("Update Minimum PIN Length", window, cx);
+                let status_handle = dialog::open_status_dialog(
+                    crate::i18n::tr("Update Minimum PIN Length"),
+                    window,
+                    cx,
+                );
                 let _ = view2.update(cx, |this, cx| {
                     this.update_min_length(current_val, min_len, new_val, status_handle, cx);
                 });
@@ -406,9 +430,9 @@ impl PasskeysViewModel {
             let _ = window;
 
             dialog
-                .title("Update Minimum PIN Length")
+                .title(crate::i18n::tr("Update Minimum PIN Length"))
                 .child(
-                    "Set the minimum allowed PIN length (4-63 characters) and enter a new PIN that meets this requirement.",
+                    crate::i18n::tr("Set the minimum allowed PIN length (4-63 characters) and enter a new PIN that meets this requirement."),
                 )
                 .child(
                     gpui_component::v_flex()
@@ -420,15 +444,15 @@ impl PasskeysViewModel {
                                 .child(label_view.clone())
                                 .child(gpui_component::slider::Slider::new(&slider_handle))
                         )
-                        .child("Current PIN")
+                        .child(crate::i18n::tr("Current PIN"))
                         .child(gpui_component::input::Input::new(&current))
                         .child(
                              gpui_component::v_flex()
                                 .gap_2()
-                                .child(format!("New PIN (min {} chars)", current_min))
+                                .child(crate::i18n::format("New PIN (min {0} chars)", &[format!("{}", current_min)]))
                                 .child(gpui_component::input::Input::new(&new_pin_value))
                         )
-                        .child("Confirm New PIN")
+                        .child(crate::i18n::tr("Confirm New PIN"))
                         .child(gpui_component::input::Input::new(&confirm)),
                 )
                 .on_ok(move |_, window, cx| {
@@ -439,11 +463,11 @@ impl PasskeysViewModel {
                     let submit_clone = submit_for_btn.clone();
                     vec![
                         gpui_component::button::Button::new("cancel")
-                            .label("Cancel")
+                            .label(crate::i18n::tr("Cancel"))
                             .on_click(|_, window, cx| window.close_dialog(cx)),
                         gpui_component::button::Button::new("update")
                             .primary()
-                            .label("Update")
+                            .label(crate::i18n::tr("Update"))
                             .on_click(move |_, window, cx| {
                                 submit_clone(window, cx);
                             }),
@@ -479,7 +503,7 @@ impl PasskeysViewModel {
                 Ok(msg) => {
                     log::info!("PIN changed: {}", msg);
                     let _ = dialog_handle.update(cx, |d, cx| {
-                        d.set_success("PIN changed successfully.".to_string(), cx);
+                        d.set_success(crate::i18n::tr("PIN changed successfully.").to_string(), cx);
                     });
                     this.sync_fido_state(Some(new_for_sync), cx);
                 }
@@ -487,7 +511,7 @@ impl PasskeysViewModel {
                     log::error!("PIN change failed: {}", e);
                     this.loading = false;
                     let _ = dialog_handle.update(cx, |d, cx| {
-                        d.set_error(format!("Error: {}", e), cx);
+                        d.set_error(crate::i18n::format("Error: {0}", &[format!("{}", e)]), cx);
                     });
                     cx.notify();
                 }
@@ -525,7 +549,10 @@ impl PasskeysViewModel {
                 let _ = weak_self.update(cx, |this, cx| {
                     this.loading = false;
                     let _ = status_handle.update(cx, |status_content, cx| {
-                        status_content.set_error(format!("Failed to set length: {}", e), cx);
+                        status_content.set_error(
+                            crate::i18n::format("Failed to set length: {0}", &[format!("{}", e)]),
+                            cx,
+                        );
                     });
                     cx.notify();
                 });
@@ -544,8 +571,10 @@ impl PasskeysViewModel {
                     Ok(_) => {
                         log::info!("Minimum length and PIN updated successfully.");
                         let _ = status_handle.update(cx, |status_content, cx| {
-                            status_content
-                                .set_success("Minimum length and PIN updated.".to_string(), cx);
+                            status_content.set_success(
+                                crate::i18n::tr("Minimum length and PIN updated.").to_string(),
+                                cx,
+                            );
                         });
                         this.sync_fido_state(Some(new_pin_for_sync), cx);
                     }
@@ -553,8 +582,13 @@ impl PasskeysViewModel {
                         log::error!("Length set, but PIN change failed: {}", e);
                         this.loading = false;
                         let _ = status_handle.update(cx, |status_content, cx| {
-                            status_content
-                                .set_error(format!("Length set, but PIN change failed: {}", e), cx);
+                            status_content.set_error(
+                                crate::i18n::format(
+                                    "Length set, but PIN change failed: {0}",
+                                    &[format!("{}", e)],
+                                ),
+                                cx,
+                            );
                         });
                         cx.notify();
                     }
@@ -563,8 +597,13 @@ impl PasskeysViewModel {
                 let _ = weak_self.update(cx, |this, cx| {
                     log::info!("Minimum PIN length updated to {}.", min_len);
                     let _ = status_handle.update(cx, |status_content, cx| {
-                        status_content
-                            .set_success(format!("Minimum length updated to {}.", min_len), cx);
+                        status_content.set_success(
+                            crate::i18n::format(
+                                "Minimum length updated to {0}.",
+                                &[format!("{}", min_len)],
+                            ),
+                            cx,
+                        );
                     });
                     this.sync_fido_state(None, cx);
                 });
@@ -602,7 +641,7 @@ impl PasskeysViewModel {
                         this.csr_pem = Some(pem);
                         let _ = status_handle.update(cx, |status_content, cx| {
                             status_content.set_success(
-                                "CSR retrieved from device. Click \"View CSR\" to inspect or save it.".to_string(),
+                                crate::i18n::tr("CSR retrieved from device. Click \"View CSR\" to inspect or save it.").to_string(),
                                 cx,
                             );
                         });
@@ -610,7 +649,7 @@ impl PasskeysViewModel {
                     Err(e) => {
                         log::error!("Failed to retrieve CSR: {}", e);
                         let _ = status_handle.update(cx, |status_content, cx| {
-                            status_content.set_error(format!("Failed to retrieve CSR: {}", e), cx);
+                            status_content.set_error(crate::i18n::format("Failed to retrieve CSR: {0}", &[format!("{}", e)]), cx);
                         });
                     }
                 }
@@ -658,7 +697,10 @@ impl PasskeysViewModel {
                     Err(e) => {
                         log::error!("Certificate upload failed: {}", e);
                         let _ = dialog_handle.update(cx, |d, cx| {
-                            d.set_error(format!("Upload failed: {}", e), cx);
+                            d.set_error(
+                                crate::i18n::format("Upload failed: {0}", &[format!("{}", e)]),
+                                cx,
+                            );
                         });
                     }
                 }
@@ -671,11 +713,11 @@ impl PasskeysViewModel {
         let view_handle = cx.entity().downgrade();
 
         dialog::open_pin_prompt(
-            "Enable Enterprise Attestation",
-            "Enter your device PIN to enable enterprise attestation",
-            "Enter FIDO PIN",
-            Some("This operation is irreversible"),
-            "Enable",
+            crate::i18n::tr("Enable Enterprise Attestation"),
+            crate::i18n::tr("Enter your device PIN to enable enterprise attestation"),
+            crate::i18n::tr("Enter FIDO PIN"),
+            Some(crate::i18n::tr("This operation is irreversible")),
+            crate::i18n::tr("Enable"),
             window,
             cx,
             move |pin, dialog_handle, cx| {
@@ -719,7 +761,7 @@ impl PasskeysViewModel {
                     log::error!("Failed to enable EA: {}", e);
                     this.loading = false;
                     let _ = dialog_handle.update(cx, |d, cx| {
-                        d.set_error(format!("Error: {}", e), cx);
+                        d.set_error(crate::i18n::format("Error: {0}", &[format!("{}", e)]), cx);
                     });
                     cx.notify();
                 }
@@ -735,7 +777,7 @@ impl PasskeysViewModel {
             files: true,
             directories: false,
             multiple: false,
-            prompt: Some("Select Certificate File (PEM or DER)".into()),
+            prompt: Some(crate::i18n::tr("Select Certificate File (PEM or DER)").into()),
         });
 
         self._task = Some(cx.spawn(async move |_, cx| {
@@ -749,11 +791,13 @@ impl PasskeysViewModel {
 
             let _ = cx.update_window(window_handle, |_, window, cx| {
                 dialog::open_pin_prompt(
-                    "Upload Certificate",
-                    "Enter your device PIN to upload the certificate to the device",
-                    "Enter FIDO PIN",
+                    crate::i18n::tr("Upload Certificate"),
+                    crate::i18n::tr(
+                        "Enter your device PIN to upload the certificate to the device",
+                    ),
+                    crate::i18n::tr("Enter FIDO PIN"),
                     None,
-                    "Upload",
+                    crate::i18n::tr("Upload"),
                     window,
                     cx,
                     move |pin, dialog_handle, cx| {
@@ -770,9 +814,9 @@ impl PasskeysViewModel {
         let view_handle = cx.entity().downgrade();
 
         dialog::open_confirm(
-            "Factory Reset Device",
-            "Are you sure you want to completely erase your device? This will permanently delete ALL passkeys, credentials, and your PIN. This action cannot be undone.".to_string(),
-            "Reset Device",
+            crate::i18n::tr("Factory Reset Device"),
+            crate::i18n::tr("Are you sure you want to completely erase your device? This will permanently delete ALL passkeys, credentials, and your PIN. This action cannot be undone.").to_string(),
+            crate::i18n::tr("Reset Device"),
             gpui_component::button::ButtonVariant::Danger,
             window,
             cx,
@@ -791,13 +835,14 @@ impl PasskeysViewModel {
         }
         self.loading = true;
 
-        let status_handle = dialog::open_status_dialog("Resetting FIDO", window, cx);
+        let status_handle =
+            dialog::open_status_dialog(crate::i18n::tr("Resetting FIDO"), window, cx);
         let weak_self = cx.entity().downgrade();
         self.device.update(cx, |d, _| d.loading = true);
 
         let _ = status_handle.update(cx, |d, cx| {
             d.set_loading(
-                "Unplug this security key, then reconnect it. You have 30 seconds. Press and release its button when the light requests confirmation.",
+                crate::i18n::tr("Unplug and reconnect this device within 30 seconds. When the light flashes, press and release the device button (BOOTSEL)."),
                 cx,
             );
         });
@@ -818,7 +863,10 @@ impl PasskeysViewModel {
             }
 
             let _ = status_handle.update(cx, |d, cx| {
-                d.set_loading("Touch your security key now to confirm the reset...", cx);
+                d.set_loading(
+                    crate::i18n::tr("Touch your security key now to confirm the reset..."),
+                    cx,
+                );
             });
 
             let result = cx
@@ -836,7 +884,7 @@ impl PasskeysViewModel {
                             d.set_success(msg, cx);
                         });
                         cx.emit(PasskeysEvent::Notification(
-                            "Device reset successfully".into(),
+                            crate::i18n::tr("Device reset successfully").into(),
                         ));
                         this.lock_storage(cx);
                         this.sync_fido_state(None, cx);
@@ -845,7 +893,10 @@ impl PasskeysViewModel {
                         log::error!("Error resetting device: {}", e);
                         this.loading = false;
                         let _ = status_handle.update(cx, |d, cx| {
-                            d.set_error(format!("Reset failed: {}", e), cx);
+                            d.set_error(
+                                crate::i18n::format("Reset failed: {0}", &[format!("{}", e)]),
+                                cx,
+                            );
                         });
                         cx.notify();
                     }
@@ -863,7 +914,7 @@ impl PasskeysViewModel {
         if let Some(pin) = &self.cached_pin {
             self.open_delete_dialog(&cred, pin.clone(), window, cx);
         } else {
-            window.push_notification("Session expired, please unlock again.", cx);
+            window.push_notification(crate::i18n::tr("Session expired, please unlock again."), cx);
             self.lock_storage(cx);
         }
     }
@@ -879,7 +930,7 @@ impl PasskeysViewModel {
         } else if !cred.rp_id.is_empty() {
             cred.rp_id.clone()
         } else {
-            "Passkey Details".to_string()
+            crate::i18n::tr("Passkey Details").to_string()
         };
         let rp_id = cred.rp_id.clone();
         let user_name = cred.user_name.clone();
@@ -958,7 +1009,7 @@ impl PasskeysViewModel {
                                 .text_sm()
                                 .font_medium()
                                 .text_color(theme.muted_foreground)
-                                .child(label.to_string()),
+                                .child(crate::i18n::text(label)),
                         )
                         .child(value_el)
                 };
@@ -969,7 +1020,7 @@ impl PasskeysViewModel {
                         div()
                             .text_sm()
                             .text_color(theme.muted_foreground)
-                            .child("Credential details for user"),
+                            .child(crate::i18n::tr("Credential details for user")),
                     )
                     .child(
                         div()
@@ -1000,10 +1051,18 @@ impl PasskeysViewModel {
                                 .gap_4()
                                 .child(header_row)
                                 .child(separator)
-                                .child(detail_field("Display Name", display_name.clone(), false))
-                                .child(detail_field("User ID (Hex)", user_id.clone(), true))
                                 .child(detail_field(
-                                    "Credential ID (Hex)",
+                                    crate::i18n::tr("Display Name"),
+                                    display_name.clone(),
+                                    false,
+                                ))
+                                .child(detail_field(
+                                    crate::i18n::tr("User ID (Hex)"),
+                                    user_id.clone(),
+                                    true,
+                                ))
+                                .child(detail_field(
+                                    crate::i18n::tr("Credential ID (Hex)"),
                                     credential_id.clone(),
                                     true,
                                 )),
@@ -1021,6 +1080,6 @@ struct SliderLabel {
 impl Render for SliderLabel {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let val = self.slider.read(cx).value().start() as u8;
-        format!("Minimum PIN Length ({})", val)
+        crate::i18n::format("Minimum PIN Length ({0})", &[format!("{}", val)])
     }
 }

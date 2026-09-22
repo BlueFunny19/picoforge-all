@@ -62,20 +62,20 @@ impl BackupViewModel {
         let copy = {
             let p = phrase.to_string();
             Button::new("bk-copy")
-                .label("Copy")
+                .label(crate::i18n::tr("Copy"))
                 .ghost()
                 .on_click(cx.listener(move |_, _, _, cx| {
                     cx.write_to_clipboard(ClipboardItem::new_string(p.clone()));
                 }))
         };
         let clear = Button::new("bk-clear")
-            .label("Clear from screen")
+            .label(crate::i18n::tr("Clear from screen"))
             .ghost()
             .on_click(cx.listener(|this, _, _, cx| this.clear_exported(cx)));
 
         Card::new()
-            .title("Recovery phrase")
-            .description("Shown once — write it down now, then seal the window")
+            .title(crate::i18n::tr("Recovery phrase"))
+            .description(crate::i18n::tr("Shown once — write it down now, then seal the window"))
             .icon(Icon::default().path("icons/key-round.svg"))
             .header_right(h_flex().gap_2().child(copy).child(clear))
             .child(
@@ -88,7 +88,7 @@ impl BackupViewModel {
                             .bg(rgb(0x18181b))
                             .text_color(rgb(0xf59e0b))
                             .text_sm()
-                            .child("Anyone with this phrase can clone your FIDO identity. Store it offline; never paste it into a website."),
+                            .child(crate::i18n::tr("Anyone with this phrase can clone your FIDO identity. Store it offline; never paste it into a website.")),
                     )
                     .child(
                         div()
@@ -134,17 +134,17 @@ impl Render for BackupViewModel {
             .disabled(self.loading)
             .on_click(cx.listener(|this, _, _, cx| this.refresh(cx)));
         let export_btn = Button::new("bk-export")
-            .label("Export seed")
+            .label(crate::i18n::tr("Export seed"))
             .danger()
             .disabled(self.loading)
             .on_click(cx.listener(|this, _, window, cx| this.open_export(window, cx)));
-        let seal_btn = PFButton::new("Seal window")
+        let seal_btn = PFButton::new(crate::i18n::tr("Seal window"))
             .id("bk-seal")
             .with_colors(rgb(0x222225), rgb(0x2a2a2d), rgb(0x333336))
             .disabled(self.loading)
             .on_click(cx.listener(|this, _, window, cx| this.open_finalize(window, cx)));
         let restore_btn = Button::new("bk-restore")
-            .label("Restore seed")
+            .label(crate::i18n::tr("Restore seed"))
             .danger()
             .disabled(self.loading)
             .on_click(cx.listener(|this, _, window, cx| this.open_restore(window, cx)));
@@ -152,70 +152,78 @@ impl Render for BackupViewModel {
         let status_card = {
             let body = match status {
                 Some(s) => {
-                    let yn = |b: bool| if b { "yes" } else { "no" };
+                    let yn = |b: bool| {
+                        if b {
+                            crate::i18n::tr("yes")
+                        } else {
+                            crate::i18n::tr("no")
+                        }
+                    };
                     let export_state = if s.sealed {
-                        "sealed (export refused until a factory reset)"
+                        crate::i18n::tr("sealed (export refused until a factory reset)")
                     } else if s.has_seed {
-                        "open — seed can be exported once"
+                        crate::i18n::tr("open — seed can be exported once")
                     } else {
-                        "no seed present"
+                        crate::i18n::tr("no seed present")
                     };
                     v_flex()
                         .gap_2()
-                        .child(
-                            div()
-                                .text_sm()
-                                .child(format!("Seed present: {}", yn(s.has_seed))),
-                        )
-                        .child(
-                            div()
-                                .text_sm()
-                                .child(format!("Export window: {export_state}")),
-                        )
+                        .child(div().text_sm().child(crate::i18n::format(
+                            "Seed present: {0}",
+                            &[format!("{}", yn(s.has_seed))],
+                        )))
+                        .child(div().text_sm().child(crate::i18n::format(
+                            "Export window: {0}",
+                            &[format!("{}", export_state)],
+                        )))
                         .into_any_element()
                 }
                 None => div()
                     .text_sm()
                     .text_color(theme.muted_foreground)
-                    .child("Reading backup state…")
+                    .child(crate::i18n::tr("Reading backup state…"))
                     .into_any_element(),
             };
             Card::new()
-                .title("Backup status")
-                .description("Whether a seed is present and the export window is open")
+                .title(crate::i18n::tr("Backup status"))
+                .description(crate::i18n::tr(
+                    "Whether a seed is present and the export window is open",
+                ))
                 .icon(Icon::default().path("icons/cpu.svg"))
                 .header_right(refresh_btn)
                 .child(body)
         };
 
         let export_card = Card::new()
-            .title("Export")
-            .description("Reveal the seed as a 24-word phrase, then seal the window")
+            .title(crate::i18n::tr("Export"))
+            .description(crate::i18n::tr(
+                "Reveal the seed as a 24-word phrase, then seal the window",
+            ))
             .icon(Icon::default().path("icons/lock-open.svg"))
             .child(
                 v_flex()
                     .gap_2()
                     .child(self.action_row(
-                        "Export seed",
-                        "Show the recovery phrase (offline; PIN or touch)",
+                        crate::i18n::tr("Export seed"),
+                        crate::i18n::tr("Show the recovery phrase"),
                         export_btn,
                         theme,
                     ))
                     .child(self.action_row(
-                        "Seal export window",
-                        "Refuse further exports until a factory reset",
+                        crate::i18n::tr("Seal export window"),
+                        crate::i18n::tr("Refuse further exports until a factory reset"),
                         seal_btn,
                         theme,
                     )),
             );
 
         let restore_card = Card::new()
-            .title("Restore")
-            .description("Install a seed from a 24-word phrase")
+            .title(crate::i18n::tr("Restore"))
+            .description(crate::i18n::tr("Install a seed from a 24-word phrase"))
             .icon(Icon::default().path("icons/lock.svg"))
             .child(self.action_row(
-                "Restore seed",
-                "Replace the FIDO identity from a recovery phrase",
+                crate::i18n::tr("Restore seed"),
+                crate::i18n::tr("Replace the FIDO identity from a recovery phrase"),
                 restore_btn,
                 theme,
             ));

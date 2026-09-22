@@ -36,6 +36,7 @@ pub struct AppModels {
 pub struct ViewModelStore {
     pub home: Option<Entity<HomeViewModel>>,
     pub about: Option<Entity<AboutViewModel>>,
+    pub settings: Option<Entity<crate::ui::screens::settings::SettingsViewModel>>,
     pub security: Option<Entity<SecurityViewModel>>,
     pub passkeys: Option<Entity<PasskeysViewModel>>,
     pub accounts: Option<Entity<AccountsViewModel>>,
@@ -57,6 +58,7 @@ impl ViewModelStore {
         Self {
             home: None,
             about: None,
+            settings: None,
             security: None,
             passkeys: None,
             accounts: None,
@@ -92,6 +94,7 @@ pub enum Destination {
     Configuration,
     Security,
     About,
+    Settings,
 }
 
 /// Top-level GPUI component — owns models, navigation, and wires sidebar + content routing.
@@ -213,7 +216,7 @@ impl Render for ApplicationRoot {
                             window,
                             |_, _, event: &PasskeysEvent, window, cx| match event {
                                 PasskeysEvent::Notification(msg) => {
-                                    window.push_notification(msg.to_string(), cx);
+                                    window.push_notification(crate::i18n::text(msg), cx);
                                 }
                             },
                         )
@@ -230,7 +233,7 @@ impl Render for ApplicationRoot {
                             window,
                             |_, _, event: &AccountsEvent, window, cx| match event {
                                 AccountsEvent::Notification(msg) => {
-                                    window.push_notification(msg.to_string(), cx);
+                                    window.push_notification(crate::i18n::text(msg), cx);
                                 }
                             },
                         )
@@ -245,7 +248,7 @@ impl Render for ApplicationRoot {
                         cx.subscribe_in(&view, window, |_, _, event: &SlotsEvent, window, cx| {
                             match event {
                                 SlotsEvent::Notification(msg) => {
-                                    window.push_notification(msg.to_string(), cx);
+                                    window.push_notification(crate::i18n::text(msg), cx);
                                 }
                             }
                         })
@@ -260,7 +263,7 @@ impl Render for ApplicationRoot {
                         cx.subscribe_in(&view, window, |_, _, event: &PivEvent, window, cx| {
                             match event {
                                 PivEvent::Notification(msg) => {
-                                    window.push_notification(msg.to_string(), cx);
+                                    window.push_notification(crate::i18n::text(msg), cx);
                                 }
                             }
                         })
@@ -275,7 +278,7 @@ impl Render for ApplicationRoot {
                         cx.subscribe_in(&view, window, |_, _, event: &OpenPgpEvent, window, cx| {
                             match event {
                                 OpenPgpEvent::Notification(msg) => {
-                                    window.push_notification(msg.to_string(), cx);
+                                    window.push_notification(crate::i18n::text(msg), cx);
                                 }
                             }
                         })
@@ -316,7 +319,7 @@ impl Render for ApplicationRoot {
                             window,
                             |_, _, event: &AttestationEvent, window, cx| match event {
                                 AttestationEvent::Notification(msg) => {
-                                    window.push_notification(msg.to_string(), cx);
+                                    window.push_notification(crate::i18n::text(msg), cx);
                                 }
                             },
                         )
@@ -333,7 +336,7 @@ impl Render for ApplicationRoot {
                             window,
                             |_, _, event: &OffboardEvent, window, cx| match event {
                                 OffboardEvent::Notification(msg) => {
-                                    window.push_notification(msg.to_string(), cx);
+                                    window.push_notification(crate::i18n::text(msg), cx);
                                 }
                             },
                         )
@@ -351,6 +354,29 @@ impl Render for ApplicationRoot {
                 Destination::Security => {
                     let view = self.views_store.security.get_or_insert_with(|| {
                         cx.new(|cx| SecurityViewModel::new(window, cx, &self.models))
+                    });
+                    view.clone().into_any_element()
+                }
+                Destination::Settings => {
+                    let view = self.views_store.settings.get_or_insert_with(|| {
+                        let view = cx.new(|cx| {
+                            crate::ui::screens::settings::SettingsViewModel::new(window, cx)
+                        });
+                        cx.subscribe_in(
+                            &view,
+                            window,
+                            |this,
+                             _,
+                             _: &crate::ui::screens::settings::SettingsEvent,
+                             window,
+                             cx| {
+                                crate::i18n::refresh_inputs(window, cx);
+                                this.sidebar.update(cx, |_, cx| cx.notify());
+                                cx.notify();
+                            },
+                        )
+                        .detach();
+                        view
                     });
                     view.clone().into_any_element()
                 }
@@ -384,7 +410,11 @@ impl Render for ApplicationRoot {
         } else {
             "icons/chevron-left.svg"
         };
-        let toggle_tooltip = if collapsed { "Expand" } else { "Collapse" };
+        let toggle_tooltip = if collapsed {
+            crate::i18n::tr("Expand")
+        } else {
+            crate::i18n::tr("Collapse")
+        };
 
         let toggle_btn = div()
             .id("sidebar-toggle-zone")

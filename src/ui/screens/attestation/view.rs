@@ -84,13 +84,17 @@ impl Render for AttestationViewModel {
             )
             .disabled(self.loading)
             .on_click(cx.listener(|this, _, _, cx| this.refresh(cx)));
-        let import_btn = PFButton::new(if installed { "Replace" } else { "Import" })
-            .id("att-import")
-            .with_colors(rgb(0x222225), rgb(0x2a2a2d), rgb(0x333336))
-            .disabled(self.loading)
-            .on_click(cx.listener(|this, _, window, cx| this.open_import(window, cx)));
+        let import_btn = PFButton::new(if installed {
+            crate::i18n::tr("Replace")
+        } else {
+            crate::i18n::tr("Import")
+        })
+        .id("att-import")
+        .with_colors(rgb(0x222225), rgb(0x2a2a2d), rgb(0x333336))
+        .disabled(self.loading)
+        .on_click(cx.listener(|this, _, window, cx| this.open_import(window, cx)));
         let clear_btn = Button::new("att-clear")
-            .label("Remove")
+            .label(crate::i18n::tr("Remove"))
             .danger()
             .disabled(self.loading || !installed)
             .on_click(cx.listener(|this, _, window, cx| this.open_clear(window, cx)));
@@ -100,20 +104,20 @@ impl Render for AttestationViewModel {
                 Some(s) => {
                     let mut col = crate::ui::components::information::grid()
                         .child(crate::ui::components::information::field(
-                            "Organisation keychain",
+                            crate::i18n::tr("Organisation keychain"),
                             if s.installed {
-                                "Installed"
+                                crate::i18n::tr("Installed")
                             } else {
-                                "Not installed"
+                                crate::i18n::tr("Not installed")
                             },
                             theme,
                         ))
                         .child(crate::ui::components::information::field(
-                            "Certificate source",
+                            crate::i18n::tr("Certificate source"),
                             if s.installed {
-                                "Organisation"
+                                crate::i18n::tr("Organisation")
                             } else {
-                                "Self-signed"
+                                crate::i18n::tr("Self-signed")
                             },
                             theme,
                         ));
@@ -125,7 +129,7 @@ impl Render for AttestationViewModel {
                                     div()
                                         .text_xs()
                                         .text_color(theme.muted_foreground)
-                                        .child("Chain hash"),
+                                        .child(crate::i18n::tr("Chain hash")),
                                 )
                                 .child(div().font_family("monospace").text_xs().child(h.clone())),
                         );
@@ -135,33 +139,35 @@ impl Render for AttestationViewModel {
                 None => div()
                     .text_sm()
                     .text_color(theme.muted_foreground)
-                    .child("Reading attestation state…")
+                    .child(crate::i18n::tr("Reading attestation state…"))
                     .into_any_element(),
             };
             Card::new()
-                .title("Attestation status")
-                .description("Org attestation keychain status")
+                .title(crate::i18n::tr("Attestation status"))
+                .description(crate::i18n::tr("Org attestation keychain status"))
                 .icon(Icon::default().path("icons/building-2.svg"))
                 .header_right(refresh_btn)
                 .child(body)
         };
 
         let actions_card = Card::new()
-            .title("Manage")
-            .description("Provision or remove the org attestation")
+            .title(crate::i18n::tr("Manage"))
+            .description(crate::i18n::tr("Provision or remove the org attestation"))
             .icon(Icon::default().path("icons/shield-check.svg"))
             .child(
                 v_flex()
                     .gap_2()
                     .child(self.action_row(
-                        "Import key + chain",
-                        "P-256 key (PEM/DER) and certificate chain; confirm on the device",
+                        crate::i18n::tr("Import key + chain"),
+                        crate::i18n::tr(
+                            "P-256 key (PEM/DER) and certificate chain; confirm on the device",
+                        ),
                         import_btn,
                         theme,
                     ))
                     .child(self.action_row(
-                        "Remove attestation",
-                        "Revert to the self-signed device certificate",
+                        crate::i18n::tr("Remove attestation"),
+                        crate::i18n::tr("Revert to the self-signed device certificate"),
                         clear_btn,
                         theme,
                     )),

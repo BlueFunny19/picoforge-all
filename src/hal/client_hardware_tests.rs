@@ -379,3 +379,155 @@ fn current_app_hsm_reset_defaults() {
         "HSM RESET PASS: user PIN 123456, SO PIN 12345678, no DKEK shares; initialized and empty"
     );
 }
+
+#[test]
+#[ignore = "requires the specified board with PIN-default metadata firmware; reads only"]
+fn current_app_default_pin_metadata() {
+    select_target();
+    let pgp = DeviceRepo::openpgp_read_info_blocking().unwrap();
+    let piv = DeviceRepo::piv_read_info_blocking().unwrap();
+    let hsm_before = hsm::read_info().unwrap();
+    assert!(pgp.pw1_default.is_some() && pgp.pw3_default.is_some());
+    assert!(hsm_before.pin_default.is_some() && hsm_before.so_pin_default.is_some());
+    let pgp_after = DeviceRepo::openpgp_read_info_blocking().unwrap();
+    let hsm_after = hsm::read_info().unwrap();
+    assert_eq!(
+        (pgp.pw1_retries, pgp.pw3_retries),
+        (pgp_after.pw1_retries, pgp_after.pw3_retries)
+    );
+    assert_eq!(
+        (&hsm_before.pin, &hsm_before.so_pin),
+        (&hsm_after.pin, &hsm_after.so_pin)
+    );
+    println!(
+        "Default metadata: PIV PIN={:?}, PUK={:?}; OpenPGP user={:?}, admin={:?}; HSM user={:?}, SO={:?}. Retry counts unchanged.",
+        piv.pin.map(|m| m.is_default),
+        piv.puk.map(|m| m.is_default),
+        pgp.pw1_default,
+        pgp.pw3_default,
+        hsm_before.pin_default,
+        hsm_before.so_pin_default
+    );
+}
+
+#[test]
+#[ignore = "requires factory PINs on the selected development board; temporarily changes and restores OpenPGP/HSM PINs"]
+fn current_app_default_pin_roundtrip() {
+    select_target();
+    let pgp = DeviceRepo::openpgp_read_info_blocking().unwrap();
+    let initial_hsm = hsm::read_info().unwrap();
+    assert_eq!((pgp.pw1_default, pgp.pw3_default), (Some(true), Some(true)));
+    assert_eq!(
+        (initial_hsm.pin_default, initial_hsm.so_pin_default),
+        (Some(true), Some(true))
+    );
+    for admin in [false, true] {
+        let (original, temporary) = if admin {
+            ("12345678", "87654321")
+        } else {
+            ("123456", "654321")
+        };
+        let change = if admin {
+            DeviceRepo::openpgp_change_admin_pin_blocking
+        } else {
+            DeviceRepo::openpgp_change_user_pin_blocking
+        };
+        change(original.into(), temporary.into()).expect("change OpenPGP test PIN");
+        let changed = DeviceRepo::openpgp_read_info_blocking();
+        change(temporary.into(), original.into()).expect("restore OpenPGP default PIN");
+        let changed = changed.unwrap();
+        assert_eq!(
+            if admin {
+                changed.pw3_default
+            } else {
+                changed.pw1_default
+            },
+            Some(false)
+        );
+        let restored = DeviceRepo::openpgp_read_info_blocking().unwrap();
+        assert_eq!(
+            (restored.pw1_default, restored.pw3_default),
+            (Some(true), Some(true))
+        );
+    }
+    for so in [false, true] {
+        let (original, temporary): (&[u8], &[u8]) = if so {
+            (b"12345678", b"87654321")
+        } else {
+            (b"123456", b"654321")
+        };
+        hsm::change_pin(original, temporary, so).expect("change HSM test PIN");
+        let changed = hsm::read_info();
+        hsm::change_pin(temporary, original, so).expect("restore HSM default PIN");
+        let changed = changed.unwrap();
+        assert_eq!(
+            if so {
+                changed.so_pin_default
+            } else {
+                changed.pin_default
+            },
+            Some(false)
+        );
+        let restored = hsm::read_info().unwrap();
+        assert_eq!(
+            (restored.pin_default, restored.so_pin_default),
+            (Some(true), Some(true))
+        );
+        assert_eq!(restored.files, initial_hsm.files);
+    }
+    println!(
+        "PASS: all four OpenPGP/HSM default flags cleared for custom PINs, restored after changing back; HSM objects preserved."
+    );
+}
+
+#[test]
+#[ignore = "requires the selected board and one button confirmation on snapshot-capable firmware"]
+fn current_app_audit_verify_once() {
+    select_target();
+    crate::hal::rescue::sync_clock().expect("synchronize the selected device clock");
+    let info = DeviceRepo::get_fido_info_blocking().unwrap();
+    let pin = std::env::var("PICOFORGE_TEST_FIDO_PIN").ok();
+    assert!(info.options.get("clientPin") != Some(&true) || pin.is_some());
+    let initial = DeviceRepo::audit_status_blocking().unwrap();
+    println!(
+        "Press and release the device button (BOOTSEL) when its light flashes. One confirmation covers the log and its signature."
+    );
+    let result = DeviceRepo::audit_verify_blocking(pin, None).unwrap();
+    assert!(result.authentic());
+    assert_eq!(result.seq_signed, result.journal.seq_next);
+    assert_eq!(DeviceRepo::audit_status_blocking().unwrap(), initial);
+    println!(
+        "PASS signed snapshot: signature and log match; event recording remains {}",
+        initial
+    );
+}
+
+#[test]
+#[ignore = "requires the selected board, a preceding clock-synced Audit verification, and one button confirmation"]
+fn current_app_audit_calendar_time() {
+    select_target();
+    crate::hal::rescue::sync_clock().unwrap();
+    let initial = DeviceRepo::audit_status_blocking().unwrap();
+    println!("Press and release the device button (BOOTSEL) when its light flashes.");
+    let result =
+        DeviceRepo::audit_verify_blocking(std::env::var("PICOFORGE_TEST_FIDO_PIN").ok(), None)
+            .unwrap();
+    assert!(result.authentic());
+    let now = chrono::Utc::now().timestamp();
+    let dated = result
+        .journal
+        .entries
+        .iter()
+        .find(|e| {
+            e.event == 0x11
+                && e.timestamp
+                    .is_some_and(|t| (now - i64::from(t)).abs() < 600)
+        })
+        .expect("the preceding verification must have recorded a real timestamp");
+    println!(
+        "PASS calendar event #{}: {}",
+        dated.seq,
+        crate::preferences::timestamp(dated.timestamp.unwrap()).unwrap()
+    );
+    assert_eq!(DeviceRepo::audit_status_blocking().unwrap(), initial);
+}

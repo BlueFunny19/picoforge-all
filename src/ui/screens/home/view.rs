@@ -19,7 +19,7 @@ impl HomeViewModel {
                 div()
                     .text_sm()
                     .text_color(theme.muted_foreground)
-                    .child(label.to_string()),
+                    .child(crate::i18n::text(label)),
             )
             .child(
                 div()
@@ -42,9 +42,12 @@ impl HomeViewModel {
             && let Some(bcd) = status.info.bcd_device
         {
             if let Some(ver) = Self::rs_key_version_from_bcd(bcd) {
-                format!("RS-Key {} (build 0x{:04X})", ver, bcd)
+                crate::i18n::format(
+                    "RS-Key {0} (build 0x{1})",
+                    &[format!("{}", ver), format!("{:04X}", bcd)],
+                )
             } else {
-                format!("RS-Key build 0x{:04X}", bcd)
+                crate::i18n::format("RS-Key build 0x{0}", &[format!("{:04X}", bcd)])
             }
         } else {
             format!("v{}", status.info.firmware_version)
@@ -55,11 +58,11 @@ impl HomeViewModel {
     fn format_flash_size(bytes: u32) -> String {
         const MB: u32 = 1024 * 1024;
         if bytes >= MB && bytes.is_multiple_of(MB) {
-            format!("{} MB", bytes / MB)
+            crate::i18n::format("{0} MB", &[format!("{}", bytes / MB)])
         } else if bytes >= 1024 && bytes.is_multiple_of(1024) {
-            format!("{} KB", bytes / 1024)
+            crate::i18n::format("{0} KB", &[format!("{}", bytes / 1024)])
         } else {
-            format!("{} B", bytes)
+            crate::i18n::format("{0} B", &[format!("{}", bytes)])
         }
     }
 
@@ -70,13 +73,13 @@ impl HomeViewModel {
         // not the whole chip — label it honestly and surface objects + chip size.
         let is_rskey = status.firmware_type == FirmwareType::RSKey;
         let flash_label = if is_rskey {
-            "Storage (credentials & config)"
+            crate::i18n::tr("Storage (credentials & config)")
         } else {
-            "Flash Memory"
+            crate::i18n::tr("Flash Memory")
         };
 
         Card::new()
-            .title("Device Information")
+            .title(crate::i18n::tr("Device Information"))
             .icon(Icon::default().path("icons/cpu.svg"))
             .child(
                 v_flex()
@@ -87,19 +90,19 @@ impl HomeViewModel {
                             .grid_cols(2)
                             .gap_4()
                             .child(Self::render_kv(
-                                "Serial Number",
+                                crate::i18n::tr("Serial Number"),
                                 info.serial.clone(),
                                 theme,
                                 true,
                             ))
                             .child(Self::render_kv(
-                                "Firmware Version",
+                                crate::i18n::tr("Firmware Version"),
                                 Self::firmware_version_label(status),
                                 theme,
                                 true,
                             ))
                             .child(Self::render_kv(
-                                "Firmware Type",
+                                crate::i18n::tr("Firmware Type"),
                                 status.firmware_type.to_string(),
                                 theme,
                                 false,
@@ -111,15 +114,15 @@ impl HomeViewModel {
                                 true,
                             ))
                             .child(Self::render_kv(
-                                "Manufacturer",
+                                crate::i18n::tr("Manufacturer"),
                                 info.manufacturer
                                     .clone()
-                                    .unwrap_or_else(|| "Unknown".to_string()),
+                                    .unwrap_or_else(|| crate::i18n::tr("Unknown").to_string()),
                                 theme,
                                 false,
                             ))
                             .child(Self::render_kv(
-                                "Product Name",
+                                crate::i18n::tr("Product Name"),
                                 config.product_name.clone(),
                                 theme,
                                 false,
@@ -140,9 +143,12 @@ impl HomeViewModel {
                                         if let (Some(used), Some(total)) =
                                             (info.flash_used, info.flash_total)
                                         {
-                                            format!("{:.0} / {:.0} KB", used, total)
+                                            crate::i18n::format(
+                                                "{0} / {1} KB",
+                                                &[format!("{:.0}", used), format!("{:.0}", total)],
+                                            )
                                         } else {
-                                            "Not Available".to_string()
+                                            crate::i18n::tr("Not Available").to_string()
                                         },
                                     )),
                             )
@@ -163,7 +169,7 @@ impl HomeViewModel {
                                         .child(
                                             div()
                                                 .text_color(theme.muted_foreground)
-                                                .child("Stored objects"),
+                                                .child(crate::i18n::tr("Stored objects")),
                                         )
                                         .child(
                                             div()
@@ -180,7 +186,7 @@ impl HomeViewModel {
                                         .child(
                                             div()
                                                 .text_color(theme.muted_foreground)
-                                                .child("Flash chip"),
+                                                .child(crate::i18n::tr("Flash chip")),
                                         )
                                         .child(
                                             div()
@@ -195,7 +201,7 @@ impl HomeViewModel {
 
     fn render_fido_info(fido: Option<&FidoDeviceInfo>, theme: &Theme) -> impl IntoElement {
         Card::new()
-            .title("FIDO2 Information")
+            .title(crate::i18n::tr("FIDO2 Information"))
             .icon(Icon::default().path("icons/shield.svg"))
             .child(if let Some(fido) = fido {
                 v_flex()
@@ -224,7 +230,7 @@ impl HomeViewModel {
                             .child(
                                 div()
                                     .text_color(theme.muted_foreground)
-                                    .child("FIDO Versions"),
+                                    .child(crate::i18n::tr("FIDO Versions")),
                             )
                             .child(
                                 h_flex().gap_1().flex_wrap().children(
@@ -239,11 +245,20 @@ impl HomeViewModel {
                         h_flex()
                             .justify_between()
                             .items_center()
-                            .child(div().text_color(theme.muted_foreground).child("PIN Set"))
+                            .child(
+                                div()
+                                    .text_color(theme.muted_foreground)
+                                    .child(crate::i18n::tr("PIN Set")),
+                            )
                             .child({
                                 let pin_set =
                                     fido.options.get("clientPin").copied().unwrap_or(false);
-                                Tag::new(if pin_set { "Set" } else { "Not Set" }).active(pin_set)
+                                Tag::new(if pin_set {
+                                    crate::i18n::tr("Set")
+                                } else {
+                                    crate::i18n::tr("Not Set")
+                                })
+                                .active(pin_set)
                             }),
                     )
                     .child(
@@ -253,15 +268,15 @@ impl HomeViewModel {
                             .child(
                                 div()
                                     .text_color(theme.muted_foreground)
-                                    .child("Resident Keys"),
+                                    .child(crate::i18n::tr("Resident Keys")),
                             )
                             .child({
                                 let resident_keys_supported =
                                     fido.options.get("rk").copied().unwrap_or(false);
                                 Tag::new(if resident_keys_supported {
-                                    "Supported"
+                                    crate::i18n::tr("Supported")
                                 } else {
-                                    "Not Supported"
+                                    crate::i18n::tr("Not Supported")
                                 })
                                 .active(resident_keys_supported)
                             }),
@@ -273,7 +288,7 @@ impl HomeViewModel {
                             .child(
                                 div()
                                     .text_color(theme.muted_foreground)
-                                    .child("Min PIN Length"),
+                                    .child(crate::i18n::tr("Min PIN Length")),
                             )
                             .child(
                                 div()
@@ -289,15 +304,15 @@ impl HomeViewModel {
                             .child(
                                 div()
                                     .text_color(theme.muted_foreground)
-                                    .child("Enterprise attestation"),
+                                    .child(crate::i18n::tr("Enterprise attestation")),
                             )
                             .child(div().font_medium().text_color(theme.foreground).child({
                                 let enterprise_attestation_set =
                                     fido.options.get("ep").copied().unwrap_or(false);
                                 Tag::new(if enterprise_attestation_set {
-                                    "Set"
+                                    crate::i18n::tr("Set")
                                 } else {
-                                    "Not Set"
+                                    crate::i18n::tr("Not Set")
                                 })
                                 .active(enterprise_attestation_set)
                             })),
@@ -310,7 +325,7 @@ impl HomeViewModel {
                                 .child(
                                     div()
                                         .text_color(theme.muted_foreground)
-                                        .child("Remaining Credentials"),
+                                        .child(crate::i18n::tr("Remaining Credentials")),
                                 )
                                 .child(
                                     div().font_medium().text_color(theme.foreground).child(
@@ -326,7 +341,7 @@ impl HomeViewModel {
                 div()
                     .text_sm()
                     .text_color(theme.muted_foreground)
-                    .child("FIDO information not available")
+                    .child(crate::i18n::tr("FIDO information not available"))
                     .into_any_element()
             })
     }
@@ -336,7 +351,7 @@ impl HomeViewModel {
         let has_fido_config =
             status.firmware_type == FirmwareType::RSKey || status.method != DeviceMethod::Fido;
         Card::new()
-            .title("LED Configuration")
+            .title(crate::i18n::tr("LED Configuration"))
             .icon(Icon::default().path("icons/microchip.svg"))
             .child(if !has_fido_config {
                 v_flex()
@@ -349,12 +364,11 @@ impl HomeViewModel {
                             .size_8()
                             .text_color(gpui::yellow()),
                     )
-                    .child(
-                        div()
-                            .text_sm()
-                            .text_color(theme.muted_foreground)
-                            .child("Information is not available in Fido only communication mode."),
-                    )
+                    .child(div().text_sm().text_color(theme.muted_foreground).child(
+                        crate::i18n::tr(
+                            "Information is not available in Fido only communication mode.",
+                        ),
+                    ))
                     .into_any_element()
             } else {
                 v_flex()
@@ -366,18 +380,21 @@ impl HomeViewModel {
                             .child(
                                 div()
                                     .text_color(theme.muted_foreground)
-                                    .child("LED GPIO Pin"),
+                                    .child(crate::i18n::tr("LED GPIO Pin")),
                             )
                             .child(
                                 config
                                     .led_gpio
-                                    .map(|g| format!("GPIO {}", g))
+                                    .map(|g| crate::i18n::format("GPIO {0}", &[format!("{}", g)]))
                                     .or_else(|| {
-                                        config
-                                            .effective_led_gpio
-                                            .map(|g| format!("GPIO {g} (default)"))
+                                        config.effective_led_gpio.map(|g| {
+                                            crate::i18n::format(
+                                                "GPIO {0} (default)",
+                                                &[format!("{}", g)],
+                                            )
+                                        })
                                     })
-                                    .unwrap_or_else(|| "Firmware default".into()),
+                                    .unwrap_or_else(|| crate::i18n::tr("Firmware default").into()),
                             ),
                     )
                     .child(
@@ -386,13 +403,13 @@ impl HomeViewModel {
                             .child(
                                 div()
                                     .text_color(theme.muted_foreground)
-                                    .child("LED Brightness"),
+                                    .child(crate::i18n::tr("LED Brightness")),
                             )
                             .child(
                                 config
                                     .led_brightness
                                     .map(|b| b.to_string())
-                                    .unwrap_or_else(|| "Firmware default".into()),
+                                    .unwrap_or_else(|| crate::i18n::tr("Firmware default").into()),
                             ),
                     )
                     .child(
@@ -401,18 +418,21 @@ impl HomeViewModel {
                             .child(
                                 div()
                                     .text_color(theme.muted_foreground)
-                                    .child("Presence Touch Timeout"),
+                                    .child(crate::i18n::tr("Presence Touch Timeout")),
                             )
                             .child(
                                 config
                                     .touch_timeout
                                     .map(|t| format!("{}s", t))
                                     .or_else(|| {
-                                        config
-                                            .effective_touch_timeout
-                                            .map(|t| format!("{t}s (default)"))
+                                        config.effective_touch_timeout.map(|t| {
+                                            crate::i18n::format(
+                                                "{0}s (default)",
+                                                &[format!("{}", t)],
+                                            )
+                                        })
                                     })
-                                    .unwrap_or_else(|| "Firmware default".into()),
+                                    .unwrap_or_else(|| crate::i18n::tr("Firmware default").into()),
                             ),
                     )
                     .child(
@@ -421,11 +441,15 @@ impl HomeViewModel {
                             .child(
                                 div()
                                     .text_color(theme.muted_foreground)
-                                    .child("LED Dimmable"),
+                                    .child(crate::i18n::tr("LED Dimmable")),
                             )
                             .child(
-                                Tag::new(if config.led_dimmable { "Yes" } else { "No" })
-                                    .active(config.led_dimmable),
+                                Tag::new(if config.led_dimmable {
+                                    crate::i18n::tr("Yes")
+                                } else {
+                                    crate::i18n::tr("No")
+                                })
+                                .active(config.led_dimmable),
                             ),
                     )
                     .child(
@@ -434,11 +458,15 @@ impl HomeViewModel {
                             .child(
                                 div()
                                     .text_color(theme.muted_foreground)
-                                    .child("LED Steady Mode"),
+                                    .child(crate::i18n::tr("LED Steady Mode")),
                             )
                             .child(
-                                Tag::new(if config.led_steady { "On" } else { "Off" })
-                                    .active(config.led_steady),
+                                Tag::new(if config.led_steady {
+                                    crate::i18n::tr("On")
+                                } else {
+                                    crate::i18n::tr("Off")
+                                })
+                                .active(config.led_steady),
                             ),
                     )
                     .into_any_element()
@@ -447,7 +475,7 @@ impl HomeViewModel {
 
     fn render_security_status(status: &FullDeviceStatus, theme: &Theme) -> impl IntoElement {
         Card::new()
-            .title("Security Status")
+            .title(crate::i18n::tr("Security Status"))
             .icon(Icon::default().path("icons/shield-check.svg"))
             .child(
                 v_flex()
@@ -457,7 +485,11 @@ impl HomeViewModel {
                         h_flex()
                             .justify_between()
                             .items_center()
-                            .child(div().text_color(theme.muted_foreground).child("Boot Mode"))
+                            .child(
+                                div()
+                                    .text_color(theme.muted_foreground)
+                                    .child(crate::i18n::tr("Boot Mode")),
+                            )
                             .child(
                                 h_flex()
                                     .gap_2()
@@ -475,9 +507,9 @@ impl HomeViewModel {
                                     })
                                     .child(
                                         Tag::new(if status.secure_boot {
-                                            "Secure Boot"
+                                            crate::i18n::tr("Secure Boot")
                                         } else {
-                                            "Development"
+                                            crate::i18n::tr("Development")
                                         })
                                         .active(status.secure_boot),
                                     ),
@@ -490,13 +522,13 @@ impl HomeViewModel {
                             .child(
                                 div()
                                     .text_color(theme.muted_foreground)
-                                    .child("Debug Interface"),
+                                    .child(crate::i18n::tr("Debug Interface")),
                             )
                             .child(div().font_medium().text_color(theme.foreground).child(
                                 if status.secure_lock {
-                                    "Read-out Locked"
+                                    crate::i18n::tr("Read-out Locked")
                                 } else {
-                                    "Debug Enabled"
+                                    crate::i18n::tr("Debug Enabled")
                                 },
                             )),
                     )
@@ -507,13 +539,13 @@ impl HomeViewModel {
                             .child(
                                 div()
                                     .text_color(theme.muted_foreground)
-                                    .child("Secure Lock"),
+                                    .child(crate::i18n::tr("Secure Lock")),
                             )
                             .child(
                                 Tag::new(if status.secure_lock {
-                                    "Acknowledged"
+                                    crate::i18n::tr("Acknowledged")
                                 } else {
-                                    "Pending"
+                                    crate::i18n::tr("Pending")
                                 })
                                 .active(status.secure_lock),
                             ),
@@ -530,8 +562,8 @@ impl Render for HomeViewModel {
         let columns = if is_wide { 2 } else { 1 };
 
         PageView::build(
-            "Device Overview",
-            "Quick view of your device status and specifications.",
+            crate::i18n::tr("Device Overview"),
+            crate::i18n::tr("Quick view of your device status and specifications."),
             if !connected {
                 div()
                     .flex()
@@ -544,7 +576,7 @@ impl Render for HomeViewModel {
                     .child(
                         div()
                             .text_color(cx.theme().muted_foreground)
-                            .child("No Device Connected"),
+                            .child(crate::i18n::tr("No Device Connected")),
                     )
                     .into_any_element()
             } else {

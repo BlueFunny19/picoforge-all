@@ -1,6 +1,7 @@
 //! View model for the Slots (OTP) screen — the configurable YubiKey slots.
 
 use crate::error::PFError;
+use crate::i18n::LocalizedPlaceholder;
 use crate::ui::app::AppModels;
 use crate::ui::components::applet_gate::AppletGate;
 use crate::ui::components::dialog;
@@ -37,7 +38,8 @@ fn current_acc(
         None => {
             let _ = view.update(cx, |_, cx| {
                 cx.emit(SlotsEvent::Notification(
-                    "Access code must be empty or up to 12 hex chars (6 bytes)".into(),
+                    crate::i18n::tr("Access code must be empty or up to 12 hex chars (6 bytes)")
+                        .into(),
                 ));
             });
             None
@@ -131,7 +133,10 @@ impl SlotsViewModel {
             }
             Err(e) => {
                 log::warn!("OTP status read failed: {e}");
-                cx.emit(SlotsEvent::Notification(format!("Slots: {e}")));
+                cx.emit(SlotsEvent::Notification(crate::i18n::format(
+                    "Slots: {0}",
+                    &[format!("{}", e)],
+                )));
             }
         }
         cx.notify();
@@ -144,7 +149,7 @@ impl SlotsViewModel {
     pub(super) fn open_swap_dialog(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let acc_input = cx.new(|cx| {
             gpui_component::input::InputState::new(window, cx)
-                .placeholder("Access code (hex, if a slot is protected)")
+                .localized_placeholder("Access code (hex, if a slot is protected)", cx)
         });
         let view = cx.entity().downgrade();
         let submit = {
@@ -155,7 +160,7 @@ impl SlotsViewModel {
                     return;
                 };
                 window.close_dialog(cx);
-                let status = dialog::open_status_dialog("Swap Slots", window, cx);
+                let status = dialog::open_status_dialog(crate::i18n::tr("Swap Slots"), window, cx);
                 let _ = view.update(cx, |this, cx| this.execute_swap(acc, status, cx));
             })
         };
@@ -164,13 +169,15 @@ impl SlotsViewModel {
             let submit_ok = submit.clone();
             let submit_btn = submit.clone();
             dialog
-                .title("Swap Slots")
-                .child("Swap the contents of slot 1 and slot 2?")
+                .title(crate::i18n::tr("Swap Slots"))
+                .child(crate::i18n::tr("Swap the contents of slot 1 and slot 2?"))
                 .child(
                     gpui_component::v_flex()
                         .gap_2()
                         .pb_2()
-                        .child("Access code (hex, leave empty if unprotected)")
+                        .child(crate::i18n::tr(
+                            "Access code (hex, leave empty if unprotected)",
+                        ))
                         .child(gpui_component::input::Input::new(&acc_input)),
                 )
                 .on_ok(move |_, window, cx| {
@@ -181,11 +188,11 @@ impl SlotsViewModel {
                     let submit = submit_btn.clone();
                     vec![
                         gpui_component::button::Button::new("cancel")
-                            .label("Cancel")
+                            .label(crate::i18n::tr("Cancel"))
                             .on_click(|_, window, cx| window.close_dialog(cx)),
                         gpui_component::button::Button::new("swap")
                             .primary()
-                            .label("Swap")
+                            .label(crate::i18n::tr("Swap"))
                             .on_click(move |_, window, cx| submit(window, cx)),
                     ]
                 })
@@ -201,7 +208,7 @@ impl SlotsViewModel {
         self.run_op(
             cx,
             move |_| DeviceRepo::otp_swap_blocking(acc),
-            "Slots swapped.",
+            crate::i18n::tr("Slots swapped."),
             move |cx, msg, ok| {
                 let _ = status.update(cx, |d, cx| {
                     if ok {
@@ -222,7 +229,7 @@ impl SlotsViewModel {
     ) {
         let acc_input = cx.new(|cx| {
             gpui_component::input::InputState::new(window, cx)
-                .placeholder("Access code (hex, if the slot is protected)")
+                .localized_placeholder("Access code (hex, if the slot is protected)", cx)
         });
         let view = cx.entity().downgrade();
         let submit = {
@@ -233,7 +240,7 @@ impl SlotsViewModel {
                     return;
                 };
                 window.close_dialog(cx);
-                let status = dialog::open_status_dialog("Delete Slot", window, cx);
+                let status = dialog::open_status_dialog(crate::i18n::tr("Delete Slot"), window, cx);
                 let _ = view.update(cx, |this, cx| this.execute_delete(slot, acc, status, cx));
             })
         };
@@ -242,15 +249,21 @@ impl SlotsViewModel {
             let submit_ok = submit.clone();
             let submit_btn = submit.clone();
             dialog
-                .title(format!("Delete Slot {slot}"))
-                .child(format!(
-                    "Erase the configuration in slot {slot}? This cannot be undone."
+                .title(crate::i18n::format(
+                    "Delete Slot {0}",
+                    &[format!("{}", slot)],
+                ))
+                .child(crate::i18n::format(
+                    "Erase the configuration in slot {0}? This cannot be undone.",
+                    &[format!("{}", slot)],
                 ))
                 .child(
                     gpui_component::v_flex()
                         .gap_2()
                         .pb_2()
-                        .child("Access code (hex, leave empty if unprotected)")
+                        .child(crate::i18n::tr(
+                            "Access code (hex, leave empty if unprotected)",
+                        ))
                         .child(gpui_component::input::Input::new(&acc_input)),
                 )
                 .on_ok(move |_, window, cx| {
@@ -261,11 +274,11 @@ impl SlotsViewModel {
                     let submit = submit_btn.clone();
                     vec![
                         gpui_component::button::Button::new("cancel")
-                            .label("Cancel")
+                            .label(crate::i18n::tr("Cancel"))
                             .on_click(|_, window, cx| window.close_dialog(cx)),
                         gpui_component::button::Button::new("delete")
                             .danger()
-                            .label("Delete")
+                            .label(crate::i18n::tr("Delete"))
                             .on_click(move |_, window, cx| submit(window, cx)),
                     ]
                 })
@@ -282,7 +295,7 @@ impl SlotsViewModel {
         self.run_op(
             cx,
             move |_| DeviceRepo::otp_delete_blocking(slot, acc),
-            "Slot deleted.",
+            crate::i18n::tr("Slot deleted."),
             move |cx, msg, ok| {
                 let _ = status.update(cx, |d, cx| {
                     if ok {
@@ -342,7 +355,8 @@ impl SlotsViewModel {
         cx: &mut Context<Self>,
     ) {
         let challenge = cx.new(|cx| {
-            gpui_component::input::InputState::new(window, cx).placeholder("Challenge (hex)")
+            gpui_component::input::InputState::new(window, cx)
+                .localized_placeholder("Challenge (hex)", cx)
         });
         let view = cx.entity().downgrade();
         let submit = {
@@ -354,14 +368,15 @@ impl SlotsViewModel {
                     _ => {
                         let _ = view.update(cx, |_, cx| {
                             cx.emit(SlotsEvent::Notification(
-                                "Enter a valid hex challenge".into(),
+                                crate::i18n::tr("Enter a valid hex challenge").into(),
                             ));
                         });
                         return;
                     }
                 };
                 window.close_dialog(cx);
-                let status = dialog::open_status_dialog("Challenge-Response", window, cx);
+                let status =
+                    dialog::open_status_dialog(crate::i18n::tr("Challenge-Response"), window, cx);
                 let _ = view.update(cx, |this, cx| this.execute_test(slot, chal, status, cx));
             })
         };
@@ -370,13 +385,15 @@ impl SlotsViewModel {
             let submit_ok = submit.clone();
             let submit_btn = submit.clone();
             dialog
-                .title(format!("Test Slot {slot}"))
-                .child("Send a 1–63 byte challenge; the slot answers with its HMAC-SHA1 response.")
+                .title(crate::i18n::format("Test Slot {0}", &[format!("{}", slot)]))
+                .child(crate::i18n::tr(
+                    "Send a 1–63 byte challenge; the slot answers with its HMAC-SHA1 response.",
+                ))
                 .child(
                     gpui_component::v_flex()
                         .gap_2()
                         .pb_2()
-                        .child("Challenge (hex)")
+                        .child(crate::i18n::tr("Challenge (hex)"))
                         .child(gpui_component::input::Input::new(&challenge)),
                 )
                 .on_ok(move |_, window, cx| {
@@ -387,11 +404,11 @@ impl SlotsViewModel {
                     let submit = submit_btn.clone();
                     vec![
                         gpui_component::button::Button::new("cancel")
-                            .label("Cancel")
+                            .label(crate::i18n::tr("Cancel"))
                             .on_click(|_, window, cx| window.close_dialog(cx)),
                         gpui_component::button::Button::new("run")
                             .primary()
-                            .label("Run")
+                            .label(crate::i18n::tr("Run"))
                             .on_click(move |_, window, cx| submit(window, cx)),
                     ]
                 })
@@ -421,7 +438,13 @@ impl SlotsViewModel {
                 match res {
                     Ok(resp) => {
                         let _ = status.update(cx, |d, cx| {
-                            d.set_success(format!("Response: {}", hex::encode(resp)), cx)
+                            d.set_success(
+                                crate::i18n::format(
+                                    "Response: {0}",
+                                    &[format!("{}", hex::encode(resp))],
+                                ),
+                                cx,
+                            )
                         });
                     }
                     Err(e) => {

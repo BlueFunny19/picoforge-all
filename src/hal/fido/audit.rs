@@ -23,7 +23,9 @@ pub const EVT_RESET: u8 = 0x04;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AuditEntry {
     pub seq: u32,
+    /// Legacy boot-relative time; zero when a calendar timestamp is present.
     pub uptime_ms: u32,
+    pub timestamp: Option<u32>,
     pub event: u8,
     pub aux: u8,
     pub detail: [u8; 8],
@@ -123,8 +125,13 @@ pub fn parse_entries(bytes: &[u8]) -> Vec<AuditEntry> {
         .iter()
         .map(|e| AuditEntry {
             seq: u32::from_le_bytes([e[0], e[1], e[2], e[3]]),
-            uptime_ms: u32::from_le_bytes([e[4], e[5], e[6], e[7]]),
-            event: e[8],
+            uptime_ms: if e[8] & 0x80 == 0 {
+                u32::from_le_bytes(e[4..8].try_into().unwrap())
+            } else {
+                0
+            },
+            timestamp: (e[8] & 0x80 != 0).then(|| u32::from_le_bytes(e[4..8].try_into().unwrap())),
+            event: e[8] & 0x7f,
             aux: e[9],
             detail: e[10..18].try_into().unwrap(),
         })
@@ -203,12 +210,31 @@ mod tests {
     #[test]
     fn parses_and_labels_entries() {
         let mut bytes = entry(5, 0x01);
-        bytes.extend(entry(6, 0xAB)); // unknown id
+        bytes.extend(entry(6, 0x2B)); // unknown id
         let parsed = parse_entries(&bytes);
         assert_eq!(parsed.len(), 2);
         assert_eq!(parsed[0].seq, 5);
         assert_eq!(parsed[0].event_label(), "BOOT");
-        assert_eq!(parsed[1].event_label(), "0xab");
+        assert_eq!(parsed[1].event_label(), "0x2b");
+    }
+
+    #[test]
+    fn mixed_clock_formats_preserve_signed_bytes() {
+        let mut old = entry(4, 0x01);
+        old[4..8].copy_from_slice(&12345u32.to_le_bytes());
+        let mut dated = entry(5, 0x80 | 0x11);
+        dated[4..8].copy_from_slice(&1780000000u32.to_le_bytes());
+        let bytes = [old, dated].concat();
+        let journal = build_journal(4, 6, [7; 32], &bytes).unwrap();
+        assert_eq!(journal.entries[0].timestamp, None);
+        assert_eq!(journal.entries[0].uptime_ms, 12345);
+        assert_eq!(journal.entries[1].timestamp, Some(1780000000));
+        assert_eq!(journal.entries[1].uptime_ms, 0);
+        assert_eq!(journal.entries[1].event_label(), "CHECKPOINT");
+        let mut altered = bytes.clone();
+        altered[ENTRY_LEN + 8] &= 0x7f;
+        assert_ne!(journal.head, fold_chain(&[7; 32], &altered));
+        assert_eq!(journal.head, fold_chain(&[7; 32], &bytes));
     }
 
     #[test]

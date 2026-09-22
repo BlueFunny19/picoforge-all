@@ -1547,12 +1547,11 @@ pub(crate) fn get_enterprise_attestation_csr() -> Result<String, String> {
 /// Map a non-zero CTAP status from a gated vendor command to a message.
 fn vendor_error(status: u8, op: &str) -> String {
     match status {
-        0x36 => "device requires a PIN — enter it".to_string(),
-        0x27 => {
-            "denied — no touch within the window (press the button when the LED blinks)".to_string()
-        }
-        0x30 => format!("{op}: operation not allowed (already sealed, or no OTP DEVK provisioned)"),
-        0x3D => "device is not locked".to_string(),
+        0x36 => "Enter your FIDO PIN to continue.".to_string(),
+        0x27 => "Confirmation was not completed. Try again.".to_string(),
+        0x2F => "Timed out waiting for confirmation. Try again and press the device button (BOOTSEL) when the light flashes.".to_string(),
+        0x30 => "This action is unavailable in the device's current state.".to_string(),
+        0x3D => "The device is not locked.".to_string(),
         other => format!("{op} failed: status 0x{other:02x}"),
     }
 }
@@ -1621,7 +1620,7 @@ pub(crate) fn audit_log(pin: Option<String>) -> Result<audit::AuditJournal, Stri
     read_journal(&transport, pin.as_deref())
 }
 
-/// Export the journal, then verify a fresh DEVK-signed checkpoint over it.
+/// Verify a signed snapshot with one confirmation when the firmware supports it.
 /// `expect_key` (16-hex fingerprint or full SEC1 pubkey hex) pins the identity.
 pub(crate) fn audit_verify(
     pin: Option<String>,
@@ -1629,7 +1628,23 @@ pub(crate) fn audit_verify(
 ) -> Result<audit::AuditVerification, String> {
     let transport =
         HidTransport::open().map_err(|e| format!("Could not open HID transport: {}", e))?;
-    let journal = read_journal(&transport, pin.as_deref())?;
+    // New firmware advertises atomic export + checkpoint in read-only status.
+    // Legacy firmware retains its existing read-then-sign authorization flow.
+    let mut capability = BTreeMap::new();
+    capability.insert(Value::Integer(1), Value::Integer(2));
+    let (cap_status, cap_map) = transport
+        .rs_key_vendor(
+            RSKEY_VENDOR_AUDIT_CONFIG,
+            Some(Value::Map(capability)),
+            None,
+        )
+        .map_err(|e| e.to_string())?;
+    let snapshot = cap_status == 0 && matches!(cap_map, Some(Value::Map(ref m)) if m_bool(m, 2));
+    let legacy_journal = if snapshot {
+        None
+    } else {
+        Some(read_journal(&transport, pin.as_deref())?)
+    };
 
     let mut challenge = [0u8; 16];
     ring::rand::SecureRandom::fill(&ring::rand::SystemRandom::new(), &mut challenge)
@@ -1637,6 +1652,9 @@ pub(crate) fn audit_verify(
 
     let mut params = BTreeMap::new();
     params.insert(Value::Integer(1), Value::Bytes(challenge.to_vec()));
+    if snapshot {
+        params.insert(Value::Integer(2), Value::Bool(true));
+    }
     let (status, map) = transport
         .rs_key_vendor(
             RSKEY_VENDOR_AUDIT_CHECKPOINT,
@@ -1644,7 +1662,20 @@ pub(crate) fn audit_verify(
             pin.as_deref(),
         )
         .map_err(|e| e.to_string())?;
-    let m = vendor_map(status, map, "checkpoint")?;
+    let mut m = vendor_map(status, map, "log verification")?;
+    let journal = if let Some(journal) = legacy_journal {
+        journal
+    } else {
+        let log = m
+            .remove(&Value::Integer(1))
+            .ok_or("The device did not return the log.")?;
+        let checkpoint = m
+            .remove(&Value::Integer(2))
+            .ok_or("The device did not return the signature.")?;
+        let journal = parse_journal_response(0, Some(log))?;
+        m = vendor_map(0, Some(checkpoint), "log signature")?;
+        journal
+    };
 
     let head_signed = m_bytes(&m, 1).ok_or("checkpoint: missing head")?;
     let seq_signed = m_int(&m, 2).ok_or("checkpoint: missing seq")? as u32;
@@ -1653,7 +1684,7 @@ pub(crate) fn audit_verify(
 
     let signature_ok =
         audit::verify_checkpoint(&head_signed, seq_signed, &sig, &pubkey, &challenge);
-    let head_matches = head_signed == journal.head;
+    let head_matches = head_signed == journal.head && seq_signed == journal.seq_next;
     let fingerprint = audit::fingerprint(&pubkey);
     let pubkey_hex = hex::encode(&pubkey);
     let expected_match = expect_key.map(|k| {
@@ -2142,6 +2173,14 @@ mod tests {
     use super::*;
     use serde_cbor_2::Value;
     use std::collections::BTreeMap;
+
+    #[test]
+    fn vendor_confirmation_timeout_is_actionable() {
+        let error = vendor_map(0x2f, None, "log verification").unwrap_err();
+        assert!(error.contains("Timed out waiting for confirmation"));
+        assert!(error.contains("device button (BOOTSEL)"));
+        assert!(!error.contains("0x2f"));
+    }
 
     fn empty_config_input() -> AppConfigInput {
         AppConfigInput {

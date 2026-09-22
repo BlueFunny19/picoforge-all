@@ -127,11 +127,7 @@ jobs:
         with:
           tag_name: v${{ env.version }}
           name: "PicoForge-All-v${{ env.version }}"
-          body: |
-            > [!WARNING]
-            > Unofficial PicoForge All build. Report bugs to https://github.com/BlueFunny19/picoforge-all/issues, not to upstream PicoForge.
-
-            #### Source and build instructions: https://github.com/BlueFunny19/picoforge-all
+          body_path: .github/RELEASE_NOTES.md
           prerelease: false
           files: |
             *.flatpak

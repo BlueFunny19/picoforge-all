@@ -1,6 +1,7 @@
 //! View model for the configuration screen — form state and save logic.
 
 use crate::hal::types::{AppConfig, RescueCurves};
+use crate::i18n::LocalizedPlaceholder;
 use crate::ui::app::AppModels;
 use crate::ui::components::dialog::PinPromptContent;
 use crate::ui::components::{dialog, dialog::StatusContent};
@@ -8,10 +9,25 @@ use crate::ui::models::device::{
     AppConfigInput, DeviceEvent, DeviceMethod, DeviceRepo, FullDeviceStatus, LedStatusConfig,
 };
 
+use crate::ui::components::form::FormErrors;
 use gpui::*;
 use gpui_component::input::InputState;
 use gpui_component::select::{SelectItem, SelectState};
 use std::time::Duration;
+
+pub(super) fn brightness_level(value: u8) -> u8 {
+    ((u16::from(value) + 8) / 17).clamp(1, 15) as u8
+}
+pub(super) fn parse_light_level(text: &str) -> Option<u8> {
+    let text = text.trim();
+    if text.is_empty() || !text.bytes().all(|c| c.is_ascii_digit()) {
+        return None;
+    }
+    text.parse::<u8>()
+        .ok()
+        .filter(|v| (1..=15).contains(v))
+        .map(|v| v * 17)
+}
 
 /// After a PHY config write, RS-Key firmware warm-reboots and re-enumerates on
 /// its own, so the confirmation read must wait for the device to re-appear
@@ -45,40 +61,92 @@ pub enum UsbIdentityPreset {
 impl UsbIdentityPreset {
     pub fn details(&self) -> (SharedString, Option<&'static str>, Option<&'static str>) {
         match self {
-            Self::Custom => ("Custom (Manual Entry)".into(), None, None),
-            Self::Generic => ("Generic (FEFF:FCFD)".into(), Some("FEFF"), Some("FCFD")),
+            Self::Custom => (crate::i18n::tr("Custom (Manual Entry)").into(), None, None),
+            Self::Generic => (
+                crate::i18n::tr("Generic (FEFF:FCFD)").into(),
+                Some("FEFF"),
+                Some("FCFD"),
+            ),
             Self::LibreKeys => (
-                "LibreKeys One (1D50:619B)".into(),
+                crate::i18n::tr("LibreKeys One (1D50:619B)").into(),
                 Some("1D50"),
                 Some("619B"),
             ),
             Self::PicoHsm => (
-                "Pico Keys HSM (2E8A:10FD)".into(),
+                crate::i18n::tr("Pico Keys HSM (2E8A:10FD)").into(),
                 Some("2E8A"),
                 Some("10FD"),
             ),
             Self::PicoFido => (
-                "Pico Keys Fido (2E8A:10FE)".into(),
+                crate::i18n::tr("Pico Keys Fido (2E8A:10FE)").into(),
                 Some("2E8A"),
                 Some("10FE"),
             ),
             Self::PicoOpenPgp => (
-                "Pico Keys OpenPGP (2E8A:10FF)".into(),
+                crate::i18n::tr("Pico Keys OpenPGP (2E8A:10FF)").into(),
                 Some("2E8A"),
                 Some("10FF"),
             ),
-            Self::Pico => ("Pico (2E8A:0003)".into(), Some("2E8A"), Some("0003")),
-            Self::SoloKeys => ("SoloKeys (0483:A2CA)".into(), Some("0483"), Some("A2CA")),
-            Self::NitroHsm => ("NitroHSM (20A0:4230)".into(), Some("20A0"), Some("4230")),
-            Self::NitroFido2 => ("NitroFIDO2 (20A0:42D4)".into(), Some("20A0"), Some("42D4")),
-            Self::NitroStart => ("NitroStart (20A0:4211)".into(), Some("20A0"), Some("4211")),
-            Self::NitroPro => ("NitroPro (20A0:4108)".into(), Some("20A0"), Some("4108")),
-            Self::NitroKey3 => ("Nitrokey 3 (20A0:42B2)".into(), Some("20A0"), Some("42B2")),
-            Self::YubiKey5 => ("YubiKey 5 (1050:0407)".into(), Some("1050"), Some("0407")),
-            Self::YubiKeyNeo => ("YubiKey Neo (1050:0116)".into(), Some("1050"), Some("0116")),
-            Self::YubiHsm2 => ("YubiHSM 2 (1050:0030)".into(), Some("1050"), Some("0030")),
-            Self::Gnuk => ("Gnuk Token (234B:0000)".into(), Some("234B"), Some("0000")),
-            Self::GnuPg => ("GnuPG (234B:0000)".into(), Some("234B"), Some("0000")),
+            Self::Pico => (
+                crate::i18n::tr("Pico (2E8A:0003)").into(),
+                Some("2E8A"),
+                Some("0003"),
+            ),
+            Self::SoloKeys => (
+                crate::i18n::tr("SoloKeys (0483:A2CA)").into(),
+                Some("0483"),
+                Some("A2CA"),
+            ),
+            Self::NitroHsm => (
+                crate::i18n::tr("NitroHSM (20A0:4230)").into(),
+                Some("20A0"),
+                Some("4230"),
+            ),
+            Self::NitroFido2 => (
+                crate::i18n::tr("NitroFIDO2 (20A0:42D4)").into(),
+                Some("20A0"),
+                Some("42D4"),
+            ),
+            Self::NitroStart => (
+                crate::i18n::tr("NitroStart (20A0:4211)").into(),
+                Some("20A0"),
+                Some("4211"),
+            ),
+            Self::NitroPro => (
+                crate::i18n::tr("NitroPro (20A0:4108)").into(),
+                Some("20A0"),
+                Some("4108"),
+            ),
+            Self::NitroKey3 => (
+                crate::i18n::tr("Nitrokey 3 (20A0:42B2)").into(),
+                Some("20A0"),
+                Some("42B2"),
+            ),
+            Self::YubiKey5 => (
+                crate::i18n::tr("YubiKey 5 (1050:0407)").into(),
+                Some("1050"),
+                Some("0407"),
+            ),
+            Self::YubiKeyNeo => (
+                crate::i18n::tr("YubiKey Neo (1050:0116)").into(),
+                Some("1050"),
+                Some("0116"),
+            ),
+            Self::YubiHsm2 => (
+                crate::i18n::tr("YubiHSM 2 (1050:0030)").into(),
+                Some("1050"),
+                Some("0030"),
+            ),
+            Self::Gnuk => (
+                crate::i18n::tr("Gnuk Token (234B:0000)").into(),
+                Some("234B"),
+                Some("0000"),
+            ),
+            Self::GnuPg => (
+                crate::i18n::tr("GnuPG (234B:0000)").into(),
+                Some("234B"),
+                Some("0000"),
+            ),
         }
     }
 
@@ -143,10 +211,10 @@ pub enum LedDriverType {
 impl LedDriverType {
     pub fn label(&self) -> SharedString {
         match self {
-            Self::PicoGpio => "Pico (Standard GPIO)".into(),
-            Self::PimoroniRgb => "Pimoroni (RGB)".into(),
-            Self::Ws2812Neopixel => "WS2812 (Neopixel)".into(),
-            Self::Esp32Neopixel => "ESP32 Neopixel".into(),
+            Self::PicoGpio => crate::i18n::tr("Pico (Standard GPIO)").into(),
+            Self::PimoroniRgb => crate::i18n::tr("Pimoroni (RGB)").into(),
+            Self::Ws2812Neopixel => crate::i18n::tr("WS2812 (Neopixel)").into(),
+            Self::Esp32Neopixel => crate::i18n::tr("ESP32 Neopixel").into(),
         }
     }
 
@@ -176,7 +244,7 @@ impl LedColorOrder {
     pub fn label(&self) -> SharedString {
         match self {
             Self::Rgb => "RGB".into(),
-            Self::Grb => "GRB (swap red/green)".into(),
+            Self::Grb => crate::i18n::tr("GRB (swap red/green)").into(),
         }
     }
 
@@ -202,7 +270,7 @@ impl SelectItem for VendorSelectOption {
     type Value = UsbIdentityPreset;
 
     fn title(&self) -> SharedString {
-        self.label.clone()
+        crate::i18n::text(crate::i18n::source_label(self.label.as_ref())).into()
     }
 
     fn value(&self) -> &Self::Value {
@@ -221,7 +289,7 @@ impl SelectItem for DriverSelectOption {
     type Value = Option<LedDriverType>;
 
     fn title(&self) -> SharedString {
-        self.label.clone()
+        crate::i18n::text(crate::i18n::source_label(self.label.as_ref())).into()
     }
 
     fn value(&self) -> &Self::Value {
@@ -239,7 +307,7 @@ impl SelectItem for OrderSelectOption {
     type Value = LedColorOrder;
 
     fn title(&self) -> SharedString {
-        self.label.clone()
+        crate::i18n::text(crate::i18n::source_label(self.label.as_ref())).into()
     }
 
     fn value(&self) -> &Self::Value {
@@ -273,6 +341,8 @@ pub struct ConfigViewModel {
     pub(super) led_status_modes: [bool; 7],
     pub(super) led_status_colors: [u8; 7],
     pub(super) led_status_brightness: [u8; 7],
+    pub(super) led_level_inputs: [Entity<InputState>; 7],
+    pub(super) led_level_errors: FormErrors,
     pub(super) usb_apps_supported: u16,
     pub(super) usb_apps_enabled: u16,
     pub(super) enabled_usb_itf: Option<u8>,
@@ -317,7 +387,7 @@ impl ConfigViewModel {
             .unwrap_or_else(|| "4242".into());
         let current_product_name: SharedString = config
             .map(|c| c.product_name.clone().into())
-            .unwrap_or_else(|| "My Key".into());
+            .unwrap_or_else(|| crate::i18n::tr("My Key").into());
         // Blank when there is no phy override — the field then reads as "use the
         // VID-derived default" and isn't written back on save.
         let current_manufacturer: SharedString = config
@@ -349,21 +419,23 @@ impl ConfigViewModel {
         // strings so `config`'s borrow of `cx` ends before the `cx.new` widgets.
         let led_gpio_placeholder = config
             .and_then(|c| c.effective_led_gpio)
-            .map(|g| format!("Firmware default (GPIO {g})"))
-            .unwrap_or_else(|| "Firmware default".to_string());
+            .map(|g| crate::i18n::format("Firmware default (GPIO {0})", &[format!("{}", g)]))
+            .unwrap_or_else(|| crate::i18n::tr("Firmware default").to_string());
         let touch_placeholder = config
             .and_then(|c| c.effective_touch_timeout)
-            .map(|t| format!("Firmware default ({t}s)"))
-            .unwrap_or_else(|| "Firmware default (30s)".to_string());
+            .map(|t| crate::i18n::format("Firmware default ({0}s)", &[format!("{}", t)]))
+            .unwrap_or_else(|| crate::i18n::tr("Firmware default").to_string());
         let default_driver_label = config
             .and_then(|c| c.effective_led_driver)
             .and_then(|d| {
                 LedDriverType::all()
                     .iter()
                     .find(|x| x.value() == d)
-                    .map(|x| format!("Firmware default — {}", x.label()))
+                    .map(|x| {
+                        crate::i18n::format("Firmware default — {0}", &[format!("{}", x.label())])
+                    })
             })
-            .unwrap_or_else(|| "Firmware default".to_string());
+            .unwrap_or_else(|| crate::i18n::tr("Firmware default").to_string());
 
         let mut led_status_steady = false;
         let mut led_status_modes = [false; 7];
@@ -456,13 +528,13 @@ impl ConfigViewModel {
             cx.new(|cx| InputState::new(window, cx).default_value(current_product_name.clone()));
         let manufacturer_input = cx.new(|cx| {
             InputState::new(window, cx)
-                .placeholder("VID-derived default")
+                .localized_placeholder("VID-derived default", cx)
                 .default_value(current_manufacturer.clone())
         });
 
         let led_gpio_input = cx.new(|cx| {
             InputState::new(window, cx)
-                .placeholder(led_gpio_placeholder)
+                .localized_placeholder(led_gpio_placeholder, cx)
                 .default_value(current_led_gpio.clone())
         });
 
@@ -513,10 +585,19 @@ impl ConfigViewModel {
 
         let touch_timeout_input = cx.new(|cx| {
             InputState::new(window, cx)
-                .placeholder(touch_placeholder)
+                .localized_placeholder(touch_placeholder, cx)
                 .default_value(current_touch_timeout.clone())
         });
 
+        let led_level_errors = FormErrors::default();
+        let led_level_inputs = std::array::from_fn(|i| {
+            let input = cx.new(|cx| {
+                InputState::new(window, cx)
+                    .default_value(brightness_level(led_status_brightness[i]).to_string())
+            });
+            led_level_errors.watch(i, &input, window, cx);
+            input
+        });
         Self {
             device,
             vendor_select,
@@ -546,6 +627,8 @@ impl ConfigViewModel {
             led_status_modes,
             led_status_colors,
             led_status_brightness,
+            led_level_inputs,
+            led_level_errors,
             usb_apps_supported,
             usb_apps_enabled,
             enabled_usb_itf,
@@ -598,7 +681,7 @@ impl ConfigViewModel {
                     this.device.update(cx, |repo, repo_cx| {
                         repo.refresh(repo_cx);
                     });
-                    let err_msg = "Device changed before write could complete. Refresh and try again.".to_string();
+                    let err_msg = crate::i18n::tr("Device changed before write could complete. Refresh and try again.").to_string();
                     match &dialog_handle {
                         StatusDialogHandle::Pin(dh) => {
                             let _ = dh.update(cx, |d, cx| d.set_error(err_msg, cx));
@@ -618,9 +701,9 @@ impl ConfigViewModel {
             // user presence for config writes on both FIDO and Rescue paths.
             cx.update(|cx| {
                 let msg = if method_clone == DeviceMethod::Fido {
-                    "Applying configuration... Touch your device if it flashes."
+                    crate::i18n::tr("Applying configuration... Touch your device if it flashes.")
                 } else {
-                    "Applying configuration... Press the device button to confirm."
+                    crate::ui::components::copy::CONFIRM_ON_DEVICE
                 };
                 match &dialog {
                     StatusDialogHandle::Pin(dh) => {
@@ -701,7 +784,7 @@ impl ConfigViewModel {
                             StatusDialogHandle::Pin(dh) => {
                                 let _ = dh.update(cx, |d, cx| {
                                     d.set_success(
-                                        "Configuration applied successfully.".to_string(),
+                                        crate::i18n::tr("Configuration applied successfully.").to_string(),
                                         cx,
                                     );
                                 });
@@ -709,7 +792,7 @@ impl ConfigViewModel {
                             StatusDialogHandle::Status(dh) => {
                                 let _ = dh.update(cx, |d, cx| {
                                     d.set_success(
-                                        "Configuration applied successfully.".to_string(),
+                                        crate::i18n::tr("Configuration applied successfully.").to_string(),
                                         cx,
                                     );
                                 });
@@ -719,12 +802,12 @@ impl ConfigViewModel {
                     Err(e) => {
                         log::error!("Error saving config: {}", e);
 
-                        let mut err_msg = format!("Failed to apply configuration: {}", e);
+                        let mut err_msg = crate::i18n::format("Failed to apply configuration: {0}", &[format!("{}", e)]);
 
                         if method == DeviceMethod::Fido && err_msg.contains("0x3E") {
-                            err_msg = "The device firmware does not support being configured in fido only communication mode. \nHave a look at the troubleshooting guide to fix this".to_string();
+                            err_msg = crate::i18n::tr("The device firmware does not support being configured in fido only communication mode. \nHave a look at the troubleshooting guide to fix this").to_string();
                         } else if method == DeviceMethod::Fido && err_msg.contains("0x27") {
-                            err_msg = "Configuration denied (Status: 0x27). This usually means the operation timed out waiting for you to touch the device's button, or the PIN token was rejected.".to_string();
+                            err_msg = crate::i18n::tr("The device could not confirm the change. Check your PIN and try again.").to_string();
                         }
 
                         match &dialog_handle {
@@ -758,11 +841,11 @@ impl ConfigViewModel {
         let view_handle = cx.entity().downgrade();
 
         dialog::open_pin_prompt(
-            "Authentication Required",
-            "Enter your device PIN to apply changes.",
-            "Enter FIDO PIN",
+            crate::i18n::tr("Authentication Required"),
+            crate::i18n::tr("Enter your device PIN to apply changes."),
+            crate::i18n::tr("Enter FIDO PIN"),
             None,
-            "Confirm",
+            crate::i18n::tr("Confirm"),
             window,
             cx,
             move |pin, dialog_handle, cx| {
@@ -782,6 +865,23 @@ impl ConfigViewModel {
     }
 
     pub(super) fn apply_changes(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.led_level_errors.clear();
+        if let Some(led) = &self.device.read(cx).led_status {
+            for i in 0..7 {
+                if i == 5 || (i >= 4 && led.notifications.is_none()) {
+                    continue;
+                }
+                match parse_light_level(&self.led_level_inputs[i].read(cx).text().to_string()) {
+                    Some(value) => self.led_status_brightness[i] = value,
+                    None => self
+                        .led_level_errors
+                        .set(i, crate::i18n::tr("Enter a whole number from 1 to 15.")),
+                }
+            }
+        }
+        if !self.led_level_errors.valid(window) {
+            return;
+        }
         let device = self.device.read(cx);
         let Some(status) = &device.status else { return };
 
@@ -1006,8 +1106,11 @@ impl ConfigViewModel {
             if Self::status_supports_legacy_fido_config(status) || is_rskey {
                 self.open_pin_dialog(phy, led, apps, window, cx);
             } else {
-                let handle =
-                    dialog::open_status_dialog("Configuration Requires Rescue Mode", window, cx);
+                let handle = dialog::open_status_dialog(
+                    crate::i18n::tr("Configuration Requires Rescue Mode"),
+                    window,
+                    cx,
+                );
                 self.write_config_to_device(
                     phy,
                     led,
@@ -1019,7 +1122,8 @@ impl ConfigViewModel {
                 );
             }
         } else {
-            let handle = dialog::open_status_dialog("Applying Configuration", window, cx);
+            let handle =
+                dialog::open_status_dialog(crate::i18n::tr("Applying Configuration"), window, cx);
             self.write_config_to_device(
                 phy,
                 led,
@@ -1103,7 +1207,7 @@ impl ConfigViewModel {
             .unwrap_or_else(|| "4242".into());
         let new_product = config
             .map(|c| c.product_name.clone())
-            .unwrap_or_else(|| "My Key".into());
+            .unwrap_or_else(|| crate::i18n::tr("My Key").into());
         let new_gpio = config
             .and_then(|c| c.led_gpio)
             .map(|g| g.to_string())
@@ -1159,6 +1263,11 @@ impl ConfigViewModel {
             );
         });
 
+        self.led_level_errors.clear();
+        for i in 0..7 {
+            let level = brightness_level(self.led_status_brightness[i]).to_string();
+            self.led_level_inputs[i].update(cx, |input, cx| input.set_value(level, window, cx));
+        }
         self.vid_input
             .update(cx, |input, cx| input.set_value(new_vid, window, cx));
         self.pid_input
@@ -1207,5 +1316,22 @@ mod tests {
         assert_eq!(ConfigViewModel::driver_row(Some(5)), 4); // Esp32Neopixel
         // An unrecognised value falls back to the sentinel, never a bogus index.
         assert_eq!(ConfigViewModel::driver_row(Some(99)), 0);
+    }
+}
+
+#[cfg(test)]
+mod light_level_tests {
+    use super::{brightness_level, parse_light_level};
+    #[core::prelude::v1::test]
+    fn integer_levels_cover_the_device_range() {
+        for level in 1..=15 {
+            let value = parse_light_level(&level.to_string()).unwrap();
+            assert_eq!(brightness_level(value), level);
+        }
+        for bad in ["", "0", "16", "256", "1.5", "-1", "+1", "abc"] {
+            assert_eq!(parse_light_level(bad), None);
+        }
+        assert_eq!(parse_light_level(" 15 "), Some(255));
+        assert_eq!(brightness_level(0), 1);
     }
 }

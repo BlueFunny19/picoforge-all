@@ -1,6 +1,7 @@
 //! Modal dialog components for PIN prompts, confirmations, and status display.
 
 use super::form::FormErrors;
+use crate::i18n::LocalizedPlaceholder;
 use gpui::*;
 use gpui_component::{
     Disableable, WindowExt,
@@ -54,34 +55,82 @@ impl OperationClock {
     }
     fn label(&self) -> impl IntoElement {
         let seconds = self.started.map(|t| t.elapsed().as_secs()).unwrap_or(0);
-        div().text_sm().text_color(rgb(0xa1a1aa)).child(format!(
-            "Elapsed: {}m {:02}s",
-            seconds / 60,
-            seconds % 60
-        ))
+        div()
+            .text_sm()
+            .text_color(rgb(0xa1a1aa))
+            .child(crate::i18n::format(
+                "Elapsed: {0}m {1}s",
+                &[format!("{}", seconds / 60), format!("{:02}", seconds % 60)],
+            ))
     }
 }
+/// Optional copyable output, kept in the operation dialog until it is dismissed.
+#[derive(Clone)]
+pub struct OperationResult {
+    pub label: String,
+    pub display: String,
+    pub copy: String,
+}
+
 fn success_message(msg: &str) -> AnyElement {
-    v_flex()
-        .gap_4()
-        .child(
-            div()
-                .px_3()
-                .py_2()
-                .rounded_md()
-                .bg(rgb(0x18181b))
-                .text_sm()
-                .text_color(rgb(0x22c55e))
-                .child(msg.to_string()),
-        )
-        .child(
-            h_flex().justify_end().child(
-                Button::new("done")
-                    .label("Done")
-                    .on_click(|_, window, cx| window.close_dialog(cx)),
-            ),
-        )
-        .into_any_element()
+    success_with_result(msg, None)
+}
+
+fn success_with_result(msg: &str, result: Option<&OperationResult>) -> AnyElement {
+    let mut body = v_flex().w_full().gap_4().child(
+        div()
+            .w_full()
+            .px_3()
+            .py_2()
+            .rounded_md()
+            .bg(rgb(0x18181b))
+            .text_sm()
+            .text_color(rgb(0x22c55e))
+            .child(crate::i18n::text(msg)),
+    );
+    let mut buttons = h_flex().w_full().justify_end().gap_2();
+    if let Some(result) = result {
+        body = body.child(
+            v_flex()
+                .w_full()
+                .gap_2()
+                .child(
+                    div()
+                        .text_sm()
+                        .text_color(rgb(0xa1a1aa))
+                        .child(result.label.clone()),
+                )
+                .child(
+                    div()
+                        .id("operation-result")
+                        .w_full()
+                        .max_h(px(240.))
+                        .overflow_y_scroll()
+                        .p_3()
+                        .rounded_md()
+                        .bg(rgb(0x18181b))
+                        .text_sm()
+                        .font_family("monospace")
+                        .child(result.display.clone()),
+                ),
+        );
+        let copy = result.copy.clone();
+        buttons = buttons.child(
+            Button::new("copy-result")
+                .label(crate::i18n::tr("Copy"))
+                .on_click(move |_, _, cx| {
+                    cx.write_to_clipboard(ClipboardItem::new_string(copy.clone()));
+                }),
+        );
+    }
+    body.child(
+        buttons.child(
+            Button::new("done")
+                .label(crate::i18n::tr("Done"))
+                .on_click(|_, window, cx| window.close_dialog(cx)),
+        ),
+    )
+    .into_any_element()
 }
 
 /// Dialog content for collecting the FIDO PIN from the user.
@@ -101,7 +150,7 @@ impl PinPromptContent {
     /// Transition the dialog to a loading state with the given message.
     pub fn set_loading_msg(&mut self, msg: impl Into<String>, cx: &mut Context<Self>) {
         self.clock.start(cx);
-        self.phase = DialogPhase::LoadingWithMessage(msg.into());
+        self.phase = DialogPhase::LoadingWithMessage(crate::i18n::text(msg.into()));
         cx.notify();
     }
 
@@ -114,14 +163,14 @@ impl PinPromptContent {
     /// Transition the dialog to a success state.
     pub fn set_success(&mut self, msg: String, cx: &mut Context<Self>) {
         self.clock.stop();
-        self.phase = DialogPhase::Success(msg);
+        self.phase = DialogPhase::Success(crate::i18n::text(msg));
         cx.notify();
     }
 
     /// Transition the dialog to an error state with the given message.
     pub fn set_error(&mut self, msg: String, cx: &mut Context<Self>) {
         self.clock.stop();
-        self.phase = DialogPhase::Error(msg);
+        self.phase = DialogPhase::Error(crate::i18n::text(msg));
         cx.notify();
     }
 
@@ -159,10 +208,14 @@ impl Render for PinPromptContent {
                 .items_center()
                 .child(match &self.phase {
                     DialogPhase::LoadingWithMessage(msg) => msg.clone(),
-                    _ => "Working…".into(),
+                    _ => crate::i18n::tr("Working…").into(),
                 })
                 .child(self.clock.label())
-                .child(Button::new("working").label("Working…").loading(true))
+                .child(
+                    Button::new("working")
+                        .label(crate::i18n::tr("Working…"))
+                        .loading(true),
+                )
                 .into_any_element();
         }
         let mut form = v_flex().gap_4().child(self.description.clone());
@@ -193,7 +246,7 @@ impl Render for PinPromptContent {
                     .gap_2()
                     .child(
                         Button::new("cancel")
-                            .label("Cancel")
+                            .label(crate::i18n::tr("Cancel"))
                             .on_click(|_, w, cx| w.close_dialog(cx)),
                     )
                     .child(
@@ -227,7 +280,7 @@ pub fn open_pin_prompt(
 
     let pin_input = cx.new(|cx| {
         InputState::new(window, cx)
-            .placeholder(placeholder_str)
+            .localized_placeholder(placeholder_str, cx)
             .masked(true)
     });
 
@@ -268,9 +321,9 @@ pub fn open_pin_prompt(
         );
         dialog
             .title(if matches!(phase, DialogPhase::Error(_)) {
-                SharedString::from("Error")
+                SharedString::from(crate::i18n::tr("Error"))
             } else if matches!(phase, DialogPhase::Success(_)) {
-                SharedString::from("Success")
+                SharedString::from(crate::i18n::tr("Success"))
             } else {
                 dialog_title.clone()
             })
@@ -301,14 +354,14 @@ impl ConfirmContent {
     /// Transition the dialog to a success state.
     pub fn set_success(&mut self, msg: String, cx: &mut Context<Self>) {
         self.clock.stop();
-        self.phase = DialogPhase::Success(msg);
+        self.phase = DialogPhase::Success(crate::i18n::text(msg));
         cx.notify();
     }
 
     /// Transition the dialog to an error state with the given message.
     pub fn set_error(&mut self, msg: String, cx: &mut Context<Self>) {
         self.clock.stop();
-        self.phase = DialogPhase::Error(msg);
+        self.phase = DialogPhase::Error(crate::i18n::text(msg));
         cx.notify();
     }
 }
@@ -328,11 +381,15 @@ impl Render for ConfirmContent {
                     h_flex()
                         .justify_end()
                         .gap_2()
-                        .child(Button::new("cancel").label("Cancel").disabled(true))
+                        .child(
+                            Button::new("cancel")
+                                .label(crate::i18n::tr("Cancel"))
+                                .disabled(true),
+                        )
                         .child(
                             Button::new("ok")
                                 .with_variant(self.ok_variant)
-                                .label("Loading...")
+                                .label(crate::i18n::tr("Loading..."))
                                 .loading(true),
                         ),
                 )
@@ -361,11 +418,13 @@ impl Render for ConfirmContent {
                         h_flex()
                             .justify_end()
                             .gap_2()
-                            .child(Button::new("cancel").label("Cancel").on_click(
-                                |_, window, cx| {
-                                    window.close_dialog(cx);
-                                },
-                            ))
+                            .child(
+                                Button::new("cancel")
+                                    .label(crate::i18n::tr("Cancel"))
+                                    .on_click(|_, window, cx| {
+                                        window.close_dialog(cx);
+                                    }),
+                            )
                             .child(
                                 Button::new("ok")
                                     .with_variant(ok_variant)
@@ -394,11 +453,13 @@ impl Render for ConfirmContent {
                         h_flex()
                             .justify_end()
                             .gap_2()
-                            .child(Button::new("cancel").label("Cancel").on_click(
-                                |_, window, cx| {
-                                    window.close_dialog(cx);
-                                },
-                            ))
+                            .child(
+                                Button::new("cancel")
+                                    .label(crate::i18n::tr("Cancel"))
+                                    .on_click(|_, window, cx| {
+                                        window.close_dialog(cx);
+                                    }),
+                            )
                             .child(
                                 Button::new("ok")
                                     .with_variant(ok_variant)
@@ -451,9 +512,9 @@ pub fn open_confirm(
         );
         dialog
             .title(if matches!(phase, DialogPhase::Error(_)) {
-                SharedString::from("Error")
+                SharedString::from(crate::i18n::tr("Error"))
             } else if matches!(phase, DialogPhase::Success(_)) {
-                SharedString::from("Success")
+                SharedString::from(crate::i18n::tr("Success"))
             } else {
                 dialog_title.clone()
             })
@@ -486,14 +547,14 @@ impl ChangePinContent {
     /// Transition the dialog to a success state.
     pub fn set_success(&mut self, msg: String, cx: &mut Context<Self>) {
         self.clock.stop();
-        self.phase = DialogPhase::Success(msg);
+        self.phase = DialogPhase::Success(crate::i18n::text(msg));
         cx.notify();
     }
 
     /// Transition the dialog to an error state with the given message.
     pub fn set_error(&mut self, msg: String, cx: &mut Context<Self>) {
         self.clock.stop();
-        self.phase = DialogPhase::Error(msg);
+        self.phase = DialogPhase::Error(crate::i18n::text(msg));
         cx.notify();
     }
 
@@ -510,15 +571,21 @@ impl ChangePinContent {
         let confirm_pin_text = self.confirm_pin.read(cx).text().to_string();
 
         self.errors.clear();
-        self.errors.required(0, "Current PIN", &current_pin_text);
-        self.errors.required(1, "New PIN", &new_pin_text);
-        self.errors.required(2, "Repeat new PIN", &confirm_pin_text);
+        self.errors
+            .required(0, crate::i18n::tr("Current PIN"), &current_pin_text);
+        self.errors
+            .required(1, crate::i18n::tr("New PIN"), &new_pin_text);
+        self.errors
+            .required(2, crate::i18n::tr("Repeat new PIN"), &confirm_pin_text);
         if !new_pin_text.is_empty() && new_pin_text.chars().count() < 4 {
-            self.errors
-                .set(1, "PIN must contain at least 4 characters.");
+            self.errors.set(
+                1,
+                crate::i18n::tr("PIN must contain at least 4 characters."),
+            );
         }
         if !confirm_pin_text.is_empty() && new_pin_text != confirm_pin_text {
-            self.errors.set(2, "New PIN entries do not match.");
+            self.errors
+                .set(2, crate::i18n::tr("New PIN entries do not match."));
         }
         if !self.errors.is_empty() {
             cx.notify();
@@ -545,15 +612,19 @@ impl Render for ChangePinContent {
                 .items_center()
                 .child(match &self.phase {
                     DialogPhase::LoadingWithMessage(msg) => msg.clone(),
-                    _ => "Working…".into(),
+                    _ => crate::i18n::tr("Working…").into(),
                 })
                 .child(self.clock.label())
-                .child(Button::new("working").label("Working…").loading(true))
+                .child(
+                    Button::new("working")
+                        .label(crate::i18n::tr("Working…"))
+                        .loading(true),
+                )
                 .into_any_element();
         }
-        let mut form = v_flex().gap_4().child(SharedString::from(
+        let mut form = v_flex().gap_4().child(SharedString::from(crate::i18n::tr(
             "Enter your current PIN and choose a new one.",
-        ));
+        )));
 
         if let DialogPhase::Error(message) = &self.phase {
             form = form.child(
@@ -567,29 +638,37 @@ impl Render for ChangePinContent {
                     .child(render_error_message(message.clone())),
             );
         }
-        form.child(self.errors.field(0, "Current PIN", &self.current_pin, true))
-            .child(self.errors.field(1, "New PIN", &self.new_pin, true))
-            .child(
-                self.errors
-                    .field(2, "Repeat new PIN", &self.confirm_pin, true),
-            )
-            .child(
-                h_flex()
-                    .justify_end()
-                    .gap_2()
-                    .child(
-                        Button::new("cancel")
-                            .label("Cancel")
-                            .on_click(|_, w, cx| w.close_dialog(cx)),
-                    )
-                    .child(
-                        Button::new("confirm")
-                            .primary()
-                            .label(SharedString::from("Save"))
-                            .on_click(cx.listener(|this, _, _, cx| this.trigger_confirm(cx))),
-                    ),
-            )
-            .into_any_element()
+        form.child(
+            self.errors
+                .field(0, crate::i18n::tr("Current PIN"), &self.current_pin, true),
+        )
+        .child(
+            self.errors
+                .field(1, crate::i18n::tr("New PIN"), &self.new_pin, true),
+        )
+        .child(self.errors.field(
+            2,
+            crate::i18n::tr("Repeat new PIN"),
+            &self.confirm_pin,
+            true,
+        ))
+        .child(
+            h_flex()
+                .justify_end()
+                .gap_2()
+                .child(
+                    Button::new("cancel")
+                        .label(crate::i18n::tr("Cancel"))
+                        .on_click(|_, w, cx| w.close_dialog(cx)),
+                )
+                .child(
+                    Button::new("confirm")
+                        .primary()
+                        .label(SharedString::from(crate::i18n::tr("Save")))
+                        .on_click(cx.listener(|this, _, _, cx| this.trigger_confirm(cx))),
+                ),
+        )
+        .into_any_element()
     }
 }
 
@@ -601,17 +680,17 @@ pub fn open_change_pin(
 ) {
     let current_pin = cx.new(|cx| {
         InputState::new(window, cx)
-            .placeholder("Enter current PIN")
+            .localized_placeholder("Enter current PIN", cx)
             .masked(true)
     });
     let new_pin = cx.new(|cx| {
         InputState::new(window, cx)
-            .placeholder("Enter new PIN")
+            .localized_placeholder("Enter new PIN", cx)
             .masked(true)
     });
     let confirm_pin = cx.new(|cx| {
         InputState::new(window, cx)
-            .placeholder("Confirm new PIN")
+            .localized_placeholder("Confirm new PIN", cx)
             .masked(true)
     });
 
@@ -651,11 +730,11 @@ pub fn open_change_pin(
         let phase = &content.read(cx).phase;
         dialog
             .title(if matches!(phase, DialogPhase::Error(_)) {
-                "Error"
+                crate::i18n::tr("Error")
             } else if matches!(phase, DialogPhase::Success(_)) {
-                "Success"
+                crate::i18n::tr("Success")
             } else {
-                "Change PIN"
+                crate::i18n::tr("Change PIN")
             })
             .keyboard(!matches!(
                 phase,
@@ -688,14 +767,14 @@ impl SetPinContent {
     /// Transition the dialog to a success state.
     pub fn set_success(&mut self, msg: String, cx: &mut Context<Self>) {
         self.clock.stop();
-        self.phase = DialogPhase::Success(msg);
+        self.phase = DialogPhase::Success(crate::i18n::text(msg));
         cx.notify();
     }
 
     /// Transition the dialog to an error state with the given message.
     pub fn set_error(&mut self, msg: String, cx: &mut Context<Self>) {
         self.clock.stop();
-        self.phase = DialogPhase::Error(msg);
+        self.phase = DialogPhase::Error(crate::i18n::text(msg));
         cx.notify();
     }
 
@@ -711,14 +790,19 @@ impl SetPinContent {
         let confirm_pin_text = self.confirm_pin.read(cx).text().to_string();
 
         self.errors.clear();
-        self.errors.required(1, "New PIN", &new_pin_text);
-        self.errors.required(2, "Repeat new PIN", &confirm_pin_text);
+        self.errors
+            .required(1, crate::i18n::tr("New PIN"), &new_pin_text);
+        self.errors
+            .required(2, crate::i18n::tr("Repeat new PIN"), &confirm_pin_text);
         if !new_pin_text.is_empty() && new_pin_text.chars().count() < 4 {
-            self.errors
-                .set(1, "PIN must contain at least 4 characters.");
+            self.errors.set(
+                1,
+                crate::i18n::tr("PIN must contain at least 4 characters."),
+            );
         }
         if !confirm_pin_text.is_empty() && new_pin_text != confirm_pin_text {
-            self.errors.set(2, "New PIN entries do not match.");
+            self.errors
+                .set(2, crate::i18n::tr("New PIN entries do not match."));
         }
         if !self.errors.is_empty() {
             cx.notify();
@@ -745,15 +829,19 @@ impl Render for SetPinContent {
                 .items_center()
                 .child(match &self.phase {
                     DialogPhase::LoadingWithMessage(msg) => msg.clone(),
-                    _ => "Working…".into(),
+                    _ => crate::i18n::tr("Working…").into(),
                 })
                 .child(self.clock.label())
-                .child(Button::new("working").label("Working…").loading(true))
+                .child(
+                    Button::new("working")
+                        .label(crate::i18n::tr("Working…"))
+                        .loading(true),
+                )
                 .into_any_element();
         }
-        let mut form = v_flex()
-            .gap_4()
-            .child(SharedString::from("Choose a PIN for your pico-key."));
+        let mut form = v_flex().gap_4().child(SharedString::from(crate::i18n::tr(
+            "Choose a PIN for your pico-key.",
+        )));
 
         if let DialogPhase::Error(message) = &self.phase {
             form = form.child(
@@ -767,28 +855,33 @@ impl Render for SetPinContent {
                     .child(render_error_message(message.clone())),
             );
         }
-        form.child(self.errors.field(1, "New PIN", &self.new_pin, true))
-            .child(
-                self.errors
-                    .field(2, "Repeat new PIN", &self.confirm_pin, true),
-            )
-            .child(
-                h_flex()
-                    .justify_end()
-                    .gap_2()
-                    .child(
-                        Button::new("cancel")
-                            .label("Cancel")
-                            .on_click(|_, w, cx| w.close_dialog(cx)),
-                    )
-                    .child(
-                        Button::new("confirm")
-                            .primary()
-                            .label(SharedString::from("Save"))
-                            .on_click(cx.listener(|this, _, _, cx| this.trigger_confirm(cx))),
-                    ),
-            )
-            .into_any_element()
+        form.child(
+            self.errors
+                .field(1, crate::i18n::tr("New PIN"), &self.new_pin, true),
+        )
+        .child(self.errors.field(
+            2,
+            crate::i18n::tr("Repeat new PIN"),
+            &self.confirm_pin,
+            true,
+        ))
+        .child(
+            h_flex()
+                .justify_end()
+                .gap_2()
+                .child(
+                    Button::new("cancel")
+                        .label(crate::i18n::tr("Cancel"))
+                        .on_click(|_, w, cx| w.close_dialog(cx)),
+                )
+                .child(
+                    Button::new("confirm")
+                        .primary()
+                        .label(SharedString::from(crate::i18n::tr("Save")))
+                        .on_click(cx.listener(|this, _, _, cx| this.trigger_confirm(cx))),
+                ),
+        )
+        .into_any_element()
     }
 }
 
@@ -800,12 +893,12 @@ pub fn open_setup_pin(
 ) {
     let new_pin = cx.new(|cx| {
         InputState::new(window, cx)
-            .placeholder("Enter new PIN")
+            .localized_placeholder("Enter new PIN", cx)
             .masked(true)
     });
     let confirm_pin = cx.new(|cx| {
         InputState::new(window, cx)
-            .placeholder("Confirm new PIN")
+            .localized_placeholder("Confirm new PIN", cx)
             .masked(true)
     });
 
@@ -843,11 +936,11 @@ pub fn open_setup_pin(
         let phase = &content.read(cx).phase;
         dialog
             .title(if matches!(phase, DialogPhase::Error(_)) {
-                "Error"
+                crate::i18n::tr("Error")
             } else if matches!(phase, DialogPhase::Success(_)) {
-                "Success"
+                crate::i18n::tr("Success")
             } else {
-                "Set Up PIN"
+                crate::i18n::tr("Set Up PIN")
             })
             .keyboard(!matches!(
                 phase,
@@ -860,6 +953,7 @@ pub fn open_setup_pin(
 }
 /// Dialog content for showing operation progress, success, or error.
 pub struct StatusContent {
+    result: Option<OperationResult>,
     phase: DialogPhase,
     clock: OperationClock,
 }
@@ -869,19 +963,24 @@ impl StatusContent {
     /// Useful for multi-step background operations where user context needs to be updated.
     pub fn set_loading(&mut self, msg: impl Into<String>, cx: &mut Context<Self>) {
         self.clock.start(cx);
-        self.phase = DialogPhase::LoadingWithMessage(msg.into());
+        self.phase = DialogPhase::LoadingWithMessage(crate::i18n::text(msg.into()));
         cx.notify();
     }
 
     pub fn set_success(&mut self, msg: String, cx: &mut Context<Self>) {
         self.clock.stop();
-        self.phase = DialogPhase::Success(msg);
+        self.phase = DialogPhase::Success(crate::i18n::text(msg));
         cx.notify();
+    }
+
+    pub fn set_result(&mut self, msg: String, result: OperationResult, cx: &mut Context<Self>) {
+        self.result = Some(result);
+        self.set_success(msg, cx);
     }
 
     pub fn set_error(&mut self, msg: String, cx: &mut Context<Self>) {
         self.clock.stop();
-        self.phase = DialogPhase::Error(msg);
+        self.phase = DialogPhase::Error(crate::i18n::text(msg));
         cx.notify();
     }
 }
@@ -891,45 +990,43 @@ impl Render for StatusContent {
         let phase = self.phase.clone();
 
         match &phase {
-            DialogPhase::Success(msg) => success_message(msg),
+            DialogPhase::Success(msg) => success_with_result(msg, self.result.as_ref()),
 
-            DialogPhase::Error(err_msg) => {
-                v_flex()
-                    .gap_4()
-                    .child(
-                        div()
-                            .px_3()
-                            .py_2()
-                            .rounded_md()
-                            .bg(rgb(0x18181b))
-                            .text_color(rgb(0xef4444))
-                            .text_sm()
-                            .child(render_error_message(err_msg.clone())),
-                    )
-                    .child(
-                        h_flex()
-                            .justify_end()
-                            .child(Button::new("close").label("Close").on_click(
-                                |_, window, cx| {
-                                    window.close_dialog(cx);
-                                },
-                            )),
-                    )
-                    .into_any_element()
-            }
+            DialogPhase::Error(err_msg) => v_flex()
+                .gap_4()
+                .child(
+                    div()
+                        .px_3()
+                        .py_2()
+                        .rounded_md()
+                        .bg(rgb(0x18181b))
+                        .text_color(rgb(0xef4444))
+                        .text_sm()
+                        .child(render_error_message(err_msg.clone())),
+                )
+                .child(
+                    h_flex().justify_end().child(
+                        Button::new("close")
+                            .label(crate::i18n::tr("Close"))
+                            .on_click(|_, window, cx| {
+                                window.close_dialog(cx);
+                            }),
+                    ),
+                )
+                .into_any_element(),
 
             _ => v_flex()
                 .gap_4()
                 .items_center()
                 .child(match &phase {
                     DialogPhase::LoadingWithMessage(msg) => msg.clone(),
-                    _ => "Applying configuration…".into(),
+                    _ => crate::i18n::tr("Applying configuration…").into(),
                 })
                 .child(self.clock.label())
                 .child(
                     Button::new("loading")
                         .primary()
-                        .label("Working…")
+                        .label(crate::i18n::tr("Working…"))
                         .loading(true),
                 )
                 .into_any_element(),
@@ -950,6 +1047,7 @@ pub fn open_status_dialog(
         let mut clock = OperationClock::default();
         clock.start(cx);
         StatusContent {
+            result: None,
             phase: DialogPhase::Loading,
             clock,
         }
@@ -969,9 +1067,9 @@ pub fn open_status_dialog(
         );
         dialog
             .title(if matches!(phase, DialogPhase::Error(_)) {
-                SharedString::from("Error")
+                SharedString::from(crate::i18n::tr("Error"))
             } else if matches!(phase, DialogPhase::Success(_)) {
-                SharedString::from("Success")
+                SharedString::from(crate::i18n::tr("Success"))
             } else {
                 dialog_title.clone()
             })
@@ -985,16 +1083,17 @@ pub fn open_status_dialog(
 }
 
 fn render_error_message(msg: String) -> impl IntoElement {
-    let troubleshooting_phrase = "troubleshooting guide";
+    let msg = crate::i18n::text(msg);
+    let troubleshooting_phrase = crate::i18n::tr("troubleshooting guide");
     let url = "https://github.com/librekeys/picoforge/wiki/Troubleshooting#1-my-key-is-not-detected-by-picoforge-or-picoforge-displays-a-device-status-of-online---fido-and-there-are-some-settings-that-i-cannot-configure";
 
     if msg.contains(troubleshooting_phrase) {
         v_flex()
-            .child("The device firmware does not support being configured in fido only communication mode.")
+            .child(crate::i18n::tr("The device firmware does not support being configured in fido only communication mode."))
             .child(
                 h_flex()
                     .gap_1()
-                    .child("Have a look at the")
+                    .child(crate::i18n::tr("Have a look at the"))
                     .child(
                         div()
                             .text_color(rgb(0x3b82f6))
@@ -1004,7 +1103,7 @@ fn render_error_message(msg: String) -> impl IntoElement {
                             })
                             .child(troubleshooting_phrase.to_string()),
                     )
-                    .child("to fix this"),
+                    .child(crate::i18n::tr("to fix this")),
             )
     } else {
         div().child(msg)

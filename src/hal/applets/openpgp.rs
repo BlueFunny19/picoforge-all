@@ -121,6 +121,8 @@ pub struct PgpInfo {
     pub pw1_retries: u8,
     pub rc_retries: u8,
     pub pw3_retries: u8,
+    pub pw1_default: Option<bool>,
+    pub pw3_default: Option<bool>,
     pub keys: Vec<PgpKey>,
 }
 
@@ -248,6 +250,13 @@ fn bcd_serial(b: &[u8]) -> u32 {
 }
 
 /// Full card status (unauthenticated).
+fn parse_pin_defaults(data: &[u8]) -> Option<(bool, bool)> {
+    match data {
+        [1, flags] if flags & !3 == 0 => Some((flags & 1 != 0, flags & 2 != 0)),
+        _ => None,
+    }
+}
+
 pub fn read_info(session: &CcidSession) -> Result<PgpInfo, PFError> {
     let version = get_version(session).unwrap_or([0; 3]);
     let app = get_data(session, 0x6E)?;
@@ -305,6 +314,9 @@ pub fn read_info(session: &CcidSession) -> Result<PgpInfo, PFError> {
         .map(|v| str_of(&v))
         .unwrap_or_default();
 
+    // Optional Pico All extension: unsupported cards keep their existing PIN flow.
+    let (metadata, sw) = session.transceive(&Apdu::read(0x80, 0xF7, 0, 0, &[]))?;
+    let defaults = sw.is_ok().then(|| parse_pin_defaults(&metadata)).flatten();
     Ok(PgpInfo {
         version,
         serial,
@@ -316,6 +328,8 @@ pub fn read_info(session: &CcidSession) -> Result<PgpInfo, PFError> {
         pw1_retries,
         rc_retries,
         pw3_retries,
+        pw1_default: defaults.map(|d| d.0),
+        pw3_default: defaults.map(|d| d.1),
         keys,
     })
 }
@@ -565,5 +579,24 @@ mod reset_version_tests {
         assert!(!super::isolated_reset_supported([5, 0, 0]));
         assert!(super::isolated_reset_supported([5, 0, 1]));
         assert!(super::isolated_reset_supported([5, 1, 0]));
+    }
+}
+
+#[cfg(test)]
+mod default_metadata_tests {
+    use super::parse_pin_defaults;
+    #[test]
+    fn accepts_only_supported_complete_default_flags() {
+        for (flags, expected) in [
+            (0, (false, false)),
+            (1, (true, false)),
+            (2, (false, true)),
+            (3, (true, true)),
+        ] {
+            assert_eq!(parse_pin_defaults(&[1, flags]), Some(expected));
+        }
+        for malformed in [&[][..], &[1], &[2, 3], &[1, 4], &[1, 3, 0]] {
+            assert_eq!(parse_pin_defaults(malformed), None);
+        }
     }
 }

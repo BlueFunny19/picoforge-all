@@ -1,12 +1,15 @@
 //! Firmware management UI; the old full-device Offboard action is no longer exposed.
 use crate::hal::firmware::{self, Request};
+use crate::i18n::LocalizedPlaceholder;
 use crate::ui::app::AppModels;
+use crate::ui::components::form::{LabeledU8, select_state};
 use crate::ui::models::device::DeviceRepo;
 use gpui::*;
 use gpui_component::{
     WindowExt,
     button::{Button, ButtonVariants},
     input::{Input, InputEvent, InputState},
+    select::{SelectEvent, SelectState},
     v_flex,
 };
 
@@ -16,6 +19,7 @@ pub struct OffboardViewModel {
     pub(super) loading: bool,
     pub(super) log: super::console::Console,
     pub(super) log_scroll: ScrollHandle,
+    pub(super) log_level: Entity<SelectState<Vec<LabeledU8>>>,
     pub(super) error: Option<String>,
     pub(super) pending: Option<Request>,
     pub(super) boot_tested: bool,
@@ -58,11 +62,14 @@ impl OffboardViewModel {
             .enumerate()
             .map(|(i, value)| {
                 cx.new(|cx| {
-                    let mut input = InputState::new(window, cx).placeholder(if i == 0 {
-                        "PICOTOOL / PATH, or choose executable"
-                    } else {
-                        FIELDS[i]
-                    });
+                    let mut input = InputState::new(window, cx).localized_placeholder(
+                        if i == 0 {
+                            crate::i18n::tr("PICOTOOL / PATH, or choose executable")
+                        } else {
+                            crate::i18n::tr(FIELDS[i])
+                        },
+                        cx,
+                    );
                     input.set_value(value, window, cx);
                     input
                 })
@@ -100,6 +107,32 @@ impl OffboardViewModel {
             },
         )
         .detach();
+        let saved_level = crate::preferences::get().log_level;
+        let level_options: Vec<_> = super::console::LEVELS
+            .iter()
+            .enumerate()
+            .map(|(index, label)| (*label, index as u8))
+            .collect();
+        let default_level = super::console::LEVELS
+            .iter()
+            .position(|level| *level == saved_level)
+            .unwrap_or(2);
+        let log_level = select_state(window, cx, &level_options, default_level);
+        cx.subscribe(
+            &log_level,
+            |this, _, event: &SelectEvent<Vec<LabeledU8>>, cx| {
+                if let SelectEvent::Confirm(Some(value)) = event {
+                    let mut preferences = crate::preferences::get();
+                    preferences.log_level = super::console::LEVELS[*value as usize].into();
+                    if let Err(error) = crate::preferences::save(preferences) {
+                        log::warn!("Settings: {error}");
+                    }
+                    this.log_scroll.scroll_to_bottom();
+                    cx.notify();
+                }
+            },
+        )
+        .detach();
         Self {
             read_status: None,
             read_attempted: false,
@@ -111,6 +144,7 @@ impl OffboardViewModel {
             loading: false,
             log: super::console::Console::default(),
             log_scroll: ScrollHandle::new(),
+            log_level,
             error: None,
             pending: None,
             boot_tested: false,
@@ -125,7 +159,8 @@ impl OffboardViewModel {
             .trim()
             .to_uppercase();
         if !firmware::serial_valid(&serial) {
-            self.log.push("WARN", "Enter a 16-digit device serial.");
+            self.log
+                .push("WARN", crate::i18n::tr("Enter a 16-digit device serial."));
             cx.notify();
             return;
         }
@@ -134,7 +169,10 @@ impl OffboardViewModel {
         self.read_attempted = true;
         self.log.push(
             "INFO",
-            format!("Reading device information\nRequested serial: {serial}"),
+            crate::i18n::format(
+                "Reading device information\nRequested serial: {0}",
+                &[format!("{}", serial)],
+            ),
         );
         self.task = Some(cx.spawn(async move |this, cx| {
             let result = cx
@@ -143,7 +181,10 @@ impl OffboardViewModel {
                     let state =
                         DeviceRepo::read_device_state_blocking().map_err(|e| e.to_string())?;
                     if !state.status.info.serial.eq_ignore_ascii_case(&serial) {
-                        return Err(format!("Device {serial} is not connected in normal mode."));
+                        return Err(crate::i18n::format(
+                            "Device {0} is not connected in normal mode.",
+                            &[format!("{}", serial)],
+                        ));
                     }
                     Ok(state)
                 })
@@ -152,16 +193,8 @@ impl OffboardViewModel {
                 this.loading = false;
                 match result {
                     Ok(state) => {
-                        this.log.push("SUCCESS", format!("Device information read\nSerial: {}\nFirmware: {}\nVersion: {}\nTransport: {:?}",
-                            state.status.info.serial, state.status.firmware_type,
-                            state.status.info.firmware_version, state.status.method));
-                        let details = serde_json::json!({
-                            "device": state.status,
-                            "statusLight": state.led_status,
-                            "usbApplications": state.management_apps,
-                        });
-                        this.log.push("DATA", format!("Device response (decoded)\n{}",
-                            serde_json::to_string_pretty(&details).unwrap_or_else(|_| details.to_string())));
+                        this.log
+                            .push("INFO", crate::i18n::tr("Device information refreshed."));
                         let status = state.status.clone();
                         this.device
                             .update(cx, |device, cx| device.apply_fresh_state(state, cx));
@@ -205,7 +238,7 @@ impl OffboardViewModel {
             files: true,
             directories: false,
             multiple: false,
-            prompt: Some("Select".into()),
+            prompt: Some(crate::i18n::tr("Select").into()),
         });
         let field = self.inputs[index].clone();
         cx.spawn_in(window, async move |this, cx| {
@@ -264,13 +297,13 @@ impl OffboardViewModel {
             window.open_dialog(cx, move |dialog, _, _| {
                 let request = request.clone();
                 let weak = weak.clone();
-                dialog.title("Different firmware signing key")
-                    .child("The signing key differs from the installed firmware, or no installed key is available. Secure Boot is off. Continue only if you trust this firmware's source.")
+                dialog.title(crate::i18n::tr("Different firmware signing key"))
+                    .child(crate::i18n::tr("The signing key differs from the installed firmware, or no installed key is available. Secure Boot is off. Continue only if you trust this firmware's source."))
                     .footer(move |_, _, _, _| {
                         let request = request.clone(); let weak = weak.clone();
                         vec![
-                            Button::new("cancel-mismatch").label("Cancel").on_click(|_, w, cx| w.close_dialog(cx)),
-                            Button::new("accept-mismatch").danger().label("Continue to confirmation").on_click(move |_, w, cx| {
+                            Button::new("cancel-mismatch").label(crate::i18n::tr("Cancel")).on_click(|_, w, cx| w.close_dialog(cx)),
+                            Button::new("accept-mismatch").danger().label(crate::i18n::tr("Continue to confirmation")).on_click(move |_, w, cx| {
                                 w.close_dialog(cx);
                                 let _ = weak.update(cx, |this, cx| this.confirm(request.clone(), w, cx));
                             })
@@ -293,22 +326,31 @@ impl OffboardViewModel {
         } else {
             request.action.to_uppercase()
         };
-        let phrase = format!("{verb} {}", request.serial);
+        let phrase = crate::i18n::format(
+            "{0} {1}",
+            &[format!("{}", verb), format!("{}", request.serial)],
+        );
         let warning = match request.action.as_str() {
-            "flash" if self.assessment.as_ref().is_some_and(|a| a.image.nuke) => {
-                "This runs Nuke and permanently erases all external Flash, including firmware, keys, PINs and settings. Hardware security locks remain. Afterward, install firmware signed with the board's trusted key."
-            }
-            "flash" => {
-                "This writes the selected UF2, verifies the readback and restarts this board. Keep it connected until completion."
-            }
-            "prepare" => {
-                "This erases all application credentials, PINs and settings. Firmware and permanent hardware locks are retained."
-            }
-            _ => {
-                "This permanently programs the reviewed security fuses. It cannot be undone. Keep the trusted signing key backed up."
-            }
+            "flash" if self.assessment.as_ref().is_some_and(|a| a.image.nuke) => crate::i18n::tr(
+                "This runs Nuke and permanently erases all external Flash, including firmware, keys, PINs and settings. Hardware security locks remain. Afterward, install firmware signed with the board's trusted key.",
+            ),
+            "flash" => crate::i18n::tr(
+                "This writes the selected UF2, verifies the readback and restarts this board. Keep it connected until completion.",
+            ),
+            "prepare" => crate::i18n::tr(
+                "This erases all application credentials, PINs and settings. Firmware and permanent hardware locks are retained.",
+            ),
+            _ => crate::i18n::tr(
+                "This permanently programs the reviewed security fuses. It cannot be undone. Keep the trusted signing key backed up.",
+            ),
         };
-        let target = format!("Device: {}\nFirmware: {}", request.serial, request.firmware);
+        let target = crate::i18n::format(
+            "Device: {0}\nFirmware: {1}",
+            &[
+                format!("{}", request.serial),
+                format!("{}", request.firmware),
+            ],
+        );
 
         let input = cx.new(|cx| InputState::new(window, cx).placeholder(phrase.clone()));
         let weak = cx.entity().downgrade();
@@ -320,7 +362,7 @@ impl OffboardViewModel {
                 if value != phrase {
                     let _ = weak.update(cx, |_, cx| {
                         cx.emit(OffboardEvent::Notification(
-                            "Enter the exact confirmation phrase".into(),
+                            crate::i18n::tr("Enter the exact confirmation phrase").into(),
                         ))
                     });
                     return;
@@ -335,13 +377,16 @@ impl OffboardViewModel {
             let submit = submit.clone();
             let ok = submit.clone();
             dialog
-                .title("Confirm device operation")
+                .title(crate::i18n::tr("Confirm device operation"))
                 .child(
                     v_flex()
                         .gap_3()
                         .child(warning)
                         .child(target.clone())
-                        .child(format!("Type {phrase} to continue"))
+                        .child(crate::i18n::format(
+                            "Type {0} to continue",
+                            &[format!("{}", phrase)],
+                        ))
                         .child(Input::new(&input)),
                 )
                 .on_ok(move |_, w, cx| {
@@ -352,11 +397,11 @@ impl OffboardViewModel {
                     let submit = submit.clone();
                     vec![
                         Button::new("cancel-firmware")
-                            .label("Cancel")
+                            .label(crate::i18n::tr("Cancel"))
                             .on_click(|_, w, cx| w.close_dialog(cx)),
                         Button::new("confirm-firmware")
                             .danger()
-                            .label("Confirm")
+                            .label(crate::i18n::tr("Confirm"))
                             .on_click(move |_, w, cx| submit(w, cx)),
                     ]
                 })
@@ -423,8 +468,10 @@ impl OffboardViewModel {
                             }
                             Err(std::sync::mpsc::TryRecvError::Disconnected) => {
                                 this.loading = false;
-                                this.log
-                                    .push("ERROR", "Firmware worker stopped unexpectedly.");
+                                this.log.push(
+                                    "ERROR",
+                                    crate::i18n::tr("Firmware worker stopped unexpectedly."),
+                                );
                             }
                             _ => {}
                         }

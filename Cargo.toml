@@ -1,6 +1,6 @@
 [package]
 name = "picoforge"
-version = "0.9.1"
+version = "0.10.0"
 description = "PicoForge All: an unofficial PicoForge fork for Pico All security keys."
 authors = ["Suyog Tandel", "PicoForge Contributers"]
 license = "AGPL-3.0"
@@ -39,6 +39,7 @@ gpui = { version = "0.2.2", features = [] }
 gpui-component = { git = "https://github.com/librekeys/gpui-component", branch = "fix/client-window-linux" }
 # gpui-component = "0.5.1"
 rust-embed = "8.11.0"
+chrono-tz = "0.10.4"
 
 [profile.dev]
 incremental = true  # Compile your binary in smaller steps.

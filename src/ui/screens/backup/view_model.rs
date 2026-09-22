@@ -1,5 +1,6 @@
 //! View model for the Backup screen — wallet-style FIDO seed export/restore.
 
+use crate::i18n::LocalizedPlaceholder;
 use crate::ui::DialogSubmit;
 use crate::ui::app::AppModels;
 use crate::ui::components::applet_gate::AppletGate;
@@ -48,7 +49,7 @@ impl BackupViewModel {
         match &repo.status {
             None => AppletGate::Unsupported,
             Some(s) if s.firmware_type == FirmwareType::PicoAll => {
-                AppletGate::ClientUnsupported("Backup and recovery")
+                AppletGate::ClientUnsupported(crate::i18n::tr("Backup and recovery"))
             }
             Some(s) if s.firmware_type != FirmwareType::RSKey => AppletGate::Unsupported,
             Some(_) => AppletGate::Ready,
@@ -90,7 +91,7 @@ impl BackupViewModel {
         cx.new(|cx| {
             InputState::new(window, cx)
                 .masked(true)
-                .placeholder("FIDO PIN — leave blank to touch instead")
+                .localized_placeholder("Enter your FIDO PIN, if set", cx)
         })
     }
 
@@ -105,16 +106,19 @@ impl BackupViewModel {
                 let p = pin.read(cx).text().to_string();
                 let p = (!p.is_empty()).then_some(p);
                 window.close_dialog(cx);
-                let status = dialog::open_status_dialog("Exporting Seed", window, cx);
+                let status =
+                    dialog::open_status_dialog(crate::i18n::tr("Exporting Seed"), window, cx);
                 let _ = view.update(cx, |this, cx| this.run_export(p, status, cx));
             })
         };
         Self::gated_dialog(
-            "Export FIDO Seed",
-            "Reveals the 32-byte master seed as a 24-word phrase — anyone with it can clone this FIDO identity. Do it offline, write it down, then seal the window. Requires the FIDO PIN, or a touch if none is set.",
+            crate::i18n::tr("Export FIDO Seed"),
+            crate::i18n::tr(
+                "Show the 24-word recovery phrase. Anyone with this phrase can copy your FIDO identity. Keep it private.",
+            ),
             pin,
             None,
-            ("Export", ButtonVariant::Danger),
+            (crate::i18n::tr("Export"), ButtonVariant::Danger),
             submit,
             window,
             cx,
@@ -132,7 +136,7 @@ impl BackupViewModel {
         }
         self.loading = true;
         let _ = status.update(cx, |d, cx| {
-            d.set_loading("Exporting… touch the device (BOOTSEL).", cx)
+            d.set_loading(crate::ui::components::copy::CONFIRM_ON_DEVICE, cx)
         });
         cx.notify();
         let weak = cx.entity().downgrade();
@@ -149,7 +153,7 @@ impl BackupViewModel {
                         this.load(cx);
                         let _ = status.update(cx, |d, cx| {
                             d.set_success(
-                                "Seed exported — write down the phrase shown below, then seal the window.".into(),
+                                crate::i18n::tr("Seed exported — write down the phrase shown below, then seal the window.").into(),
                                 cx,
                             )
                         });
@@ -168,17 +172,17 @@ impl BackupViewModel {
     pub(super) fn open_finalize(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let view = cx.entity().downgrade();
         dialog::open_confirm(
-            "Seal Export Window",
-            "Permanently refuses further seed exports until a FIDO factory reset. Only do this after you have safely recorded the phrase. Touch the device to confirm.".to_string(),
-            "Seal",
+            crate::i18n::tr("Disable recovery exports"),
+            crate::i18n::tr("Disable recovery phrase exports until the next FIDO reset? Save the phrase before continuing.").to_string(),
+            crate::i18n::tr("Seal"),
             ButtonVariant::Primary,
             window,
             cx,
             move |_dh, window, cx| {
                 window.close_dialog(cx);
-                let status = dialog::open_status_dialog("Sealing Window", window, cx);
+                let status = dialog::open_status_dialog(crate::i18n::tr("Disabling recovery exports"), window, cx);
                 let _ = view.update(cx, |this, cx| {
-                    this.run_unit(DeviceRepo::backup_finalize_blocking, "Export window sealed.", status, cx);
+                    this.run_unit(DeviceRepo::backup_finalize_blocking, crate::i18n::tr("Recovery exports disabled."), status, cx);
                 });
             },
         );
@@ -188,8 +192,9 @@ impl BackupViewModel {
 
     pub(super) fn open_restore(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let pin = Self::pin_input(window, cx);
-        let phrase =
-            cx.new(|cx| InputState::new(window, cx).placeholder("24 words separated by spaces"));
+        let phrase = cx.new(|cx| {
+            InputState::new(window, cx).localized_placeholder("24 words separated by spaces", cx)
+        });
         let view = cx.entity().downgrade();
         let submit = {
             let pin = pin.clone();
@@ -202,11 +207,14 @@ impl BackupViewModel {
                 let p = pin.read(cx).text().to_string();
                 let p = (!p.is_empty()).then_some(p);
                 window.close_dialog(cx);
-                let status = dialog::open_status_dialog("Restoring Seed", window, cx);
+                let status =
+                    dialog::open_status_dialog(crate::i18n::tr("Restoring Seed"), window, cx);
                 let _ = view.update(cx, |this, cx| {
                     this.run_unit(
                         move || DeviceRepo::backup_restore_blocking(p, m),
-                        "Seed restored — the FIDO identity now matches the backup.",
+                        crate::i18n::tr(
+                            "Seed restored — the FIDO identity now matches the backup.",
+                        ),
                         status,
                         cx,
                     );
@@ -214,11 +222,11 @@ impl BackupViewModel {
             })
         };
         Self::gated_dialog(
-            "Restore FIDO Seed",
-            "Installs a seed from a 24-word phrase, replacing the device's FIDO identity. Requires the FIDO PIN, or a touch if none is set.",
+            crate::i18n::tr("Restore FIDO Seed"),
+            crate::i18n::tr("Replace this device’s FIDO identity using a recovery phrase."),
             pin,
-            Some(("Recovery phrase", phrase)),
-            ("Restore", ButtonVariant::Danger),
+            Some((crate::i18n::tr("Recovery phrase"), phrase)),
+            (crate::i18n::tr("Restore"), ButtonVariant::Danger),
             submit,
             window,
             cx,
@@ -238,7 +246,7 @@ impl BackupViewModel {
         }
         self.loading = true;
         let _ = status.update(cx, |d, cx| {
-            d.set_loading("Working… touch the device (BOOTSEL).", cx)
+            d.set_loading(crate::ui::components::copy::CONFIRM_ON_DEVICE, cx)
         });
         cx.notify();
         let weak = cx.entity().downgrade();
@@ -282,14 +290,14 @@ impl BackupViewModel {
             let mut fields = gpui_component::v_flex().gap_3().pb_2();
             if let Some((label, input)) = &extra {
                 fields = fields
-                    .child(label.to_string())
+                    .child(crate::i18n::text(label))
                     .child(gpui_component::input::Input::new(input));
             }
             fields = fields
                 .child("FIDO PIN")
                 .child(gpui_component::input::Input::new(&pin));
             dialog
-                .title(title)
+                .title(crate::i18n::text(title))
                 .child(body)
                 .child(fields)
                 .on_ok(move |_, window, cx| {
@@ -300,7 +308,7 @@ impl BackupViewModel {
                     let s = btn.clone();
                     vec![
                         gpui_component::button::Button::new("cancel")
-                            .label("Cancel")
+                            .label(crate::i18n::tr("Cancel"))
                             .on_click(|_, window, cx| window.close_dialog(cx)),
                         gpui_component::button::Button::new("go")
                             .with_variant(action_variant)

@@ -1,96 +1,26 @@
-## Prerequisites
+# Building PicoForge All
 
-Before building, ensure you have the following requirements installed:
+Use current stable Rust. Clone this repository, install the dependencies below, then run `cargo build --release --locked`.
 
-- **[Rust](https://www.rust-lang.org/)** - System programming language (1.90+)
-- **PC/SC Middleware**:
-  - Linux: `pcscd` (usually pre-installed)
-  - macOS: Built-in
-  - Windows: Built-in
+## Windows
 
-## Building from Source
+Install Visual Studio Build Tools with **Desktop development with C++**, the Windows SDK, and the Rust MSVC toolchain. PC/SC is provided by Windows.
 
-### 1. Build the Application
+## macOS
 
-#### Development Build
+Install Xcode Command Line Tools and Rust. PC/SC is provided by macOS.
 
-```bash
-cargo run
+## Linux
+
+On Ubuntu/Debian:
+
+```sh
+sudo apt install build-essential pkg-config libpcsclite-dev pcscd libccid libudev-dev libvulkan-dev libwayland-dev wayland-protocols libxkbcommon-dev libxcb1-dev libxkbcommon-x11-dev libfontconfig1-dev libasound2-dev libdbus-1-dev libx11-dev libxcb-shape0-dev libxcb-xfixes0-dev libusb-1.0-0-dev
+cargo build --release --locked
 ```
 
-#### Production Build
+A graphical session and access to the security key are required to run the application. The repository also includes Nix development files.
 
-```bash
-cargo build --release
-```
+## Tests
 
-The compiled binary will be available in `target/release/picoforge` (Linux/macOS) or `target/release/picoforge.exe` (Windows).
-
-## Building and Development with Nix
-
-[Nix](https://nixos.org/) provides developers with a complete and consistent development environment.
-
-You can use Nix to build and develop picoforge painlessly.
-
-### 1. Install Nix
-
-Follow the [Installation Guide](https://nixos.org/download/#download-nix) and [NixOS Wiki](https://wiki.nixos.org/wiki/Flakes#Setup) to install Nix and enable Flakes.
-
-### 2. Build & Run
-
-#### a. with Flakes
-
-You can build and run PicoForge with a single command:
-
-```bash
-nix run github:librekeys/picoforge
-```
-
-Or simply build it and link to the current directory:
-
-```bash
-nix build github:librekeys/picoforge
-```
-
-> [!TIP]
-> You can use our binary cache to save build time by allowing Nix to set extra-substitutes.
-
-#### b. without Flakes
-
-Download the package definition:
-
-```bash
-curl -LO https://raw.githubusercontent.com/librekeys/picoforge/main/package.nix
-```
-
-Run the following command in the directory containing `package.nix`:
-
-```bash
-nix-build -E 'with import <nixpkgs> {}; callPackage ./package.nix { }'
-```
-
-The compiled binary will be available at: `result/bin/picoforge`
-
-### 3. Develop
-
-You can enter a developement environement with all the required dependencies.
-
-#### a. with Flakes
-
-```bash
-nix develop github:librekeys/picoforge
-```
-
-#### b. without Flakes
-
-You can use the `shell.nix` file that is at the root of the repository by running:
-
-```bash
-nix-shell
-```
-
-Then you can build from source and run the application with:
-
-```bash
-cargo run
-```
+`cargo test --locked` runs unit tests. Tests marked `ignored` require hardware, external tools or explicit destructive-operation authorization; read each test before opting in.

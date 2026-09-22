@@ -10,7 +10,7 @@ pub fn field(label: impl Into<SharedString>, value: impl Into<SharedString>, the
             div()
                 .text_sm()
                 .text_color(theme.muted_foreground)
-                .child(label.into()),
+                .child(crate::i18n::text(label.into().as_ref())),
         )
         .child(
             div()

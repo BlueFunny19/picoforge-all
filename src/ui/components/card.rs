@@ -75,7 +75,7 @@ impl RenderOnce for Card {
                     div()
                         .font_weight(FontWeight::BOLD)
                         .text_color(theme.foreground)
-                        .child(title),
+                        .child(crate::i18n::text(title.as_ref())),
                 );
             }
 
@@ -86,7 +86,7 @@ impl RenderOnce for Card {
                     div()
                         .text_sm()
                         .text_color(theme.muted_foreground)
-                        .child(desc),
+                        .child(crate::i18n::text(desc.as_ref())),
                 );
             }
 

@@ -1,85 +1,25 @@
-## 1. My key is not detected by picoforge or picoforge displays a device status of "online - fido" and there are some settings that I cannot configure.
+# Troubleshooting
 
-The pico-fido firmware uses by default "generic" USB Vendor ID (VID) and Product ID (PID) that are not not registered IDs and so not known by pcsc-lite. 
-This means that if you flash on your key a stock pico-fido firmware it will not be recognized by pcsc-lite.  
-Starting with version 0.3.0 picoforge implements a fallback, with limited functionalites, to connect to the key via the fido protocol instead of pcsc to set configuration parameters. 
-When this happens the device status on the lower left corner of the application will show an orange badge with the indication "Online - fido" instead of the green "Online" badge. 
+## Device not detected
 
-To avoid this issue we plan to obtain a valid VID/PID that can freely be used by the open source community and to communicate it to pcsc-lite team so that they can include it in their CCID driver. 
-But for now there are 3 ways to work around this issue.
+Reconnect the key, select Refresh, and close other applications that may hold its smart-card connection. On Windows, make sure the Smart Card (`SCardSvr`) service is available. On Linux, install and run `pcscd` with a recent `libccid` and grant the user access to the device.
 
-### 1.1. Use the fido fallback implemented in picoforge
-When connected to the key with the fido fallback there are some limitations. PicoForge can read FIDO/device information on newer firmware, but hardware configuration support depends on the pico-fido firmware version.
+An **Online · FIDO** connection exposes only FIDO features. PIV, OpenPGP, HSM and hardware configuration need the PC/SC connection. Custom VID/PID values may need a local libccid configuration or udev rule; do not change the device identity just to imitate another vendor.
 
-- Firmware 7.0/7.2: PicoForge can write a limited hardware configuration set from FIDO-only mode: VID/PID, LED GPIO, LED brightness, LED dimmable/steady, and power-cycle/reset behavior. **A security pin needs to be set** before being able to change the configuration when in FIDO-only mode.
-- Firmware 7.4/7.6: PicoForge does not write hardware configuration from FIDO-only mode. Use rescue/PCSC mode for VID/PID, product name, LED, touch timeout, LED driver, and curve settings.
+## Firmware tools unavailable
 
-After changing VID/PID on firmware that supports legacy FIDO configuration, unplug and re-plug the key for the change to be taken into account. The key should then be correctly detected by pcsc and you will be able to view and modify the full set of configuration parameters.
-**Be mindfull of the legal implications when you change the VID:PID on a key that you plan to distribute to somebody else**. You will probably want to set it back to the generic VID:PID before you distribute it.
+Install Raspberry Pi picotool 2.3.1 or later and put it on PATH, or set `PICOTOOL` to its full path before starting PicoForge All. Use one RP2350 ARM UF2 image for signing. A board with Secure Boot enabled requires its original trusted signing key.
 
-### 1.2. Flash a firmware that you built from source with USB VID/PID known by pcsc-lite
-Legaly speaking, we cannot distribute the pico-fido firmware with USB VID and PID that we do not own. And it is quite expensive to register a USB vendorID. 
-This is why the pico-fido firmwares that we build and publish on github are using the so-called "generic" VID/PID.
-But if you build a firmware from the source code for your own use you can choose to build it with known VID/PID that will be recognized by pcsc-lite. 
-Refer to the the pico-fido firmware documentation for how to do that.
+## Button confirmation timed out
 
-### 1.3. Add the "generic" USB VID/PID of pico-fido to the pcsc-lite CCID driver installed on your computer
-There is a workwround to have pcsc-lite recorgnize a key that is using the "generic" VID/PID :  
+When the light flashes, press and release the device button (BOOTSEL). Matching Pico All firmware defaults to 60 seconds. Retry the operation after a timeout.
 
-#### On a Linux distribution where you can modify the files installed by system packages
-You can manually add the generic VID and PID to the CCID driver Info.plist file.
-Depending on your distribution this file may be located in a path like this : 
-- /usr/lib64/pcsc/drivers/ifd-ccid.bundle/Contents/Info.plist (Fedora)
-- /usr/lib/pcsc/drivers/ifd-ccid.bundle/Contents/Info.plist (Debian)
+## Event time is unknown
 
-Once you have located this file you need to modify it like below :
+Enable device clock synchronization under Software → Settings, then reconnect or refresh. Old events and events written before synchronization cannot be assigned a reliable calendar date. Select an IANA time zone to change how known dates are displayed.
 
-1. Add the VID **at the end** of the `ifdVendorID` array
-  ```xml
-  <key>ifdVendorID</key>
-  <array>
-      ...
-      <string>0xFEFF</string>
-  </array>
-  ```
-2. Add the PID **at the end** of the `ifdProductID` array
-  ```xml
-  <key>ifdProductID</key>
-  <array>
-      ...
-      <string>0xFCFD</string>
-  </array>
-  ```
-3. Add a friendly name **at the end** of the `ifdFriendlyName` array
-  ```xml
-  <key>ifdFriendlyName</key>
-  <array>
-      ... 
-      <string>Pico Key</string>
-  </array>
-  ```
-4. Restart the pcsc daemon
-  ```bash
-  sudo systemctl restart pcscd
-  ```
+## PIN or reset errors
 
-#### On NixOS
-On NixOS the Info.plist is located in the nix store that is immutable. So it cannot be manually edited.
-To pach the file you can add the following to your /etc/nixos/configuration.nix file : 
-```nix
-  # Override the pcscd plugin list to use your patched CCID driver with pico-fido firmware generic VID/PID
-  services.pcscd.plugins = pkgs.lib.mkForce [
-    (pkgs.ccid.overrideAttrs (oldAttrs: {
-      nativeBuildInputs = (oldAttrs.nativeBuildInputs or []) ++ [ pkgs.xmlstarlet ];
-      postInstall = (oldAttrs.postInstall or "") + ''
-        plist="$out/pcsc/drivers/ifd-ccid.bundle/Contents/Info.plist"
-        xmlstarlet ed -L -s "//key[text()='ifdVendorID']/following-sibling::array[1]" -t elem -n string -v "0xFEFF" "$plist"
-        xmlstarlet ed -L -s "//key[text()='ifdProductID']/following-sibling::array[1]" -t elem -n string -v "0xFCFD" "$plist"
-        xmlstarlet ed -L -s "//key[text()='ifdFriendlyName']/following-sibling::array[1]" -t elem -n string -v "Pico Key" "$plist"
-      '';
-    }))
-  ];
-```
+FIDO has no factory PIN. Other applets only fill a default when the device confirms it is unchanged. A reset code must be set before it can unblock OpenPGP; the admin PIN is a separate recovery option. Avoid repeated guesses because they consume retry attempts.
 
-#### On other immutable Linux distributions
-We don't know of a way to do that on other immutable Linux distributions.
+Include your application version, firmware version and relevant console errors in an [issue](https://github.com/BlueFunny19/picoforge-all/issues). Do not attach secrets.

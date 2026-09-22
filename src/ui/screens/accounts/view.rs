@@ -129,7 +129,7 @@ impl AccountsViewModel {
                 .items_center()
                 .child(
                     Button::new(SharedString::from(format!("calc-{id}")))
-                        .label("Generate")
+                        .label(crate::i18n::tr("Generate"))
                         .outline()
                         .on_click(cx.listener(move |this, _, _, cx| {
                             this.calculate(id.clone(), period, cx);
@@ -142,7 +142,7 @@ impl AccountsViewModel {
                 .items_center()
                 .child(
                     Button::new(SharedString::from(format!("touch-{id}")))
-                        .label("Touch to reveal")
+                        .label(crate::i18n::tr("Touch to reveal"))
                         .outline()
                         .on_click(cx.listener(move |this, _, _, cx| {
                             this.calculate(id.clone(), period, cx);
@@ -179,13 +179,13 @@ impl Render for AccountsViewModel {
         if self.needs_password && !self.loaded {
             let unlock = Button::new("unlock-oath")
                 .icon(Icon::default().path("icons/lock-open.svg"))
-                .label("Unlock")
+                .label(crate::i18n::tr("Unlock"))
                 .primary()
                 .on_click(cx.listener(|this, _, window, cx| this.open_unlock_dialog(window, cx)));
             let theme = cx.theme();
             let card = Card::new()
-                .title("Accounts")
-                .description("Password-protected")
+                .title(crate::i18n::tr("Accounts"))
+                .description(crate::i18n::tr("Password-protected"))
                 .icon(Icon::default().path("icons/key.svg"))
                 .child(
                     v_flex()
@@ -196,14 +196,11 @@ impl Render for AccountsViewModel {
                         .child(
                             div()
                                 .font_semibold()
-                                .child("Accounts are password-protected"),
+                                .child(crate::i18n::tr("Accounts are password-protected")),
                         )
-                        .child(
-                            div()
-                                .text_sm()
-                                .text_color(theme.muted_foreground)
-                                .child("Enter the OATH password to view your codes."),
-                        )
+                        .child(div().text_sm().text_color(theme.muted_foreground).child(
+                            crate::i18n::tr("Enter the OATH password to view your codes."),
+                        ))
                         .child(unlock),
                 );
             return PageView::build(TITLE, SUBTITLE, card, theme).into_any_element();
@@ -224,9 +221,9 @@ impl Render for AccountsViewModel {
         }
 
         let password_label = if self.password_is_set() {
-            "Change password"
+            crate::i18n::tr("Change password")
         } else {
-            "Set password"
+            crate::i18n::tr("Set password")
         };
         let theme = cx.theme();
         let password_btn =
@@ -246,12 +243,12 @@ impl Render for AccountsViewModel {
             .on_click(cx.listener(|this, _, _, cx| this.refresh(cx)));
         let add_btn = Button::new("add-account")
             .icon(Icon::default().path("icons/plus.svg"))
-            .label("Add account")
+            .label(crate::i18n::tr("Add account"))
             .primary()
             .disabled(self.loading)
             .on_click(cx.listener(|this, _, window, cx| this.open_add_dialog(window, cx)));
         let reset_btn = Button::new("reset-oath")
-            .label("Reset OATH applet")
+            .label(crate::i18n::tr("Reset OATH applet"))
             .danger()
             .disabled(self.loading)
             .on_click(cx.listener(|this, _, window, cx| this.open_reset_dialog(window, cx)));
@@ -263,8 +260,8 @@ impl Render for AccountsViewModel {
             .child(add_btn);
         let list = if rows.is_empty() {
             empty_state(
-                "No accounts yet",
-                "Add an account from an otpauth:// URI or a base32 secret.".into(),
+                crate::i18n::tr("No accounts yet"),
+                crate::i18n::tr("Add an account from an otpauth:// URI or a base32 secret.").into(),
                 theme,
             )
         } else {
@@ -272,14 +269,17 @@ impl Render for AccountsViewModel {
         };
 
         let accounts_card = Card::new()
-            .title("Accounts")
-            .description(format!("{} stored", accounts.len()))
+            .title(crate::i18n::tr("Accounts"))
+            .description(crate::i18n::format(
+                "{0} stored",
+                &[format!("{}", accounts.len())],
+            ))
             .icon(Icon::default().path("icons/users-round.svg"))
             .header_right(toolbar)
             .child(list);
         let reset_card = Card::new()
-            .title("Reset")
-            .description("Erase all accounts and the OATH password")
+            .title(crate::i18n::tr("Reset"))
+            .description(crate::i18n::tr("Erase all accounts and the OATH password"))
             .icon(Icon::default().path("icons/trash.svg"))
             .child(
                 h_flex()
@@ -288,9 +288,15 @@ impl Render for AccountsViewModel {
                     .child(
                         v_flex()
                             .gap_1()
-                            .child(div().font_medium().child("Reset OATH applet"))
+                            .child(
+                                div()
+                                    .font_medium()
+                                    .child(crate::i18n::tr("Reset OATH applet")),
+                            )
                             .child(div().text_sm().text_color(theme.muted_foreground).child(
-                                "Deletes every account and the password. Cannot be undone.",
+                                crate::i18n::tr(
+                                    "Deletes every account and the password. Cannot be undone.",
+                                ),
                             )),
                     )
                     .child(reset_btn),

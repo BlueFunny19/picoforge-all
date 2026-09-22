@@ -20,101 +20,109 @@ impl Render for SecurityViewModel {
         if let Some(status) = &status {
             details = details
                 .child(information::field(
-                    "Serial number",
+                    crate::i18n::tr("Serial number"),
                     status.info.serial.clone(),
                     cx.theme(),
                 ))
                 .child(information::field(
-                    "Secure Boot",
+                    crate::i18n::tr("Secure Boot"),
                     if enabled == Some(true) {
-                        "Enabled"
+                        crate::i18n::tr("Enabled")
                     } else if enabled == Some(false) {
-                        "Disabled"
+                        crate::i18n::tr("Disabled")
                     } else {
-                        "Unavailable"
+                        crate::i18n::tr("Unavailable")
                     },
                     cx.theme(),
                 ))
                 .child(information::field(
-                    "Boot configuration",
+                    crate::i18n::tr("Boot configuration"),
                     if locked {
-                        "Permanently locked"
+                        crate::i18n::tr("Permanently locked")
                     } else {
-                        "Unlocked"
+                        crate::i18n::tr("Unlocked")
                     },
                     cx.theme(),
                 ));
         } else {
             details = details.child(div().text_color(cx.theme().muted_foreground).child(
                 if self.loading {
-                    "Reading device…"
+                    crate::i18n::tr("Reading device…")
                 } else {
-                    "Device information unavailable"
+                    crate::i18n::tr("Device information unavailable")
                 },
             ));
         }
         if let Some(root) = &self.root {
             let state = match root.state {
-                0 => "Off",
-                1 => "Ready",
-                -1 => "Requires empty storage",
-                -2 => "Unavailable",
-                -3 => "Foreign page",
-                -4 => "No free page",
-                -5 => "Corrupt",
-                -6 => "Unprotected",
-                _ => "Unknown",
+                0 => crate::i18n::tr("Off"),
+                1 => crate::i18n::tr("Ready"),
+                -1 => crate::i18n::tr("Requires empty storage"),
+                -2 => crate::i18n::tr("Unavailable"),
+                -3 => crate::i18n::tr("Foreign page"),
+                -4 => crate::i18n::tr("No free page"),
+                -5 => crate::i18n::tr("Corrupt"),
+                -6 => crate::i18n::tr("Unprotected"),
+                _ => crate::i18n::tr("Unknown"),
             };
             details = details
-                .child(information::field("Application root", state, cx.theme()))
                 .child(information::field(
-                    "OTP page",
+                    crate::i18n::tr("Application root"),
+                    state,
+                    cx.theme(),
+                ))
+                .child(information::field(
+                    crate::i18n::tr("OTP page"),
                     root.page.to_string(),
                     cx.theme(),
                 ))
                 .child(information::field(
-                    "Debug interface",
+                    crate::i18n::tr("Debug interface"),
                     if root.critical & 4 != 0 {
-                        "Disabled"
+                        crate::i18n::tr("Disabled")
                     } else {
-                        "Enabled"
+                        crate::i18n::tr("Enabled")
                     },
                     cx.theme(),
                 ))
                 .child(information::field(
-                    "Hardware flags",
+                    crate::i18n::tr("Hardware flags"),
                     format!("{:08X}", root.critical),
                     cx.theme(),
                 ));
         }
         body = body.child(
             Card::new()
-                .title("Hardware security")
+                .title(crate::i18n::tr("Hardware security"))
                 .icon(Icon::default().path("icons/shield-check.svg"))
                 .header_right(
                     standard("security-refresh", cx)
                         .icon(Icon::default().path("icons/refresh-cw.svg"))
-                        .tooltip("Refresh hardware security")
+                        .tooltip(crate::i18n::tr("Refresh hardware security"))
                         .disabled(self.loading)
                         .on_click(cx.listener(|this, _, _, cx| this.load(cx))),
                 )
                 .child(details),
         );
         let mut settings = v_flex().gap_5().child(notice::warning(
-            "Permanent hardware changes",
-            "Secure Boot and Secure Lock cannot be undone. Losing the trusted signing key can prevent future firmware updates.",
+            crate::i18n::tr("Permanent hardware changes"),
+            crate::i18n::tr("Secure Boot and Secure Lock cannot be undone. Losing the trusted signing key can prevent future firmware updates."),
             true));
         for (id, name, description, checked) in [
             (
                 "secure-boot",
-                "Enable Secure Boot",
-                "Verify firmware signatures at startup. Once enabled, this cannot be disabled.",
+                crate::i18n::tr("Enable Secure Boot"),
+                crate::i18n::tr(
+                    "Verify firmware signatures at startup. Once enabled, this cannot be disabled.",
+                ),
                 enabled.unwrap_or(false),
             ),
             (
                 "secure-lock",
-                "Secure Lock",
-                "Make boot configuration read-only and prevent signing-key rotation.",
+                crate::i18n::tr("Secure Lock"),
+                crate::i18n::tr(
+                    "Make boot configuration read-only and prevent signing-key rotation.",
+                ),
                 locked,
             ),
         ] {
@@ -152,12 +160,13 @@ impl Render for SecurityViewModel {
             );
         }
         if enabled.is_none() {
-            settings = settings
-                .child("Connect the device in normal mode to read its current protection state.");
+            settings = settings.child(crate::i18n::tr(
+                "Connect the device in normal mode to read its current protection state.",
+            ));
         }
         body = body.child(
             Card::new()
-                .title("Lock settings")
+                .title(crate::i18n::tr("Lock settings"))
                 .icon(Icon::default().path("icons/lock.svg"))
                 .child(settings),
         );
@@ -175,8 +184,10 @@ impl Render for SecurityViewModel {
             body = body.child(controls);
         }
         PageView::build(
-            "Security",
-            "Protect firmware startup and lock the device to its trusted signing key.",
+            crate::i18n::tr("Security"),
+            crate::i18n::tr(
+                "Protect firmware startup and lock the device to its trusted signing key.",
+            ),
             body,
             cx.theme(),
         )

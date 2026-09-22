@@ -24,7 +24,7 @@ use log4rs::{
 use std::fs;
 
 pub(crate) fn local_timestamp() -> String {
-    chrono::Local::now().format("%H:%M:%S %:z").to_string()
+    crate::preferences::format_time(chrono::Utc::now(), "%H:%M:%S %:z")
 }
 
 /// Initializes log4rs with custom configuration for stdout and file logging.

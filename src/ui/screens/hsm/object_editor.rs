@@ -1,4 +1,5 @@
 use super::*;
+use crate::i18n::LocalizedPlaceholder;
 use std::{cell::RefCell, io::Read, rc::Rc};
 
 #[derive(Default)]
@@ -10,23 +11,24 @@ struct ImportState {
 }
 
 fn read_file(path: &std::path::Path) -> Result<Vec<u8>, String> {
-    let file = std::fs::File::open(path).map_err(|_| "Could not open this file.".to_string())?;
+    let file = std::fs::File::open(path)
+        .map_err(|_| crate::i18n::tr("Could not open this file.").to_string())?;
     if !file
         .metadata()
-        .map_err(|_| "Could not read file information.")?
+        .map_err(|_| crate::i18n::tr("Could not read file information."))?
         .is_file()
     {
-        return Err("Select a regular file.".into());
+        return Err(crate::i18n::tr("Select a regular file.").into());
     }
     let mut bytes = Vec::new();
     file.take((hsm::MAX_OBJECT_BYTES + 1) as u64)
         .read_to_end(&mut bytes)
-        .map_err(|_| "Could not read this file.".to_string())?;
+        .map_err(|_| crate::i18n::tr("Could not read this file.").to_string())?;
     if bytes.len() > hsm::MAX_OBJECT_BYTES {
-        return Err("File is too large. Maximum file size: 1,800 bytes.".into());
+        return Err(crate::i18n::tr("File is too large. Maximum file size: 1,800 bytes.").into());
     }
     if bytes.is_empty() {
-        return Err("This file is empty. Choose a file with content.".into());
+        return Err(crate::i18n::tr("This file is empty. Choose a file with content.").into());
     }
     Ok(bytes)
 }
@@ -34,7 +36,7 @@ fn read_file(path: &std::path::Path) -> Result<Vec<u8>, String> {
 impl HsmViewModel {
     pub(super) fn open_reset(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let weak = cx.entity().downgrade();
-        dialog::open_confirm("Reset HSM", "Delete all HSM keys and objects? User PIN will be reset to 123456 and SO PIN to 12345678. Key backup will be disabled.".into(), "Reset HSM", gpui_component::button::ButtonVariant::Danger, window, cx,
+        dialog::open_confirm(crate::i18n::tr("Reset HSM"), crate::i18n::tr("Delete all HSM keys and objects and restore the default settings? This cannot be undone.").into(), crate::i18n::tr("Reset HSM"), gpui_component::button::ButtonVariant::Danger, window, cx,
             move |status, _, cx| {
                 let _ = weak.update(cx, |this, cx| {
                     this.loading = true;
@@ -47,8 +49,7 @@ impl HsmViewModel {
                             this.loading = false;
                             match result {
                                 Ok(()) => {
-                                    this.result.clear();
-                                    let _ = status.update(cx, |s, cx| s.set_success("HSM reset. User PIN: 123456. SO PIN: 12345678.".into(), cx));
+                                            let _ = status.update(cx, |s, cx| s.set_success(crate::i18n::tr("HSM reset.").into(), cx));
                                     this.load(cx);
                                 }
                                 Err(e) => { let _ = status.update(cx, |s, cx| s.set_error(e.to_string(), cx)); }
@@ -66,12 +67,13 @@ impl HsmViewModel {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let pin = cx.new(|cx| InputState::new(window, cx).masked(true));
+        let default = self.default_pin(false);
+        let pin = default.input(window, cx);
         let content = cx.new(|cx| {
             InputState::new(window, cx)
                 .multi_line(true)
                 .rows(4)
-                .placeholder("Enter the content to store")
+                .localized_placeholder("Enter the content to store", cx)
         });
         let errors = FormErrors::default();
         errors.watch(0, &pin, window, cx);
@@ -94,10 +96,10 @@ impl HsmViewModel {
             Rc::new(move |window: &mut Window, cx: &mut App| {
                 errors.clear();
                 let pin = pin.read(cx).text().to_string();
-                errors.required(0, "User PIN", &pin);
+                errors.required(0, crate::i18n::tr("User PIN"), &pin);
                 let import = imported.borrow();
                 if import.reading {
-                    errors.set(1, "Wait for the file to finish loading.");
+                    errors.set(1, crate::i18n::tr("Wait for the file to finish loading."));
                 }
                 let bytes = if import.file_mode {
                     import.bytes.clone()
@@ -117,7 +119,8 @@ impl HsmViewModel {
                     hex::encode(bytes),
                 ];
                 window.close_dialog(cx);
-                let status = dialog::open_status_dialog("Saving object", window, cx);
+                let status =
+                    dialog::open_status_dialog(crate::i18n::tr("Saving object"), window, cx);
                 let _ = weak.update(cx, |this, cx| {
                     this.run(Action::Write, args, choice, status, cx)
                 });
@@ -131,21 +134,26 @@ impl HsmViewModel {
             let file = imported.borrow();
             let mut form = v_flex()
                 .gap_3()
-                .child(info_card(
+                .child(info_card(crate::i18n::tr(
                     "Maximum content or file size: 1,800 bytes. Text is stored as UTF-8.",
-                ))
-                .child(errors.field(0, "User PIN", &pin, true));
+                )))
+                .children(default.field(&errors, 0, crate::i18n::tr("User PIN"), &pin, true));
             if let Some(id) = id {
-                form = form.child(format!("Replacing object {id:04X}"));
+                form = form.child(crate::i18n::format(
+                    "Replacing object {0}",
+                    &[format!("{:04X}", id)],
+                ));
             } else {
-                form = form.child("Object type").child(Select::new(&kind).w_full());
+                form = form
+                    .child(crate::i18n::tr("Object type"))
+                    .child(Select::new(&kind).w_full());
             }
             form = form.child(
                 h_flex()
                     .gap_2()
                     .child(
                         Button::new("object-text")
-                            .label("Enter text")
+                            .label(crate::i18n::tr("Enter text"))
                             .disabled(file.reading)
                             .on_click(move |_, w, _| {
                                 let mut import = imported_text.borrow_mut();
@@ -156,14 +164,17 @@ impl HsmViewModel {
                     )
                     .child(
                         Button::new("object-file")
-                            .label("Choose file")
+                            .label(crate::i18n::tr("Choose file"))
                             .disabled(file.reading)
                             .on_click(move |_, w, cx| {
                                 let receiver = cx.prompt_for_paths(PathPromptOptions {
                                     files: true,
                                     directories: false,
                                     multiple: false,
-                                    prompt: Some("Import object (maximum 1,800 bytes)".into()),
+                                    prompt: Some(
+                                        crate::i18n::tr("Import object (maximum 1,800 bytes)")
+                                            .into(),
+                                    ),
                                 });
                                 let handle = w.window_handle();
                                 let imported = imported_file.clone();
@@ -192,7 +203,10 @@ impl HsmViewModel {
                                             None => None,
                                         },
                                         Ok(Ok(None)) => None,
-                                        _ => Some(Err("Could not open the file picker.".into())),
+                                        _ => Some(Err(crate::i18n::tr(
+                                            "Could not open the file picker.",
+                                        )
+                                        .into())),
                                     };
                                     let _ = cx.update_window(handle, |_, window, _| {
                                         let mut import = imported.borrow_mut();
@@ -219,9 +233,12 @@ impl HsmViewModel {
             );
             if file.file_mode {
                 form = form.child(if file.name.is_empty() {
-                    "No file selected".into()
+                    crate::i18n::tr("No file selected").into()
                 } else {
-                    format!("{} ({} / 1,800 bytes)", file.name, file.bytes.len())
+                    crate::i18n::format(
+                        "{0} ({1} / 1,800 bytes)",
+                        &[format!("{}", file.name), format!("{}", file.bytes.len())],
+                    )
                 });
                 // Reuse the field error without exposing binary content as hex.
                 if let Some(error) = errors.message(1) {
@@ -229,26 +246,26 @@ impl HsmViewModel {
                 }
             } else {
                 form = form
-                    .child(errors.field(1, "Content", &content, true))
+                    .child(errors.field(1, crate::i18n::tr("Content"), &content, true))
                     .child(
                         div()
                             .text_sm()
                             .text_color(cx.theme().muted_foreground)
-                            .child(format!(
-                                "{} / 1,800 bytes",
-                                content.read(cx).text().to_string().len()
+                            .child(crate::i18n::format(
+                                "{0} / 1,800 bytes",
+                                &[format!("{}", content.read(cx).text().to_string().len())],
                             )),
                     );
             }
             if file.reading {
-                form = form.child("Reading file…");
+                form = form.child(crate::i18n::tr("Reading file…"));
             }
             let ok = submit.clone();
             let button = submit.clone();
             d.title(if id.is_some() {
-                "Replace object"
+                crate::i18n::tr("Replace object")
             } else {
-                "Add object"
+                crate::i18n::tr("Add object")
             })
             .child(form)
             .on_ok(move |_, w, cx| {
@@ -259,11 +276,11 @@ impl HsmViewModel {
                 let submit = button.clone();
                 vec![
                     Button::new("cancel")
-                        .label("Cancel")
+                        .label(crate::i18n::tr("Cancel"))
                         .on_click(|_, w, cx| w.close_dialog(cx)),
                     Button::new("save")
                         .primary()
-                        .label("Save object")
+                        .label(crate::i18n::tr("Save object"))
                         .on_click(move |_, w, cx| submit(w, cx)),
                 ]
             })

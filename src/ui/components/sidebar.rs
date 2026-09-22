@@ -159,7 +159,7 @@ impl Render for AppSidebar {
                             .flex()
                             .items_center()
                             .gap_2()
-                            .child("PicoForge")
+                            .child(crate::i18n::tr("PicoForge"))
                             .child(
                                 img("appIcons/all-patch.svg")
                                     .w(px(42.))
@@ -175,103 +175,125 @@ impl Render for AppSidebar {
         };
 
         // ── Navigation items (gpui-component Sidebar) ────────────────
-        let nav_sidebar = Sidebar::new(Side::Left)
-            .collapsed(sidebar_width < px(120.))
-            .collapsible(false)
-            .w_full()
-            .bg(sidebar_bg)
-            .border_color(gpui::transparent_white())
-            // Grouped so the panel reads as sections, not one long list: the
-            // device overview, the credential applets, RS-Key's protection
-            // features, then device-wide system actions (Offboard sits just
-            // above About as a bottom-of-list decommission action).
-            .child(
-                SidebarGroup::new("Device").child(SidebarMenu::new().child(self.menu_item(
-                    cx,
-                    "Home",
-                    "icons/house.svg",
-                    Destination::Home,
-                ))),
-            )
-            .child(
-                SidebarGroup::new("Credentials").child(
-                    SidebarMenu::new()
-                        .child(self.menu_item(
-                            cx,
-                            "Passkeys",
-                            "icons/key-round.svg",
-                            Destination::Passkeys,
-                        ))
-                        .child(self.menu_item(
-                            cx,
-                            "Accounts",
-                            "icons/users-round.svg",
-                            Destination::Accounts,
-                        ))
-                        .child(self.menu_item(
-                            cx,
-                            "Slots",
-                            "icons/touch-app.svg",
-                            Destination::Slots,
-                        ))
-                        .child(self.menu_item(cx, "PIV", "icons/shield.svg", Destination::Piv))
-                        .child(self.menu_item(
-                            cx,
-                            "OpenPGP",
-                            "icons/scroll-text.svg",
-                            Destination::OpenPgp,
-                        ))
-                        .child(self.menu_item(cx, "HSM", "icons/key.svg", Destination::Hsm)),
-                ),
-            )
-            .child(
-                SidebarGroup::new("Protection").child(
-                    SidebarMenu::new()
-                        .child(self.menu_item(
-                            cx,
-                            "Audit",
-                            "icons/book-open.svg",
-                            Destination::Audit,
-                        ))
-                        .child(self.menu_item(cx, "Backup", "icons/save.svg", Destination::Backup))
-                        .child(self.menu_item(cx, "Lock", "icons/lock.svg", Destination::Lock))
-                        .child(self.menu_item(
-                            cx,
-                            "Attestation",
-                            "icons/building-2.svg",
-                            Destination::Attestation,
-                        )),
-                ),
-            )
-            .child(
-                SidebarGroup::new("System").child(
-                    SidebarMenu::new()
-                        .child(self.menu_item(
-                            cx,
-                            "Configuration",
-                            "icons/settings.svg",
-                            Destination::Configuration,
-                        ))
-                        .child(self.menu_item(
-                            cx,
-                            "Security",
-                            "icons/shield-check.svg",
-                            Destination::Security,
-                        ))
-                        .child(self.menu_item(
-                            cx,
-                            "Firmware",
-                            "icons/microchip.svg",
-                            Destination::Offboard,
-                        ))
-                        .child(self.menu_item_icon_name(
-                            cx,
-                            "About",
-                            IconName::Info,
-                            Destination::About,
-                        )),
-                ),
-            );
+        let nav_sidebar =
+            Sidebar::new(Side::Left)
+                .collapsed(sidebar_width < px(120.))
+                .collapsible(false)
+                .w_full()
+                .bg(sidebar_bg)
+                .border_color(gpui::transparent_white())
+                // Grouped so the panel reads as sections, not one long list: the
+                // device overview, the credential applets, RS-Key's protection
+                // features, then device-wide system actions (Offboard sits just
+                // above About as a bottom-of-list decommission action).
+                .child(SidebarGroup::new(crate::i18n::tr("Device")).child(
+                    SidebarMenu::new().child(self.menu_item(
+                        cx,
+                        crate::i18n::tr("Home"),
+                        "icons/house.svg",
+                        Destination::Home,
+                    )),
+                ))
+                .child(
+                    SidebarGroup::new(crate::i18n::tr("Credentials")).child(
+                        SidebarMenu::new()
+                            .child(self.menu_item(
+                                cx,
+                                crate::i18n::tr("Passkeys"),
+                                "icons/key-round.svg",
+                                Destination::Passkeys,
+                            ))
+                            .child(self.menu_item(
+                                cx,
+                                crate::i18n::tr("Accounts"),
+                                "icons/users-round.svg",
+                                Destination::Accounts,
+                            ))
+                            .child(self.menu_item(
+                                cx,
+                                crate::i18n::tr("Slots"),
+                                "icons/touch-app.svg",
+                                Destination::Slots,
+                            ))
+                            .child(self.menu_item(cx, "PIV", "icons/shield.svg", Destination::Piv))
+                            .child(self.menu_item(
+                                cx,
+                                crate::i18n::tr("OpenPGP"),
+                                "icons/scroll-text.svg",
+                                Destination::OpenPgp,
+                            ))
+                            .child(self.menu_item(cx, "HSM", "icons/key.svg", Destination::Hsm)),
+                    ),
+                )
+                .child(
+                    SidebarGroup::new(crate::i18n::tr("Protection")).child(
+                        SidebarMenu::new()
+                            .child(self.menu_item(
+                                cx,
+                                crate::i18n::tr("Audit"),
+                                "icons/book-open.svg",
+                                Destination::Audit,
+                            ))
+                            .child(self.menu_item(
+                                cx,
+                                crate::i18n::tr("Backup"),
+                                "icons/save.svg",
+                                Destination::Backup,
+                            ))
+                            .child(self.menu_item(
+                                cx,
+                                crate::i18n::tr("Lock"),
+                                "icons/lock.svg",
+                                Destination::Lock,
+                            ))
+                            .child(self.menu_item(
+                                cx,
+                                crate::i18n::tr("Attestation"),
+                                "icons/building-2.svg",
+                                Destination::Attestation,
+                            )),
+                    ),
+                )
+                .child(
+                    SidebarGroup::new(crate::i18n::tr("System")).child(
+                        SidebarMenu::new()
+                            .child(self.menu_item(
+                                cx,
+                                crate::i18n::tr("Compose"),
+                                "icons/settings.svg",
+                                Destination::Configuration,
+                            ))
+                            .child(self.menu_item(
+                                cx,
+                                crate::i18n::tr("Security"),
+                                "icons/shield-check.svg",
+                                Destination::Security,
+                            ))
+                            .child(self.menu_item(
+                                cx,
+                                crate::i18n::tr("Firmware"),
+                                "icons/microchip.svg",
+                                Destination::Offboard,
+                            )),
+                    ),
+                )
+                .child(
+                    SidebarGroup::new(crate::i18n::tr("Software")).child(
+                        SidebarMenu::new()
+                            .child(self.menu_item(
+                                cx,
+                                crate::i18n::tr("Settings"),
+                                "icons/settings-2.svg",
+                                Destination::Settings,
+                            ))
+                            .child(self.menu_item_icon_name(
+                                cx,
+                                crate::i18n::tr("About"),
+                                IconName::Info,
+                                Destination::About,
+                            )),
+                    ),
+                );
 
         // ── Footer (device status + refresh) ─────────────────────────
         let footer = v_flex()
@@ -321,19 +343,35 @@ impl Render for AppSidebar {
                                     .text_size(px(12.))
                                     .font_weight(gpui::FontWeight::MEDIUM)
                                     .text_color(muted_foreground)
-                                    .child("Device Status"),
+                                    .child(crate::i18n::tr("Device Status")),
                             )
                             .child({
                                 let (text, color_bg, color_text) = if let Some(s) = &status_owned {
                                     if s.method == DeviceMethod::Fido {
-                                        ("Online - FIDO".to_string(), rgb(0xf59e0b), rgb(0xffffff))
+                                        (
+                                            crate::i18n::tr("Online - FIDO").to_string(),
+                                            rgb(0xf59e0b),
+                                            rgb(0xffffff),
+                                        )
                                     } else {
-                                        ("Online".to_string(), rgb(0x16a34a), rgb(0xffffff))
+                                        (
+                                            crate::i18n::tr("Online").to_string(),
+                                            rgb(0x16a34a),
+                                            rgb(0xffffff),
+                                        )
                                     }
                                 } else if error_owned.is_some() {
-                                    ("Error".to_string(), rgb(0xd97706), rgb(0xffffff))
+                                    (
+                                        crate::i18n::tr("Error").to_string(),
+                                        rgb(0xd97706),
+                                        rgb(0xffffff),
+                                    )
                                 } else {
-                                    ("Offline".to_string(), rgb(0xef4444), rgb(0xffffff))
+                                    (
+                                        crate::i18n::tr("Offline").to_string(),
+                                        rgb(0xef4444),
+                                        rgb(0xffffff),
+                                    )
                                 };
 
                                 div()
@@ -353,10 +391,13 @@ impl Render for AppSidebar {
                             }),
                     )
                     .child(
-                        PFIconButton::new(Icon::default().path("icons/refresh-cw.svg"), "Refresh")
-                            .on_click(cx.listener(|_, _, _, cx| {
-                                cx.emit(SidebarEvent::RefreshDevice);
-                            })),
+                        PFIconButton::new(
+                            Icon::default().path("icons/refresh-cw.svg"),
+                            crate::i18n::tr("Refresh"),
+                        )
+                        .on_click(cx.listener(|_, _, _, cx| {
+                            cx.emit(SidebarEvent::RefreshDevice);
+                        })),
                     )
             });
 

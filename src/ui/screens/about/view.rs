@@ -7,8 +7,8 @@ impl Render for AboutViewModel {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.theme();
         PageView::build(
-            "About",
-            "Information about the application and its development.",
+            crate::i18n::tr("About"),
+            crate::i18n::tr("Information about the application and its development."),
             div()
                 .w_full()
                 .flex()
@@ -31,24 +31,24 @@ impl Render for AboutViewModel {
                                     )
                                     .child(
                                         h_flex().items_center().justify_center().gap_2()
-                                            .child(div().text_2xl().font_bold().text_color(theme.foreground).child("PicoForge"))
+                                            .child(div().text_2xl().font_bold().text_color(theme.foreground).child(crate::i18n::tr("PicoForge")))
                                             .child(img("appIcons/all-patch.svg").w(px(72.)).h(px(46.))),
                                     )
                                     .child(Tag::new(concat!("v", env!("CARGO_PKG_VERSION"))))
-                                    .child(div().font_bold().text_color(rgb(0xE34C2D)).child("UNOFFICIAL FORK"))
+                                    .child(div().font_bold().text_color(rgb(0xE34C2D)).child(crate::i18n::tr("UNOFFICIAL FORK")))
                                     .child(
                                         div()
                                             .text_color(theme.muted_foreground)
                                             .max_w(px(450.0))
                                             .child(
-                                                "An open source commissioning tool for RS-Key and pico-fido security keys. Developed with Rust and GPUI.",
+                                                crate::i18n::tr("An open source commissioning tool for RS-Key and pico-fido security keys. Developed with Rust and GPUI."),
                                             ),
                                     )
                                     .child(
                                         div().w(px(450.)).max_w_full().pt_4().border_t_1().border_color(theme.border)
                                             .child(information::grid()
-                                                .child(information::field("Code By", "PicoForge Contributers & BlueFunny", theme))
-                                                .child(information::field("Copyright", "©2026 Suyog Tandel", theme)))
+                                                .child(information::field(crate::i18n::tr("Code By"), crate::i18n::tr("PicoForge Contributers & BlueFunny"), theme))
+                                                .child(information::field(crate::i18n::tr("Copyright"), crate::i18n::tr("©2026 Suyog Tandel"), theme)))
                                     )
                                     .child(
                                         h_flex()
@@ -66,7 +66,7 @@ impl Render for AboutViewModel {
                                                                     .path("icons/github.svg")
                                                                     .size_4(),
                                                             )
-                                                            .child("GitHub"),
+                                                            .child(crate::i18n::tr("GitHub")),
                                                     )
                                                     .on_click(|_, _, cx| {
                                                         cx.open_url("https://github.com/BlueFunny19/picoforge-all")
@@ -84,7 +84,7 @@ impl Render for AboutViewModel {
                                                                     .path("icons/book-open.svg")
                                                                     .size_4(),
                                                             )
-                                                            .child("Wiki"),
+                                                            .child(crate::i18n::tr("Wiki")),
                                                     )
                                                     .on_click(|_, _, cx| {
                                                         cx.open_url(

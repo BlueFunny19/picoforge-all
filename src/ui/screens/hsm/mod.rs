@@ -2,20 +2,21 @@
 mod object_editor;
 use crate::hal::applets::hsm;
 use crate::hal::types::FirmwareType;
+use crate::i18n::LocalizedPlaceholder;
 use crate::ui::app::AppModels;
 use crate::ui::components::{
     applet_gate::{AppletGate, empty_state},
     button::standard,
     card::Card,
     dialog,
-    form::{FormErrors, info_card, select_state, selected_key},
+    form::{DefaultSecret, FormErrors, info_card, select_state, selected_key},
     information,
     page_view::PageView,
 };
 use crate::ui::models::device::{DeviceEvent, DeviceRepo};
 use gpui::*;
 use gpui_component::button::{Button, ButtonVariants};
-use gpui_component::input::{Input, InputEvent, InputState};
+use gpui_component::input::{InputEvent, InputState};
 use gpui_component::select::Select;
 use gpui_component::{ActiveTheme, Disableable, Icon, WindowExt, h_flex, v_flex};
 
@@ -39,94 +40,125 @@ enum Action {
 impl Action {
     fn title(self) -> &'static str {
         match self {
-            Self::Setup => "Set up HSM",
-            Self::Generate => "Generate key",
-            Self::Delete => "Delete key",
-            Self::Crypto => "Use key",
-            Self::Read => "Read object",
-            Self::Write => "Write object",
-            Self::DeleteObject => "Delete object",
-            Self::Pin => "Change user PIN",
-            Self::SoPin => "Change SO PIN",
-            Self::Unblock => "Unblock user PIN",
-            Self::Wrap => "Export wrapped key",
-            Self::Unwrap => "Import wrapped key",
-            Self::Dkek => "DKEK shares",
-            Self::Initialize => "Reset HSM",
+            Self::Setup => crate::i18n::tr("Set up HSM"),
+            Self::Generate => crate::i18n::tr("Generate key"),
+            Self::Delete => crate::i18n::tr("Delete key"),
+            Self::Crypto => crate::i18n::tr("Use key"),
+            Self::Read => crate::i18n::tr("Read object"),
+            Self::Write => crate::i18n::tr("Write object"),
+            Self::DeleteObject => crate::i18n::tr("Delete object"),
+            Self::Pin => crate::i18n::tr("Change user PIN"),
+            Self::SoPin => crate::i18n::tr("Change SO PIN"),
+            Self::Unblock => crate::i18n::tr("Unblock user PIN"),
+            Self::Wrap => crate::i18n::tr("Export wrapped key"),
+            Self::Unwrap => crate::i18n::tr("Import wrapped key"),
+            Self::Dkek => crate::i18n::tr("DKEK shares"),
+            Self::Initialize => crate::i18n::tr("Reset HSM"),
         }
     }
     fn fields(self) -> Vec<(&'static str, bool)> {
         match self {
             Self::Generate | Self::Delete | Self::Wrap => {
-                vec![("User PIN", true), ("Key ID (hex, 01–FF)", false)]
+                vec![
+                    (crate::i18n::tr("User PIN"), true),
+                    (crate::i18n::tr("Key ID (hex, 01–FF)"), false),
+                ]
             }
             Self::Crypto | Self::Unwrap => vec![
-                ("User PIN", true),
-                ("Key ID (hex, 01–FF)", false),
-                ("Input bytes (hex)", true),
+                (crate::i18n::tr("User PIN"), true),
+                (crate::i18n::tr("Key ID (hex, 01–FF)"), false),
+                (crate::i18n::tr("Input bytes (hex)"), true),
             ],
-            Self::DeleteObject => vec![("User PIN", true), ("Object ID (hex)", false)],
+            Self::DeleteObject => vec![
+                (crate::i18n::tr("User PIN"), true),
+                (crate::i18n::tr("Object ID (hex)"), false),
+            ],
             Self::Read => vec![
-                ("User PIN (optional for public objects)", true),
-                ("Object ID (hex, e.g. CE01)", false),
+                (
+                    crate::i18n::tr("User PIN (optional for public objects)"),
+                    true,
+                ),
+                (crate::i18n::tr("Object ID (hex, e.g. CE01)"), false),
             ],
             Self::Write => vec![
-                ("User PIN", true),
-                ("Object ID (hex, e.g. CE01)", false),
-                ("Object bytes (hex)", true),
+                (crate::i18n::tr("User PIN"), true),
+                (crate::i18n::tr("Object ID (hex, e.g. CE01)"), false),
+                (crate::i18n::tr("Object bytes (hex)"), true),
             ],
             Self::Pin | Self::SoPin => vec![
-                ("Current PIN", true),
-                ("New PIN", true),
-                ("Repeat new PIN", true),
+                (crate::i18n::tr("Current PIN"), true),
+                (crate::i18n::tr("New PIN"), true),
+                (crate::i18n::tr("Repeat new PIN"), true),
             ],
             Self::Unblock => vec![
                 ("SO PIN", true),
-                ("New user PIN", true),
-                ("Repeat new PIN", true),
+                (crate::i18n::tr("New user PIN"), true),
+                (crate::i18n::tr("Repeat new PIN"), true),
             ],
             Self::Dkek => vec![
-                ("User PIN (required for import)", true),
-                ("DKEK share (64 hex digits; empty reads status)", true),
+                (crate::i18n::tr("User PIN (required for import)"), true),
+                (
+                    crate::i18n::tr("DKEK share (64 hex digits; empty reads status)"),
+                    true,
+                ),
             ],
             Self::Setup => vec![
-                ("New user PIN (6–16 characters)", true),
-                ("New SO PIN (6–16 characters)", true),
-                ("DKEK shares (0 disables key backup)", false),
+                (crate::i18n::tr("New user PIN (6–16 characters)"), true),
+                (crate::i18n::tr("New SO PIN (6–16 characters)"), true),
+                (
+                    crate::i18n::tr("DKEK shares (0 disables key backup)"),
+                    false,
+                ),
             ],
             Self::Initialize => Vec::new(),
         }
     }
     fn description(self) -> &'static str {
         match self {
-            Self::Setup => {
-                "Choose a user PIN for everyday key operations and a separate security officer PIN for PIN recovery. Leave DKEK shares at 0 unless you need encrypted key backups. Keep both PINs safely."
-            }
-            Self::Initialize => {
-                "Deletes all HSM keys and objects and sets new PINs. Other applications and hardware locks are preserved."
-            }
-            Self::Delete => "Permanently deletes this HSM key. Check the key ID before continuing.",
+            Self::Setup => crate::i18n::tr(
+                "Set a user PIN and an SO PIN for recovery. Leave DKEK shares at 0 to keep key backup disabled.",
+            ),
+            Self::Initialize => crate::i18n::tr(
+                "Deletes all HSM keys and objects and sets new PINs. Other applications and hardware locks are preserved.",
+            ),
+            Self::Delete => crate::i18n::tr("Permanently delete this key?"),
             Self::Generate => {
-                "Choose an algorithm and enter your HSM user PIN. PicoForge assigns a free key ID automatically. The private key stays on the device."
+                crate::i18n::tr("Create a key on this device. The private key stays on the device.")
             }
-            Self::DeleteObject => "Permanently deletes this certificate, metadata or data object.",
-            Self::Write => "Replaces the selected certificate, metadata or data object.",
-            Self::Wrap => {
-                "Exports a DKEK-encrypted key backup; configured DKEK shares and physical confirmation may be required."
+            Self::DeleteObject => {
+                crate::i18n::tr("Permanently deletes this certificate, metadata or data object.")
             }
-            Self::Unwrap => {
-                "Enter your HSM user PIN and the wrapped backup bytes. PicoForge assigns a free key ID. Import the matching DKEK shares first."
+            Self::Write => {
+                crate::i18n::tr("Replaces the selected certificate, metadata or data object.")
             }
-            Self::Crypto => {
-                "Uses an existing key. Input and output are bytes encoded as hex; the private key stays on the device."
-            }
-            Self::Dkek => {
-                "Reads domain 0 status or imports one DKEK share configured during HSM initialization."
-            }
-            _ => "Uses the PIN and objects belonging to the SmartCard-HSM application.",
+            Self::Wrap => crate::i18n::tr(
+                "Exports a DKEK-encrypted key backup; configured DKEK shares and physical confirmation may be required.",
+            ),
+            Self::Unwrap => crate::i18n::tr(
+                "Restore an encrypted key backup. Import the matching DKEK shares first.",
+            ),
+            Self::Crypto => crate::i18n::tr(
+                "Uses an existing key. Input and output are bytes encoded as hex; the private key stays on the device.",
+            ),
+            Self::Dkek => crate::i18n::tr(
+                "Reads domain 0 status or imports one DKEK share configured during HSM initialization.",
+            ),
+            _ => "",
         }
     }
 }
+
+const KEY_FILTERS: &[(&str, u8)] = &[
+    ("All keys", 0),
+    ("With certificate", 1),
+    ("Without certificate", 2),
+];
+const OBJECT_FILTERS: &[(&str, u8)] = &[
+    ("All objects", 0),
+    ("Certificates", 1),
+    ("Descriptions", 2),
+    ("Data", 3),
+];
 
 pub struct HsmViewModel {
     device: Entity<DeviceRepo>,
@@ -134,15 +166,24 @@ pub struct HsmViewModel {
     loading: bool,
     loaded: bool,
     error: Option<String>,
-    result: String,
+    key_filter:
+        Entity<gpui_component::select::SelectState<Vec<crate::ui::components::form::LabeledU8>>>,
+    object_filter:
+        Entity<gpui_component::select::SelectState<Vec<crate::ui::components::form::LabeledU8>>>,
+    key_scroll: UniformListScrollHandle,
+    object_scroll: UniformListScrollHandle,
     key_search: Entity<InputState>,
     object_search: Entity<InputState>,
     _task: Option<Task<()>>,
 }
 impl HsmViewModel {
     pub fn new(window: &mut Window, cx: &mut Context<Self>, models: &AppModels) -> Self {
-        let key_search = cx.new(|cx| InputState::new(window, cx).placeholder("Search keys"));
-        let object_search = cx.new(|cx| InputState::new(window, cx).placeholder("Search objects"));
+        let key_filter = crate::ui::components::collection::filter(KEY_FILTERS, window, cx);
+        let object_filter = crate::ui::components::collection::filter(OBJECT_FILTERS, window, cx);
+        let key_search =
+            cx.new(|cx| InputState::new(window, cx).localized_placeholder("Search keys", cx));
+        let object_search =
+            cx.new(|cx| InputState::new(window, cx).localized_placeholder("Search objects", cx));
         for input in [&key_search, &object_search] {
             cx.subscribe(input, |_, _, _: &InputEvent, cx| cx.notify())
                 .detach();
@@ -152,7 +193,6 @@ impl HsmViewModel {
             if this.device.read(cx).device_changed {
                 this.info = None;
                 this.loaded = false;
-                this.result.clear();
             }
             if !this.loaded {
                 this.load(cx);
@@ -165,7 +205,10 @@ impl HsmViewModel {
             loading: false,
             loaded: false,
             error: None,
-            result: String::new(),
+            key_filter,
+            object_filter,
+            key_scroll: UniformListScrollHandle::new(),
+            object_scroll: UniformListScrollHandle::new(),
             key_search,
             object_search,
             _task: None,
@@ -217,6 +260,16 @@ impl HsmViewModel {
     fn open_action(&mut self, action: Action, window: &mut Window, cx: &mut Context<Self>) {
         self.open_action_for(action, None, window, cx);
     }
+    fn default_pin(&self, so: bool) -> DefaultSecret {
+        DefaultSecret {
+            value: if so { "12345678" } else { "123456" },
+            active: self
+                .info
+                .as_ref()
+                .and_then(|i| if so { i.so_pin_default } else { i.pin_default }),
+        }
+    }
+
     fn open_action_for(
         &mut self,
         action: Action,
@@ -241,6 +294,7 @@ impl HsmViewModel {
             self.open_reset(window, cx);
             return;
         }
+        let default = self.default_pin(matches!(action, Action::SoPin | Action::Unblock));
         let fields: Vec<_> = action
             .fields()
             .into_iter()
@@ -249,6 +303,18 @@ impl HsmViewModel {
                 (label, input)
             })
             .collect();
+        if !matches!(action, Action::Setup | Action::Initialize) {
+            fields[0].1.update(cx, |input, cx| {
+                input.set_value(default.initial_value(), window, cx)
+            });
+        }
+        if matches!(action, Action::Setup) {
+            for (index, value) in [(0, "123456"), (1, "12345678")] {
+                fields[index]
+                    .1
+                    .update(cx, |input, cx| input.set_value(value, window, cx));
+            }
+        }
         if matches!(action, Action::Setup | Action::Initialize) {
             fields[2]
                 .1
@@ -304,7 +370,7 @@ impl HsmViewModel {
                 if matches!(action, Action::Pin | Action::SoPin | Action::Unblock)
                     && args[1] != args[2]
                 {
-                    errors.set(2, "New PIN entries do not match.");
+                    errors.set(2, crate::i18n::tr("New PIN entries do not match."));
                 }
                 if !errors.valid(window) {
                     return;
@@ -319,26 +385,32 @@ impl HsmViewModel {
             })
         };
         window.open_dialog(cx, move |d, _, _| {
-            let mut form = v_flex().gap_3().child(action.description());
-            if !matches!(action, Action::Setup | Action::Dkek) {
-                form = form.child(info_card(if matches!(action, Action::SoPin | Action::Unblock) {
-                    "PicoForge reset default: SO PIN 12345678. Use your own PIN if it was changed or chosen during setup."
-                } else {
-                    "PicoForge reset default: user PIN 123456. Use your own PIN if it was changed or chosen during setup."
-                }));
+            let mut form = v_flex().gap_3();
+            if !action.description().is_empty() {
+                form = form.child(action.description());
             }
             if let Some(choice) = &choice {
-                form = form.child("Algorithm").child(Select::new(choice).w_full());
+                form = form
+                    .child(crate::i18n::tr("Algorithm"))
+                    .child(Select::new(choice).w_full());
             }
             for (index, (label, input)) in fields.iter().enumerate() {
                 if index == 1 && matches!(action, Action::Generate | Action::Unwrap) {
                     continue;
                 }
                 if index == 1 && id.is_some() {
-                    form = form.child(format!("Selected ID: {:02X}", id.unwrap()));
+                    form = form.child(crate::i18n::format(
+                        "Selected ID: {0}",
+                        &[format!("{:02X}", id.unwrap())],
+                    ));
                 } else {
-                    let required = !((index == 0 && matches!(action, Action::Read | Action::Dkek)) || (index == 1 && matches!(action, Action::Dkek)));
-                    form = form.child(errors.field(index, label, input, required));
+                    let required = !((index == 0 && matches!(action, Action::Read | Action::Dkek))
+                        || (index == 1 && matches!(action, Action::Dkek)));
+                    if index == 0 && !matches!(action, Action::Setup) {
+                        form = form.children(default.field(&errors, index, label, input, required));
+                    } else {
+                        form = form.child(errors.field(index, label, input, required));
+                    }
                 }
             }
             let ok = submit.clone();
@@ -353,7 +425,7 @@ impl HsmViewModel {
                     let submit = button.clone();
                     vec![
                         Button::new("cancel")
-                            .label("Cancel")
+                            .label(crate::i18n::tr("Cancel"))
                             .on_click(|_, w, cx| w.close_dialog(cx)),
                         Button::new("apply")
                             .primary()
@@ -375,7 +447,6 @@ impl HsmViewModel {
             return;
         }
         self.loading = true;
-        self.result.clear();
         cx.notify();
         self._task = Some(cx.spawn(async move |this, cx| {
             let result = cx
@@ -386,13 +457,18 @@ impl HsmViewModel {
                 this.loading = false;
                 match result {
                     Ok(bytes) => {
-                        this.result = hex::encode_upper(bytes);
-                        let msg = if this.result.is_empty() {
-                            "Operation completed"
-                        } else {
-                            "Operation completed; result is available on the HSM page"
-                        };
-                        let _ = status.update(cx, |s, cx| s.set_success(msg.into(), cx));
+                        let output = operation_result(action, &bytes);
+                        let _ = status.update(cx, |s, cx| {
+                            if let Some(output) = output {
+                                s.set_result(
+                                    crate::i18n::tr("Operation completed").into(),
+                                    output,
+                                    cx,
+                                );
+                            } else {
+                                s.set_success(crate::i18n::tr("Operation completed").into(), cx);
+                            }
+                        });
                         this.load(cx);
                     }
                     Err(e) => {
@@ -404,19 +480,51 @@ impl HsmViewModel {
         }));
     }
 }
+fn operation_result(action: Action, bytes: &[u8]) -> Option<dialog::OperationResult> {
+    if bytes.is_empty() {
+        return None;
+    }
+    if matches!(action, Action::Read) {
+        if let Ok(text) = std::str::from_utf8(bytes) {
+            if text
+                .chars()
+                .all(|c| !c.is_control() || matches!(c, '\n' | '\r' | '\t'))
+            {
+                return Some(dialog::OperationResult {
+                    label: crate::i18n::format("Text ({0} bytes)", &[format!("{}", bytes.len())]),
+                    display: text.into(),
+                    copy: text.into(),
+                });
+            }
+        }
+    }
+    let copy = hex::encode_upper(bytes);
+    let display = copy
+        .as_bytes()
+        .chunks(48)
+        .map(|line| std::str::from_utf8(line).unwrap())
+        .collect::<Vec<_>>()
+        .join("\n");
+    Some(dialog::OperationResult {
+        label: crate::i18n::format("Hexadecimal ({0} bytes)", &[format!("{}", bytes.len())]),
+        display,
+        copy,
+    })
+}
+
 fn execute(action: Action, args: &[String], choice: u8) -> Result<Vec<u8>, String> {
     let err = |e: crate::error::PFError| e.to_string();
     let bytes = |s: &str| {
         hex::decode(s.chars().filter(|c| !c.is_whitespace()).collect::<String>())
-            .map_err(|_| "Invalid hex input".to_string())
+            .map_err(|_| crate::i18n::tr("Invalid hex input").to_string())
     };
     let id = || {
         u8::from_str_radix(args[1].trim(), 16)
-            .map_err(|_| "Enter a key ID from 01 to FF".to_string())
+            .map_err(|_| crate::i18n::tr("Enter a key ID from 01 to FF").to_string())
     };
     let fid = || {
         u16::from_str_radix(args[1].trim(), 16)
-            .map_err(|_| "Enter a four-digit hex object ID".to_string())
+            .map_err(|_| crate::i18n::tr("Enter a four-digit hex object ID").to_string())
     };
     let pin = args[0].as_bytes();
     match action {
@@ -435,7 +543,7 @@ fn execute(action: Action, args: &[String], choice: u8) -> Result<Vec<u8>, Strin
         }
         Action::Pin | Action::SoPin | Action::Unblock => {
             if args[1] != args[2] {
-                return Err("New PIN entries do not match".into());
+                return Err(crate::i18n::tr("New PIN entries do not match").into());
             }
             if matches!(action, Action::Unblock) {
                 hsm::unblock_pin(pin, args[1].as_bytes()).map_err(err)?;
@@ -451,7 +559,7 @@ fn execute(action: Action, args: &[String], choice: u8) -> Result<Vec<u8>, Strin
             let shares = args[2]
                 .trim()
                 .parse()
-                .map_err(|_| "Enter a DKEK share count from 0 to 16")?;
+                .map_err(|_| crate::i18n::tr("Enter a DKEK share count from 0 to 16"))?;
             hsm::setup(pin, args[1].as_bytes(), shares).map_err(err)?;
         }
         Action::Initialize => hsm::reset_defaults().map_err(err)?,
@@ -483,31 +591,70 @@ impl HsmViewModel {
         };
         let query = search.read(cx).text().to_string().to_lowercase();
         let total = ids.len();
+        let filter = if keys {
+            &self.key_filter
+        } else {
+            &self.object_filter
+        };
+        let selected = selected_key(filter, if keys { KEY_FILTERS } else { OBJECT_FILTERS }, cx);
+        let scroll = if keys {
+            &self.key_scroll
+        } else {
+            &self.object_scroll
+        };
+        let files = self
+            .info
+            .as_ref()
+            .map(|i| i.files.as_slice())
+            .unwrap_or_default();
         let ids: Vec<_> = ids
             .into_iter()
             .filter(|id| {
-                format!(
-                    "{} {id:04X} {:02X} {}",
-                    if keys { "Key" } else { "Object" },
-                    id & 0xff,
-                    object_kind(*id)
-                )
-                .to_lowercase()
-                .contains(&query)
+                let kind = *id >> 8;
+                let has_cert = files.contains(&(0xCE00 | (*id & 0xff)));
+                let selected_match = if keys {
+                    selected == 0 || (selected == 1 && has_cert) || (selected == 2 && !has_cert)
+                } else {
+                    selected == 0
+                        || (selected == 1 && matches!(kind, 0xCE | 0xCA))
+                        || (selected == 2 && matches!(kind, 0xC4 | 0xC8 | 0xC9))
+                        || (selected == 3 && !matches!(kind, 0xCE | 0xCA | 0xC4 | 0xC8 | 0xC9))
+                };
+                selected_match
+                    && crate::ui::components::collection::matches(
+                        &query,
+                        &crate::i18n::format(
+                            "{0} {1} {2} {3}",
+                            &[
+                                format!(
+                                    "{}",
+                                    if keys {
+                                        crate::i18n::tr("Key")
+                                    } else {
+                                        crate::i18n::tr("Object")
+                                    }
+                                ),
+                                format!("{:04X}", id),
+                                format!("{:02X}", id & 0xff),
+                                format!("{}", object_kind(*id)),
+                            ],
+                        ),
+                    )
             })
             .collect();
+        let list_height = crate::preferences::list_height(ids.len(), 88.);
         let weak = cx.entity().downgrade();
         let rows = if ids.is_empty() {
             div()
                 .p_4()
                 .text_sm()
                 .text_color(cx.theme().muted_foreground)
-                .child(if !query.is_empty() {
-                    "No matches"
+                .child(if !query.is_empty() || selected != 0 {
+                    crate::i18n::tr("No matches")
                 } else if keys {
-                    "No stored keys"
+                    crate::i18n::tr("No stored keys")
                 } else {
-                    "No stored objects"
+                    crate::i18n::tr("No stored objects")
                 })
                 .into_any_element()
         } else {
@@ -525,13 +672,18 @@ impl HsmViewModel {
                     .unwrap_or_default()
                 },
             )
-            .h(px(264.))
+            .track_scroll(scroll.clone())
+            .h(px(list_height))
             .w_full()
             .into_any_element()
         };
         Card::new()
-            .title(if keys { "Keys" } else { "Objects" })
-            .description(format!("{total} stored"))
+            .title(if keys {
+                crate::i18n::tr("Keys")
+            } else {
+                crate::i18n::tr("Objects")
+            })
+            .description(crate::i18n::format("{0} stored", &[format!("{}", total)]))
             .icon(Icon::default().path(if keys {
                 "icons/key.svg"
             } else {
@@ -553,8 +705,18 @@ impl HsmViewModel {
             .child(
                 v_flex()
                     .gap_3()
-                    .child(Input::new(search).cleanable(true))
-                    .child(rows),
+                    .child(crate::ui::components::collection::toolbar(search, filter))
+                    .child(crate::ui::components::collection::frame(
+                        if keys {
+                            "hsm-keys-frame"
+                        } else {
+                            "hsm-objects-frame"
+                        },
+                        rows,
+                        scroll,
+                        list_height,
+                        cx,
+                    )),
             )
     }
     fn stored_row(&self, id: u16, keys: bool, cx: &mut Context<Self>) -> AnyElement {
@@ -589,8 +751,7 @@ impl HsmViewModel {
         }
         let row =
             h_flex()
-                .h(px(80.))
-                .mb_2()
+                .h_full()
                 .w_full()
                 .justify_between()
                 .gap_4()
@@ -612,9 +773,9 @@ impl HsmViewModel {
                             v_flex()
                                 .gap_1()
                                 .child(if keys {
-                                    format!("Key {:02X}", id & 0xff)
+                                    crate::i18n::format("Key {0}", &[format!("{:02X}", id & 0xff)])
                                 } else {
-                                    format!("Object {id:04X}")
+                                    crate::i18n::format("Object {0}", &[format!("{:04X}", id)])
                                 })
                                 .child(
                                     div()
@@ -625,7 +786,12 @@ impl HsmViewModel {
                         ),
                 )
                 .child(actions);
-        row.into_any_element()
+        div()
+            .w_full()
+            .h(px(88.))
+            .pb_2()
+            .child(row)
+            .into_any_element()
     }
     fn action_row(
         &self,
@@ -681,34 +847,47 @@ impl Render for HsmViewModel {
             };
             if let Some(info) = &self.info {
                 for (label, value) in [
-                    ("Firmware", info.version.clone()),
-                    ("Free memory", format!("{} bytes", info.free_memory)),
-                    ("User PIN tries", info.pin.to_string()),
-                    ("Security officer PIN tries", info.so_pin.to_string()),
+                    (crate::i18n::tr("Firmware"), info.version.clone()),
                     (
-                        "Identity key description",
+                        crate::i18n::tr("Free memory"),
+                        crate::i18n::format("{0} bytes", &[format!("{}", info.free_memory)]),
+                    ),
+                    (
+                        crate::i18n::tr("User PIN tries"),
+                        info.pin
+                            .replace(" (default)", crate::i18n::tr(" (default)")),
+                    ),
+                    (
+                        crate::i18n::tr("Security officer PIN tries"),
+                        info.so_pin
+                            .replace(" (default)", crate::i18n::tr(" (default)")),
+                    ),
+                    (
+                        crate::i18n::tr("Identity key description"),
                         if info.files.contains(&0xC400) {
                             "C400"
                         } else {
-                            "Not installed"
+                            crate::i18n::tr("Not installed")
                         }
                         .into(),
                     ),
                     (
-                        "Identity key",
+                        crate::i18n::tr("Identity key"),
                         if info.files.contains(&0xCC00) {
                             "CC00"
                         } else {
-                            "Not installed"
+                            crate::i18n::tr("Not installed")
                         }
                         .into(),
                     ),
                 ] {
                     let field = information::field(label, value, cx.theme());
-                    details = if label.ends_with("PIN tries") {
+                    details = if label == crate::i18n::tr("User PIN tries")
+                        || label == crate::i18n::tr("Security officer PIN tries")
+                    {
                         details.child(field.id(SharedString::from(label)).tooltip(|window, cx| {
                             gpui_component::tooltip::Tooltip::new(
-                                "Remaining / total tries. (default) means the factory retry limit, not a default PIN. A dash means this firmware does not report the limit."
+                                crate::i18n::tr("Remaining / total tries. (default) means the factory retry limit, not a default PIN. A dash means this firmware does not report the limit.")
                             ).build(window, cx)
                         }))
                     } else {
@@ -721,26 +900,23 @@ impl Render for HsmViewModel {
                         .text_sm()
                         .text_color(cx.theme().muted_foreground)
                         .child(if self.loading {
-                            "Reading card information…"
+                            crate::i18n::tr("Reading card information…")
                         } else {
-                            "Card information unavailable. Refresh to retry."
+                            crate::i18n::tr("Card information unavailable. Refresh to retry.")
                         }),
                 );
             }
             body = body.child(
                 Card::new()
-                    .title("Card information")
-                    .description("HSM card status")
+                    .title(crate::i18n::tr("Card information"))
                     .icon(Icon::default().path("icons/microchip.svg"))
                     .header_right(
                         standard("hsm-refresh", cx)
                             .icon(Icon::default().path("icons/refresh-cw.svg"))
                             .disabled(self.loading)
-                            .tooltip(
-                                self.error
-                                    .clone()
-                                    .unwrap_or_else(|| "Refresh card information".into()),
-                            )
+                            .tooltip(self.error.clone().unwrap_or_else(|| {
+                                crate::i18n::tr("Refresh card information").into()
+                            }))
                             .on_click(cx.listener(|this, _, _, cx| this.load(cx))),
                     )
                     .child(details),
@@ -750,10 +926,10 @@ impl Render for HsmViewModel {
                 .as_ref()
                 .is_some_and(|i| i.initialized == Some(false))
             {
-                body = body.child(Card::new().title("Set up HSM")
-                    .description("Set your PINs before creating or importing keys")
-                    .child(div().text_sm().child("1. Set a user PIN and a security officer PIN. 2. Generate a key; its ID is assigned automatically. 3. Use the key from its row in the Keys list. HSM has no default PIN before setup."))
-                    .child(standard("hsm-setup", cx).label("Set up HSM").disabled(self.loading)
+                body = body.child(Card::new().title(crate::i18n::tr("Set up HSM"))
+                    .description(crate::i18n::tr("Set your PINs before creating or importing keys"))
+                    .child(div().text_sm().child(crate::i18n::tr("1. Set a user PIN and a security officer PIN. 2. Generate a key; its ID is assigned automatically. 3. Use the key from its row in the Keys list. HSM has no default PIN before setup.")))
+                    .child(standard("hsm-setup", cx).label(crate::i18n::tr("Set up HSM")).disabled(self.loading)
                         .on_click(cx.listener(|this, _, w, cx| this.open_action(Action::Setup, w, cx)))));
             }
             body = body
@@ -762,78 +938,61 @@ impl Render for HsmViewModel {
                 .child(
                     Card::new()
                         .title("PIN")
-                        .description("Manage the HSM user and security officer PINs")
                         .icon(Icon::default().path("icons/lock.svg"))
                         .child(self.action_row(
-                            "User PIN",
-                            "Authorizes private key operations and protected objects.",
+                            crate::i18n::tr("User PIN"),
+                            crate::i18n::tr(
+                                "Authorizes private key operations and protected objects.",
+                            ),
                             &[Action::Pin],
                             cx,
                         ))
                         .child(self.action_row(
-                            "Security officer PIN",
-                            "Authorizes user PIN recovery.",
+                            crate::i18n::tr("Security officer PIN"),
+                            crate::i18n::tr("Authorizes user PIN recovery."),
                             &[Action::SoPin, Action::Unblock],
                             cx,
                         )),
                 )
                 .child(
                     Card::new()
-                        .title("Key backup")
-                        .description("Protect and restore keys using DKEK shares")
+                        .title(crate::i18n::tr("Key backup"))
+                        .description(crate::i18n::tr(
+                            "Protect and restore keys using DKEK shares",
+                        ))
                         .icon(Icon::default().path("icons/save.svg"))
                         .child(self.action_row(
-                            "Wrapped keys",
-                            "Export an encrypted key or restore it into an unused slot.",
+                            crate::i18n::tr("Wrapped keys"),
+                            crate::i18n::tr(
+                                "Export an encrypted key or restore it into an unused slot.",
+                            ),
                             &[Action::Wrap, Action::Unwrap],
                             cx,
                         ))
                         .child(self.action_row(
-                            "DKEK shares",
-                            "Read the wrapping domain status or import a share.",
+                            crate::i18n::tr("DKEK shares"),
+                            crate::i18n::tr("Read the wrapping domain status or import a share."),
                             &[Action::Dkek],
                             cx,
                         )),
                 )
                 .child(
                     Card::new()
-                        .title("Reset")
-                        .description("Erase HSM contents and configure new PINs")
+                        .title(crate::i18n::tr("Reset"))
                         .icon(Icon::default().path("icons/trash-2.svg"))
                         .child(self.action_row(
-                            "Factory reset HSM",
-                            "Deletes all HSM keys and objects. This cannot be undone.",
+                            crate::i18n::tr("Factory reset HSM"),
+                            crate::i18n::tr(
+                                "Deletes all HSM keys and objects. This cannot be undone.",
+                            ),
                             &[Action::Initialize],
                             cx,
                         )),
                 );
-            if !self.result.is_empty() {
-                body =
-                    body.child(
-                        Card::new()
-                            .title("Operation result")
-                            .description("Hexadecimal output")
-                            .header_right(standard("copy-hsm-result", cx).label("Copy").on_click(
-                                cx.listener(|this, _, _, cx| {
-                                    cx.write_to_clipboard(ClipboardItem::new_string(
-                                        this.result.clone(),
-                                    ))
-                                }),
-                            ))
-                            .child(v_flex().gap_1().children(
-                                self.result.as_bytes().chunks(64).map(|line| {
-                                    div()
-                                        .text_sm()
-                                        .font_family("monospace")
-                                        .child(String::from_utf8_lossy(line).into_owned())
-                                }),
-                            )),
-                    );
-            }
         }
         PageView::build(
             "HSM",
-            "Manage SmartCard-HSM keys, certificates and PINs.",
+            crate::i18n::tr("Manage SmartCard-HSM keys, certificates and PINs."),
             body,
             cx.theme(),
         )
@@ -842,14 +1001,35 @@ impl Render for HsmViewModel {
 
 fn object_kind(id: u16) -> &'static str {
     match id >> 8 {
-        0xCC => "Private / secret key",
-        0xC4 => "Key description",
-        0xCE => "End-entity certificate",
-        0xCA => "CA certificate",
-        0xC8 => "Certificate description",
-        0xC9 => "Data description",
-        0xCF => "Readable data",
-        0xCD => "Protected data",
-        _ => "Object",
+        0xCC => crate::i18n::tr("Private / secret key"),
+        0xC4 => crate::i18n::tr("Key description"),
+        0xCE => crate::i18n::tr("End-entity certificate"),
+        0xCA => crate::i18n::tr("CA certificate"),
+        0xC8 => crate::i18n::tr("Certificate description"),
+        0xC9 => crate::i18n::tr("Data description"),
+        0xCF => crate::i18n::tr("Readable data"),
+        0xCD => crate::i18n::tr("Protected data"),
+        _ => crate::i18n::tr("Object"),
+    }
+}
+
+#[cfg(test)]
+mod result_tests {
+    use super::*;
+    #[core::prelude::v1::test]
+    fn object_text_and_binary_results_keep_copy_bytes() {
+        let text = "a note\n中文";
+        let output = operation_result(Action::Read, text.as_bytes()).unwrap();
+        assert_eq!(output.display, text);
+        assert_eq!(output.copy, text);
+        let bytes = vec![0xFE; 60];
+        let output = operation_result(Action::Read, &bytes).unwrap();
+        assert!(output.display.contains('\n'));
+        assert_eq!(hex::decode(output.copy).unwrap(), bytes);
+        assert!(operation_result(Action::Pin, &[]).is_none());
+        assert_eq!(
+            operation_result(Action::Crypto, b"abc").unwrap().copy,
+            "616263"
+        );
     }
 }

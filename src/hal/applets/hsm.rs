@@ -16,6 +16,8 @@ pub struct HsmInfo {
     pub so_pin: String,
     pub files: Vec<u16>,
     pub initialized: Option<bool>,
+    pub pin_default: Option<bool>,
+    pub so_pin_default: Option<bool>,
 }
 
 pub const KEY_ALGORITHMS: &[(&str, u8)] = &[
@@ -48,7 +50,12 @@ pub fn open() -> Result<CcidSession, PFError> {
 }
 
 fn pin_metadata(data: &[u8]) -> Result<String, PFError> {
-    if data.len() != 4 || data[0] != 1 || data[2] == 0 || data[1] > data[2] || data[3] & !3 != 0 {
+    if data.len() != 4
+        || !matches!(data[0], 1 | 2)
+        || data[2] == 0
+        || data[1] > data[2]
+        || data[3] & !(if data[0] == 2 { 7 } else { 3 }) != 0
+    {
         return Err(error("Invalid HSM PIN metadata"));
     }
     let state = if data[3] & 1 == 0 {
@@ -63,10 +70,20 @@ fn pin_metadata(data: &[u8]) -> Result<String, PFError> {
     Ok(format!("{}/{}{}", data[1], data[2], state))
 }
 
-fn pin_status(s: &CcidSession, reference: u8) -> Result<(String, Option<bool>), PFError> {
-    let (metadata, status) = s.transceive(&Apdu::read(0x80, 0xF7, 0, reference, &[]))?;
+fn pin_status(
+    s: &CcidSession,
+    reference: u8,
+) -> Result<(String, Option<bool>, Option<bool>), PFError> {
+    let (mut metadata, mut status) = s.transceive(&Apdu::read(0x80, 0xF7, 1, reference, &[]))?;
+    if matches!(status.0, 0x6A86 | 0x6B00) {
+        (metadata, status) = s.transceive(&Apdu::read(0x80, 0xF7, 0, reference, &[]))?;
+    }
     if status.is_ok() {
-        return Ok((pin_metadata(&metadata)?, Some(metadata[3] & 1 != 0)));
+        return Ok((
+            pin_metadata(&metadata)?,
+            Some(metadata[3] & 1 != 0),
+            (metadata[0] == 2).then_some(metadata[3] & 5 == 5),
+        ));
     }
     // Older firmware exposes only remaining retries; never invent the limit.
     if !matches!(status.0, 0x6D00 | 0x6A86 | 0x6B00 | 0x6E00) {
@@ -87,6 +104,7 @@ fn pin_status(s: &CcidSession, reference: u8) -> Result<(String, Option<bool>), 
             }
         },
         if sw.0 == 0x6A88 { Some(false) } else { None },
+        None,
     ))
 }
 pub fn parse_files(data: &[u8]) -> Result<Vec<u16>, PFError> {
@@ -112,13 +130,16 @@ pub fn read_info() -> Result<HsmInfo, PFError> {
     if r.len() != 7 {
         return Err(error("Invalid HSM version response"));
     }
-    let (pin, initialized) = pin_status(&s, 0x81)?;
+    let (pin, initialized, pin_default) = pin_status(&s, 0x81)?;
+    let (so_pin, _, so_pin_default) = pin_status(&s, 0x88)?;
     Ok(HsmInfo {
         version: format!("{}.{}", r[5], r[6]),
         free_memory: u32::from_be_bytes(r[..4].try_into().unwrap()),
         pin,
         initialized,
-        so_pin: pin_status(&s, 0x88)?.0,
+        pin_default,
+        so_pin_default,
+        so_pin,
         files: list_files(&s)?,
     })
 }
@@ -445,10 +466,13 @@ mod tests {
             pin_metadata(&[1, 3, 3, 2]).unwrap(),
             "3/3 (not initialized)"
         );
+        assert_eq!(pin_metadata(&[2, 3, 3, 7]).unwrap(), "3/3 (default)");
+        assert_eq!(pin_metadata(&[2, 2, 5, 1]).unwrap(), "2/5");
         for bad in [
-            &[1, 4, 3, 3][..],
+            &[2, 3, 3, 8][..],
+            &[1, 4, 3, 3],
             &[1, 0, 0, 1],
-            &[2, 3, 3, 3],
+            &[3, 3, 3, 3],
             &[1, 3, 3, 7],
             &[1, 3],
         ] {

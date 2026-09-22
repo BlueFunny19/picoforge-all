@@ -110,7 +110,7 @@ impl PFButton {
 
 impl RenderOnce for PFButton {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
-        let text = self.text;
+        let text = crate::i18n::text(self.text.as_ref());
 
         let mut btn = Button::new(self.id)
             .custom(
@@ -234,7 +234,7 @@ impl PFIconButton {
 
 impl RenderOnce for PFIconButton {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
-        let text = self.text;
+        let text = crate::i18n::text(self.text.as_ref());
         let icon = self.icon;
 
         let mut btn = Button::new("pf-icon-btn")

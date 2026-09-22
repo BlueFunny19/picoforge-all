@@ -3,6 +3,7 @@
 pub mod applet_gate;
 pub mod button;
 pub mod card;
+pub mod copy;
 pub mod dialog;
 pub mod form;
 pub mod page_view;
@@ -11,3 +12,5 @@ pub mod tag;
 
 pub mod information;
 pub mod notice;
+
+pub mod collection;

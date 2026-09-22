@@ -24,7 +24,8 @@ impl PasskeysViewModel {
         let pem_for_copy = pem.clone();
 
         let request_listener = cx.listener(|this, _, window, cx| {
-            let status_handle = dialog::open_status_dialog("Certificate Request", window, cx);
+            let status_handle =
+                dialog::open_status_dialog(crate::i18n::tr("Certificate Request"), window, cx);
             this.request_csr(status_handle, cx);
         });
 
@@ -52,26 +53,26 @@ impl PasskeysViewModel {
                 Ok(Ok(Some(path))) => match std::fs::write(&path, pem.as_bytes()) {
                     Ok(_) => {
                         let _ = entity.update(cx, |_, cx| {
-                            cx.emit(PasskeysEvent::Notification(format!(
-                                "CSR saved to {}",
-                                path.display()
+                            cx.emit(PasskeysEvent::Notification(crate::i18n::format(
+                                "CSR saved to {0}",
+                                &[format!("{}", path.display())],
                             )));
                         });
                     }
                     Err(e) => {
                         let _ = entity.update(cx, |_, cx| {
-                            cx.emit(PasskeysEvent::Notification(format!(
-                                "Failed to save CSR: {}",
-                                e
+                            cx.emit(PasskeysEvent::Notification(crate::i18n::format(
+                                "Failed to save CSR: {0}",
+                                &[format!("{}", e)],
                             )));
                         });
                     }
                 },
                 Ok(Err(e)) => {
                     let _ = entity.update(cx, |_, cx| {
-                        cx.emit(PasskeysEvent::Notification(format!(
-                            "Save dialog error: {}",
-                            e
+                        cx.emit(PasskeysEvent::Notification(crate::i18n::format(
+                            "Save dialog error: {0}",
+                            &[format!("{}", e)],
                         )));
                     });
                 }
@@ -106,7 +107,11 @@ impl PasskeysViewModel {
                     .justify_between()
                     .p_4()
                     .child(
-                        v_flex().child(div().font_medium().child("Enable enterprise attestation")),
+                        v_flex().child(
+                            div()
+                                .font_medium()
+                                .child(crate::i18n::tr("Enable enterprise attestation")),
+                        ),
                     )
                     .child(
                         h_flex().gap_2().child(
@@ -130,12 +135,12 @@ impl PasskeysViewModel {
                     .p_4()
                     .child(
                         v_flex()
-                            .child(div().font_medium().child("Certificate Signing Request"))
+                            .child(div().font_medium().child(crate::i18n::tr("Certificate Signing Request")))
                             .child(div().text_sm().text_color(theme.muted_foreground).child(
                                 if csr_ready {
-                                    "CSR retrieved"
+                                    crate::i18n::tr("CSR retrieved")
                                 } else {
-                                    "Get a CSR for enterprise attestation enrollment"
+                                    crate::i18n::tr("Get a CSR for enterprise attestation enrollment")
                                 },
                             )),
                     )
@@ -144,14 +149,14 @@ impl PasskeysViewModel {
                             .gap_2()
                             .when(csr_ready, |el| {
                                 el.child(
-                                    PFButton::new(if show_csr { "Hide CSR" } else { "View CSR" })
+                                    PFButton::new(if show_csr { crate::i18n::tr("Hide CSR") } else { crate::i18n::tr("View CSR") })
                                         .id("view-csr-btn")
                                         .with_colors(rgb(0x222225), rgb(0x2a2a2d), rgb(0x333336))
                                         .on_click(view_listener),
                                 )
                             })
                             .child(
-                                PFButton::new(if csr_ready { "Refresh" } else { "Request CSR" })
+                                PFButton::new(if csr_ready { crate::i18n::tr("Refresh") } else { crate::i18n::tr("Request CSR") })
                                     .id("request-csr-btn")
                                     .with_colors(rgb(0x222225), rgb(0x2a2a2d), rgb(0x333336))
                                     .loading(is_loading)
@@ -165,7 +170,7 @@ impl PasskeysViewModel {
                         v_flex()
                             .gap_3()
                             .child(div().text_sm().text_color(theme.muted_foreground).child(
-                                "Certificate Signing Request from the device's attestation key.",
+                                crate::i18n::tr("Certificate Signing Request from the device's attestation key."),
                             ))
                             .child(
                                 div()
@@ -182,7 +187,7 @@ impl PasskeysViewModel {
                                     .gap_2()
                                     .child(
                                         Button::new("copy-csr")
-                                            .label("Copy to Clipboard")
+                                            .label(crate::i18n::tr("Copy to Clipboard"))
                                             .on_click(move |_, _, cx| {
                                                 cx.write_to_clipboard(ClipboardItem::new_string(
                                                     pem_for_copy.clone(),
@@ -192,7 +197,7 @@ impl PasskeysViewModel {
                                     .child(
                                         Button::new("save-csr")
                                             .primary()
-                                            .label("Save to File")
+                                            .label(crate::i18n::tr("Save to File"))
                                             .on_click(save_listener),
                                     ),
                             ),
@@ -210,24 +215,25 @@ impl PasskeysViewModel {
             .rounded_lg()
             .child(
                 v_flex()
-                    .child(div().font_medium().child("Upload Certificate"))
                     .child(
                         div()
-                            .text_sm()
-                            .text_color(theme.muted_foreground)
-                            .child("Upload the signed certificate to the device"),
-                    ),
+                            .font_medium()
+                            .child(crate::i18n::tr("Upload Certificate")),
+                    )
+                    .child(div().text_sm().text_color(theme.muted_foreground).child(
+                        crate::i18n::tr("Upload the signed certificate to the device"),
+                    )),
             )
             .child(
-                PFButton::new("Upload Certificate")
+                PFButton::new(crate::i18n::tr("Upload Certificate"))
                     .id("upload-cert-btn")
                     .with_colors(rgb(0x222225), rgb(0x2a2a2d), rgb(0x333336))
                     .on_click(upload_listener),
             );
 
         Card::new()
-            .title("Enterprise Attestation")
-            .description("Configure enterprise-specific features")
+            .title(crate::i18n::tr("Enterprise Attestation"))
+            .description(crate::i18n::tr("Configure enterprise-specific features"))
             .icon(Icon::default().path("icons/shield-check.svg"))
             .child(
                 v_flex()
@@ -254,18 +260,17 @@ impl PasskeysViewModel {
                             .text_base()
                             .font_weight(gpui::FontWeight::MEDIUM)
                             .text_color(theme.foreground)
-                            .child("Factory Reset"),
+                            .child(crate::i18n::tr("Factory Reset")),
                     )
-                    .child(
-                        div()
-                            .text_sm()
-                            .text_color(theme.muted_foreground)
-                            .child("Erase all passkeys, credentials, and PIN. Cannot be undone."),
-                    ),
+                    .child(div().text_sm().text_color(theme.muted_foreground).child(
+                        crate::i18n::tr(
+                            "Erase all passkeys, credentials, and PIN. Cannot be undone.",
+                        ),
+                    )),
             )
             .child(
                 Button::new("reset-device")
-                    .child("Reset Device")
+                    .child(crate::i18n::tr("Reset Device"))
                     .custom(
                         ButtonCustomVariant::new(cx)
                             .color(theme.danger)
@@ -280,8 +285,7 @@ impl PasskeysViewModel {
             );
 
         Card::new()
-            .title("Reset")
-            .description("Perform a destructive factory reset")
+            .title(crate::i18n::tr("Reset"))
             .icon(Icon::default().path("icons/trash.svg"))
             .child(header)
     }
@@ -298,7 +302,7 @@ impl PasskeysViewModel {
             .child(
                 div()
                     .text_color(theme.muted_foreground)
-                    .child("Connect your pico-key to manage passkeys."),
+                    .child(crate::i18n::tr("Connect your pico-key to manage passkeys.")),
             )
             .into_any_element()
     }
@@ -315,7 +319,9 @@ impl PasskeysViewModel {
             .child(
                 div()
                     .text_color(theme.muted_foreground)
-                    .child("FIDO Passkeys are not supported on this device."),
+                    .child(crate::i18n::tr(
+                        "FIDO Passkeys are not supported on this device.",
+                    )),
             )
             .into_any_element()
     }
@@ -325,9 +331,8 @@ impl PasskeysViewModel {
         let min_len_row = self.render_min_pin_length_row(cx).into_any_element();
 
         Card::new()
-            .title("PIN Management")
+            .title(crate::i18n::tr("PIN Management"))
             .icon(Icon::default().path("icons/key.svg"))
-            .description("Configure FIDO2 PIN security")
             .child(v_flex().gap_4().child(status_row).child(min_len_row))
     }
 
@@ -358,23 +363,31 @@ impl PasskeysViewModel {
             .rounded_lg()
             .child(
                 v_flex()
-                    .child(div().font_medium().child("Current PIN Status"))
+                    .child(
+                        div()
+                            .font_medium()
+                            .child(crate::i18n::tr("Current PIN Status")),
+                    )
                     .child(
                         div()
                             .text_sm()
                             .text_color(theme.muted_foreground)
                             .child(if pin_set {
-                                "PIN is set"
+                                crate::i18n::tr("PIN is set")
                             } else {
-                                "No PIN configured"
+                                crate::i18n::tr("No PIN configured")
                             }),
                     ),
             )
             .child(
-                PFButton::new(if pin_set { "Change PIN" } else { "Set up PIN" })
-                    .id("change-pin-btn")
-                    .with_colors(rgb(0x222225), rgb(0x2a2a2d), rgb(0x333336))
-                    .on_click(listener),
+                PFButton::new(if pin_set {
+                    crate::i18n::tr("Change PIN")
+                } else {
+                    crate::i18n::tr("Set up PIN")
+                })
+                .id("change-pin-btn")
+                .with_colors(rgb(0x222225), rgb(0x2a2a2d), rgb(0x333336))
+                .on_click(listener),
             )
     }
 
@@ -398,16 +411,17 @@ impl PasskeysViewModel {
             .rounded_lg()
             .child(
                 v_flex()
-                    .child(div().font_medium().child("Minimum PIN Length"))
                     .child(
                         div()
-                            .text_sm()
-                            .text_color(theme.muted_foreground)
-                            .child(format!("Current: {} characters", min_len)),
-                    ),
+                            .font_medium()
+                            .child(crate::i18n::tr("Minimum PIN Length")),
+                    )
+                    .child(div().text_sm().text_color(theme.muted_foreground).child(
+                        crate::i18n::format("Current: {0} characters", &[format!("{}", min_len)]),
+                    )),
             )
             .child(
-                PFButton::new("Update Minimum Length")
+                PFButton::new(crate::i18n::tr("Update Minimum Length"))
                     .id("update-min-len-btn")
                     .with_colors(rgb(0x222225), rgb(0x2a2a2d), rgb(0x333336))
                     .disabled(!pin_set)
@@ -438,9 +452,8 @@ impl PasskeysViewModel {
         let theme = cx.theme();
 
         Card::new()
-            .title("Stored Passkeys")
+            .title(crate::i18n::tr("Stored Passkeys"))
             .icon(Icon::default().path("icons/key-round.svg"))
-            .description("View and manage your resident credentials")
             .child(
                 v_flex()
                     .items_center()
@@ -459,18 +472,18 @@ impl PasskeysViewModel {
                         div()
                             .text_lg()
                             .font_semibold()
-                            .child(if pin_set { "Authentication Required" } else { "Set up a FIDO PIN" }),
+                            .child(if pin_set { crate::i18n::tr("Authentication Required") } else { crate::i18n::tr("Set up a FIDO PIN") }),
                     )
                     .child(
                         div()
                             .text_color(theme.muted_foreground)
                             .text_sm()
-                            .child(if pin_set { "Unlock your device to view and manage passkeys." } else { "Create a PIN before managing stored passkeys. FIDO has no default PIN." }),
+                            .child(if pin_set { crate::i18n::tr("Unlock your device to view and manage passkeys.") } else { crate::i18n::tr("Create a PIN before managing stored passkeys. FIDO has no default PIN.") }),
                     )
                     .child(
                         PFIconButton::new(
                             Icon::default().path("icons/lock-open.svg"),
-                            if pin_set { "Unlock Storage" } else { "Set up PIN" },
+                            if pin_set { crate::i18n::tr("Unlock Storage") } else { crate::i18n::tr("Set up PIN") },
                         )
                         .on_click(listener)
                         .with_colors(rgb(0xe4e4e7), rgb(0xd0d0d3), rgb(0xe4e4e7))
@@ -493,9 +506,8 @@ impl PasskeysViewModel {
         let theme = cx.theme();
 
         Card::new()
-            .title("Stored Passkeys")
+            .title(crate::i18n::tr("Stored Passkeys"))
             .icon(Icon::default().path("icons/key-round.svg"))
-            .description("View and manage your resident credentials")
             .child(
                 v_flex()
                     .gap_6()
@@ -518,22 +530,24 @@ impl PasskeysViewModel {
                                                             .path("icons/lock-open.svg")
                                                             .size_3p5(),
                                                     )
-                                                    .child("Unlocked"),
+                                                    .child(crate::i18n::tr("Unlocked")),
                                             )
                                             .color(gpui::green()),
                                     )
                                     .child(div().w_px().h_4().bg(theme.border))
                                     .child(
-                                        div()
-                                            .text_sm()
-                                            .text_color(theme.muted_foreground)
-                                            .child(format!("{} credentials stored", creds_len)),
+                                        div().text_sm().text_color(theme.muted_foreground).child(
+                                            crate::i18n::format(
+                                                "{0} credentials stored",
+                                                &[format!("{}", creds_len)],
+                                            ),
+                                        ),
                                     ),
                             )
                             .child(
                                 PFIconButton::new(
                                     Icon::default().path("icons/lock.svg").size_3p5(),
-                                    "Lock Storage",
+                                    crate::i18n::tr("Lock Storage"),
                                 )
                                 .small()
                                 .on_click(lock_listener),
@@ -574,14 +588,14 @@ impl PasskeysViewModel {
                             .text_color(theme.muted_foreground),
                     ),
             )
-            .child(div().text_lg().font_semibold().child("No Passkeys Found"))
+            .child(div().text_lg().font_semibold().child(crate::i18n::tr("No Passkeys Found")))
             .child(
                 div()
                     .text_color(theme.muted_foreground)
                     .text_sm()
                     .text_center()
                     .max_w(px(384.0))
-                    .child("This device doesn't have any resident credentials stored yet. Create passkeys on websites to see them here."),
+                    .child(crate::i18n::tr("This device doesn't have any resident credentials stored yet. Create passkeys on websites to see them here.")),
             )
     }
 
@@ -655,7 +669,7 @@ impl PasskeysViewModel {
                                             } else if !cred.rp_id.is_empty() {
                                                 cred.rp_id.clone()
                                             } else {
-                                                "Unknown Service".to_string()
+                                                crate::i18n::tr("Unknown Service").to_string()
                                             }),
                                     )
                                     .child(
@@ -699,8 +713,8 @@ impl Render for PasskeysViewModel {
         if !device_connected {
             let theme = cx.theme();
             return PageView::build(
-                "Passkeys",
-                "Manage your security PIN and the FIDO credentials (passkeys) stored on your device.",
+                crate::i18n::tr("Passkeys"),
+                crate::i18n::tr("Manage your security PIN and the FIDO credentials (passkeys) stored on your device."),
                 self.render_no_device(theme).into_any_element(),
                 theme,
             )
@@ -717,8 +731,8 @@ impl Render for PasskeysViewModel {
         if !has_fido {
             let theme = cx.theme();
             return PageView::build(
-                "Passkeys",
-                "Manage your security PIN and the FIDO credentials (passkeys) stored on your device.",
+                crate::i18n::tr("Passkeys"),
+                crate::i18n::tr("Manage your security PIN and the FIDO credentials (passkeys) stored on your device."),
                 self.render_not_supported(theme).into_any_element(),
                 theme,
             )
@@ -738,8 +752,8 @@ impl Render for PasskeysViewModel {
             .size_full()
             .relative()
             .child(PageView::build(
-                "Passkeys",
-                "Manage your security PIN and the FIDO credentials (passkeys) stored on your device.",
+                crate::i18n::tr("Passkeys"),
+                crate::i18n::tr("Manage your security PIN and the FIDO credentials (passkeys) stored on your device."),
                 content.into_any_element(),
                 theme,
             ))

@@ -23,7 +23,7 @@ impl SecurityViewModel {
             window,
             |_, _, event: &OffboardEvent, window, cx| match event {
                 OffboardEvent::Notification(message) => {
-                    window.push_notification(message.clone(), cx);
+                    window.push_notification(crate::i18n::text(message), cx);
                 }
             },
         )
@@ -97,8 +97,8 @@ impl Render for SecurityAcknowledgement {
         use gpui_component::{ActiveTheme, h_flex, switch::Switch, v_flex};
         v_flex().w_full().gap_5().pb_4()
             .child(crate::ui::components::notice::warning(
-                "Permanent hardware changes",
-                "Secure Boot and Secure Lock cannot be undone. Keep a backup of the original trusted signing key before changing protection settings.",
+                crate::i18n::tr("Permanent hardware changes"),
+                crate::i18n::tr("Secure Boot and Secure Lock cannot be undone. Keep a backup of the original trusted signing key before changing protection settings."),
                 true))
             .child(h_flex().w_full().items_center().gap_3().p_3().rounded_lg()
                 .bg(rgb(0x18181b)).border_1().border_color(cx.theme().border)
@@ -107,7 +107,7 @@ impl Render for SecurityAcknowledgement {
                         this.acknowledged = *checked;
                         cx.notify();
                     })))
-                .child(div().flex_1().text_sm().child("I understand these changes are permanent.")))
+                .child(div().flex_1().text_sm().child(crate::i18n::tr("I understand these changes are permanent."))))
     }
 }
 fn show_entry_warning(window: &mut Window, cx: &mut App) {
@@ -134,7 +134,7 @@ fn show_entry_warning(window: &mut Window, cx: &mut App) {
         .detach();
     window.open_dialog(cx, move |dialog, window, _| {
         dialog
-            .title("Before changing security settings")
+            .title(crate::i18n::tr("Before changing security settings"))
             .border_1()
             .border_color(rgb(0xef4444))
             .width(px(560.).min(window.viewport_size().width - px(48.)))
@@ -157,9 +157,9 @@ fn show_entry_warning(window: &mut Window, cx: &mut App) {
                     vec![
                         crate::ui::components::button::standard("security-continue", cx)
                             .label(if remaining > 0 {
-                                format!("Continue in {remaining}s")
+                                crate::i18n::format("Continue in {0}s", &[format!("{}", remaining)])
                             } else {
-                                "Continue".into()
+                                crate::i18n::tr("Continue").into()
                             })
                             .disabled(!enabled)
                             .on_click(move |_, window, cx| {

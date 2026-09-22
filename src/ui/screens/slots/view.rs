@@ -35,16 +35,20 @@ impl SlotsViewModel {
         let configured = info.configured();
         let theme = cx.theme();
 
-        let program_btn = PFButton::new(if configured { "Reprogram" } else { "Program" })
-            .id(format!("prog-{slot}"))
-            .with_colors(rgb(0x222225), rgb(0x2a2a2d), rgb(0x333336))
-            .disabled(self.loading)
-            .on_click(cx.listener(move |this, _, window, cx| {
-                this.open_program_dialog(slot, window, cx);
-            }));
+        let program_btn = PFButton::new(if configured {
+            crate::i18n::tr("Reprogram")
+        } else {
+            crate::i18n::tr("Program")
+        })
+        .id(format!("prog-{slot}"))
+        .with_colors(rgb(0x222225), rgb(0x2a2a2d), rgb(0x333336))
+        .disabled(self.loading)
+        .on_click(cx.listener(move |this, _, window, cx| {
+            this.open_program_dialog(slot, window, cx);
+        }));
         let test_btn = (info.kind == otp::SlotType::ChallengeResponse).then(|| {
             Button::new(SharedString::from(format!("test-{slot}")))
-                .label("Test")
+                .label(crate::i18n::tr("Test"))
                 .ghost()
                 .disabled(self.loading)
                 .on_click(cx.listener(move |this, _, window, cx| {
@@ -68,21 +72,29 @@ impl SlotsViewModel {
             .border_1()
             .border_color(theme.border)
             .rounded_lg()
-            .child(div().font_medium().child(format!("Slot {slot}")))
+            .child(
+                div()
+                    .font_medium()
+                    .child(crate::i18n::format("Slot {0}", &[format!("{}", slot)])),
+            )
             .child(
                 crate::ui::components::information::grid()
                     .child(crate::ui::components::information::field(
-                        "Type",
+                        crate::i18n::tr("Type"),
                         if configured {
                             info.kind.label()
                         } else {
-                            "Empty"
+                            crate::i18n::tr("Empty")
                         },
                         theme,
                     ))
                     .child(crate::ui::components::information::field(
-                        "Touch confirmation",
-                        if info.touch { "Required" } else { "Off" },
+                        crate::i18n::tr("Touch confirmation"),
+                        if info.touch {
+                            crate::i18n::tr("Required")
+                        } else {
+                            crate::i18n::tr("Off")
+                        },
                         theme,
                     )),
             )
@@ -116,7 +128,7 @@ impl Render for SlotsViewModel {
         }
 
         let theme = cx.theme();
-        let swap_btn = PFButton::new("Swap 1 ↔ 2")
+        let swap_btn = PFButton::new(crate::i18n::tr("Swap 1 ↔ 2"))
             .id("swap-slots")
             .with_colors(rgb(0x222225), rgb(0x2a2a2d), rgb(0x333336))
             .disabled(self.loading)
@@ -135,8 +147,11 @@ impl Render for SlotsViewModel {
         let toolbar = h_flex().gap_2().child(swap_btn).child(refresh_btn);
 
         let slots_card = Card::new()
-            .title("Slots")
-            .description(format!("{count} configurable slots"))
+            .title(crate::i18n::tr("Slots"))
+            .description(crate::i18n::format(
+                "{0} configurable slots",
+                &[format!("{}", count)],
+            ))
             .icon(Icon::default().path("icons/touch-app.svg"))
             .header_right(toolbar)
             .child(v_flex().gap_2().children(cards));

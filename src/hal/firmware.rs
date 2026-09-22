@@ -278,7 +278,16 @@ impl Worker {
         let text = a.join().map_err(|_| "Output reader stopped")?
             + &b.join().map_err(|_| "Output reader stopped")?;
         if !status.success() {
-            return Err(text.trim().to_owned());
+            return Err(if text.contains("Signature verification failed") {
+                "Signature verification failed".into()
+            } else if text.to_lowercase().contains("no accessible") {
+                "No device detected in update mode.".into()
+            } else {
+                format!(
+                    "picotool failed with exit code {}. Enable Raw output for details.",
+                    status.code().unwrap_or(-1)
+                )
+            });
         }
         Ok(text)
     }
@@ -348,7 +357,7 @@ impl Worker {
             if nuke {
                 "Nuke selected: press the board button while its light breathes red."
             } else {
-                "Press the board button when its light flashes yellow."
+                "When the light flashes, press and release the device button (BOOTSEL)."
             },
         );
         management(&self.serial, &update_command(nuke)).map_err(|e| {
@@ -462,7 +471,15 @@ pub fn run(request: Request, log: Sender<String>) -> Result<Response, String> {
         serial: request.serial.to_uppercase(),
         log,
     };
-    w.log("INFO", format!("Starting {action}"));
+    let operation = match action {
+        "image" | "inspect" | "check" => "firmware inspection",
+        "sign" => "firmware signing",
+        "flash" => "firmware update",
+        "reboot" => "device restart",
+        "bootsel" => "update mode",
+        _ => action,
+    };
+    w.log("INFO", format!("Starting {operation}"));
     let mut result = Response::default();
     match action {
         "scan" => {
@@ -598,7 +615,11 @@ pub fn run(request: Request, log: Sender<String>) -> Result<Response, String> {
         }
         _ => result.review = security::execute(&w, &request)?,
     }
-    w.log("INFO", format!("{action} completed"));
+    let mut complete = operation.to_owned();
+    if let Some(first) = complete.get_mut(..1) {
+        first.make_ascii_uppercase();
+    }
+    w.log("INFO", format!("{complete} completed"));
     Ok(result)
 }
 #[cfg(test)]

@@ -87,3 +87,25 @@ pub fn read_root_status() -> Result<RootStatus, PFError> {
     })
 }
 pub mod pico_led;
+
+/// Set the selected Pico All's runtime UTC clock; this does not write credentials or Flash.
+pub fn sync_clock() -> Result<(), PFError> {
+    let card = PcscTransport::open()?;
+    if card.firmware_type != FirmwareType::PicoAll {
+        return Ok(());
+    }
+    let now = u32::try_from(chrono::Utc::now().timestamp())
+        .map_err(|_| PFError::Device("Computer clock is outside the supported range".into()))?;
+    let mut command = vec![0x80, 0x1c, 0x02, 0x02, 4];
+    command.extend_from_slice(&now.to_be_bytes());
+    let mut response = [0; 32];
+    if !card
+        .transmit(&command, &mut response)?
+        .ends_with(&[0x90, 0])
+    {
+        return Err(PFError::Device(
+            "Could not synchronize the device clock".into(),
+        ));
+    }
+    Ok(())
+}

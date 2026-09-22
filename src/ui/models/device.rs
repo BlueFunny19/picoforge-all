@@ -712,6 +712,13 @@ impl DeviceRepo {
                 .background_executor()
                 .spawn(async {
                     let status = io::read_device_details()?;
+                    if status.firmware_type == FirmwareType::PicoAll
+                        && crate::preferences::get().sync_clock
+                    {
+                        if let Err(error) = crate::hal::rescue::sync_clock() {
+                            log::warn!("Clock sync: {error}");
+                        }
+                    }
                     let fido = io::get_fido_info().ok();
                     let managed = matches!(
                         status.firmware_type,

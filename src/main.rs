@@ -894,7 +894,9 @@ use ui::app::ApplicationRoot;
 
 pub mod error;
 mod hal;
+mod i18n;
 pub mod logging;
+mod preferences;
 mod ui;
 
 fn main() {
@@ -907,6 +909,7 @@ fn main() {
         })
         .detach();
         gpui_component::init(cx);
+        preferences::load();
         Theme::change(ThemeMode::Dark, None, cx);
 
         // Register sidebar toggle keybinding

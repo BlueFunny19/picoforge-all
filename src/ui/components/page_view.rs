@@ -30,13 +30,13 @@ impl PageView {
                                         .text_3xl()
                                         .font_extrabold()
                                         .text_color(theme.foreground)
-                                        .child(title.into()),
+                                        .child(crate::i18n::text(title.into().as_ref())),
                                 )
                                 .child(
                                     div()
                                         .text_sm()
                                         .text_color(theme.muted_foreground)
-                                        .child(subtitle.into()),
+                                        .child(crate::i18n::text(subtitle.into().as_ref())),
                                 ),
                         )
                         .child(content),

@@ -2,17 +2,25 @@
 //! management, certificate export, and factory reset.
 
 use crate::error::PFError;
+use crate::i18n::LocalizedPlaceholder;
 use crate::ui::app::AppModels;
 use crate::ui::components::applet_gate::AppletGate;
 use crate::ui::components::dialog;
 use crate::ui::components::dialog::StatusContent;
-use crate::ui::components::form::{FormErrors, info_card};
+use crate::ui::components::form::{DefaultSecret, FormErrors};
 use crate::ui::components::form::{LabeledU8, select_state, selected_key};
 use crate::ui::models::device::{DeviceEvent, DeviceRepo, MgmAuth, USB_CAP_PIV, piv};
 use gpui::*;
 use gpui_component::WindowExt;
 use gpui_component::button::ButtonVariants;
 use gpui_component::select::SelectState;
+
+pub(super) const SLOT_FILTERS: &[(&str, u8)] = &[
+    ("All slots", 0),
+    ("With certificate", 1),
+    ("With key", 2),
+    ("Empty slots", 3),
+];
 
 const OPT_ALGO: &[(&str, u8)] = &[
     ("ECC P-256", 0x11),
@@ -93,7 +101,7 @@ fn resolve_mgm_auth(
         if pin.is_empty() {
             let _ = view.update(cx, |_, cx| {
                 cx.emit(PivEvent::Notification(
-                    "Enter the PIN to unlock the management key".into(),
+                    crate::i18n::tr("Enter the PIN to unlock the management key").into(),
                 ));
             });
             return None;
@@ -105,7 +113,7 @@ fn resolve_mgm_auth(
         None => {
             let _ = view.update(cx, |_, cx| {
                 cx.emit(PivEvent::Notification(
-                    "Management key must be 16/24/32-byte hex".into(),
+                    crate::i18n::tr("Management key must be 16/24/32-byte hex").into(),
                 ));
             });
             None
@@ -114,6 +122,8 @@ fn resolve_mgm_auth(
 }
 
 pub struct PivViewModel {
+    pub(super) slot_scroll: UniformListScrollHandle,
+    pub(super) slot_filter: Entity<SelectState<Vec<LabeledU8>>>,
     pub(super) slot_search: Entity<gpui_component::input::InputState>,
     pub(super) device: Entity<DeviceRepo>,
     pub(super) info: Option<piv::PivInfo>,
@@ -130,9 +140,10 @@ impl EventEmitter<PivEvent> for PivViewModel {}
 
 impl PivViewModel {
     pub fn new(window: &mut Window, cx: &mut Context<Self>, models: &AppModels) -> Self {
+        let slot_filter = crate::ui::components::collection::filter(SLOT_FILTERS, window, cx);
         let slot_search = cx.new(|cx| {
             gpui_component::input::InputState::new(window, cx)
-                .placeholder("Search slots, algorithms or certificates")
+                .localized_placeholder("Search slots, algorithms or certificates", cx)
         });
         cx.subscribe(
             &slot_search,
@@ -145,6 +156,8 @@ impl PivViewModel {
         })
         .detach();
         let mut this = Self {
+            slot_scroll: UniformListScrollHandle::new(),
+            slot_filter,
             slot_search,
             device,
             info: None,
@@ -191,28 +204,49 @@ impl PivViewModel {
         self.info.as_ref().map(|i| i.mgm_protected).unwrap_or(false)
     }
 
-    /// The management-auth input for a dialog: a masked PIN field on a
-    /// `--protect`'d card, else a hex management-key field defaulting to the key.
+    /// Use public factory constants only when current card metadata confirms them.
+    fn pin_default(&self, puk: bool) -> DefaultSecret {
+        DefaultSecret {
+            value: if puk { "12345678" } else { "123456" },
+            active: self
+                .info
+                .as_ref()
+                .and_then(|i| if puk { i.puk } else { i.pin })
+                .map(|p| p.is_default),
+        }
+    }
+
+    fn mgm_automatic(&self) -> bool {
+        if self.mgm_protected() {
+            self.pin_default(false).automatic()
+        } else {
+            self.info.as_ref().is_some_and(|i| i.mgm_default)
+        }
+    }
+
     fn mgm_input(
         &self,
         window: &mut Window,
         cx: &mut App,
     ) -> Entity<gpui_component::input::InputState> {
         if self.mgm_protected() {
-            cx.new(|cx| gpui_component::input::InputState::new(window, cx).masked(true))
+            self.pin_default(false).input(window, cx)
         } else {
-            cx.new(|cx| {
-                gpui_component::input::InputState::new(window, cx).default_value(default_mgm_hex())
-            })
+            let value = if self.info.as_ref().is_some_and(|i| i.mgm_default) {
+                default_mgm_hex()
+            } else {
+                String::new()
+            };
+            cx.new(|cx| gpui_component::input::InputState::new(window, cx).default_value(value))
         }
     }
 
     /// The dialog label for the management-auth field.
     fn mgm_label(&self) -> &'static str {
         if self.mgm_protected() {
-            "PIN (the management key is PIN-protected)"
+            crate::i18n::tr("PIN (the management key is PIN-protected)")
         } else {
-            "Management key (hex)"
+            crate::i18n::tr("Management key (hex)")
         }
     }
 
@@ -237,7 +271,10 @@ impl PivViewModel {
                     }
                     Err(e) => {
                         log::warn!("PIV read failed: {e}");
-                        cx.emit(PivEvent::Notification(format!("PIV: {e}")));
+                        cx.emit(PivEvent::Notification(crate::i18n::format(
+                            "PIV: {0}",
+                            &[format!("{}", e)],
+                        )));
                     }
                 }
                 cx.notify();
@@ -307,6 +344,7 @@ impl PivViewModel {
         let mgm_algo = self.mgm_algo();
         let protected = self.mgm_protected();
         let mgm_label = self.mgm_label();
+        let mgm_automatic = self.mgm_automatic();
 
         let view = cx.entity().downgrade();
         let submit = {
@@ -323,14 +361,15 @@ impl PivViewModel {
                 let pin_pol = selected_key(&pin_sel, OPT_PIN_POLICY, cx);
                 let touch_pol = selected_key(&touch_sel, OPT_TOUCH_POLICY, cx);
                 window.close_dialog(cx);
-                let status = dialog::open_status_dialog("Generating Key", window, cx);
+                let status =
+                    dialog::open_status_dialog(crate::i18n::tr("Generating Key"), window, cx);
                 let _ = view.update(cx, |this, cx| {
                     this.run(
                         move || {
                             DeviceRepo::piv_generate_blocking(slot, algo, pin_pol, touch_pol, auth)
                                 .map(|_| ())
                         },
-                        "Key generated.",
+                        crate::i18n::tr("Key generated."),
                         status,
                         cx,
                     );
@@ -349,7 +388,7 @@ impl PivViewModel {
                 gpui_component::v_flex()
                     .gap_1()
                     .flex_1()
-                    .child(label.to_string())
+                    .child(crate::i18n::text(label))
                     .child(
                         gpui_component::select::Select::new(sel)
                             .w_full()
@@ -357,21 +396,30 @@ impl PivViewModel {
                     )
             };
             dialog
-                .title(format!("Generate — {}", piv::slot_label(slot)))
-                .child("Generates a new key pair and a self-signed certificate in this slot.")
+                .title(crate::i18n::format(
+                    "Generate — {0}",
+                    &[format!("{}", crate::i18n::text(piv::slot_label(slot)))],
+                ))
+                .child(crate::i18n::tr(
+                    "Generates a new key pair and a self-signed certificate in this slot.",
+                ))
                 .child(
                     gpui_component::v_flex()
                         .gap_3()
                         .pb_2()
-                        .child(field("Algorithm", &algo_sel))
+                        .child(field(crate::i18n::tr("Algorithm"), &algo_sel))
                         .child(
                             gpui_component::h_flex()
                                 .gap_3()
-                                .child(field("PIN policy", &pin_sel))
-                                .child(field("Touch policy", &touch_sel)),
+                                .child(field(crate::i18n::tr("PIN policy"), &pin_sel))
+                                .child(field(crate::i18n::tr("Touch policy"), &touch_sel)),
                         )
-                        .child(mgm_label)
-                        .child(gpui_component::input::Input::new(&mgm)),
+                        .children((!mgm_automatic).then(|| {
+                            gpui_component::v_flex()
+                                .gap_2()
+                                .child(mgm_label)
+                                .child(gpui_component::input::Input::new(&mgm))
+                        })),
                 )
                 .on_ok(move |_, window, cx| {
                     ok(window, cx);
@@ -381,11 +429,11 @@ impl PivViewModel {
                     let s = btn.clone();
                     vec![
                         gpui_component::button::Button::new("cancel")
-                            .label("Cancel")
+                            .label(crate::i18n::tr("Cancel"))
                             .on_click(|_, window, cx| window.close_dialog(cx)),
                         gpui_component::button::Button::new("gen")
                             .primary()
-                            .label("Generate")
+                            .label(crate::i18n::tr("Generate"))
                             .on_click(move |_, window, cx| s(window, cx)),
                     ]
                 })
@@ -417,14 +465,20 @@ impl PivViewModel {
                 Ok(der) => {
                     let pem = der_to_pem(&der);
                     match std::fs::write(&path, pem) {
-                        Ok(_) => cx.emit(PivEvent::Notification(format!(
-                            "Certificate saved to {}",
-                            path.display()
+                        Ok(_) => cx.emit(PivEvent::Notification(crate::i18n::format(
+                            "Certificate saved to {0}",
+                            &[format!("{}", path.display())],
                         ))),
-                        Err(e) => cx.emit(PivEvent::Notification(format!("Save failed: {e}"))),
+                        Err(e) => cx.emit(PivEvent::Notification(crate::i18n::format(
+                            "Save failed: {0}",
+                            &[format!("{}", e)],
+                        ))),
                     }
                 }
-                Err(e) => cx.emit(PivEvent::Notification(format!("Export failed: {e}"))),
+                Err(e) => cx.emit(PivEvent::Notification(crate::i18n::format(
+                    "Export failed: {0}",
+                    &[format!("{}", e)],
+                ))),
             });
         }));
     }
@@ -437,11 +491,23 @@ impl PivViewModel {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let title = if is_puk { "Change PUK" } else { "Change PIN" };
+        let title = if is_puk {
+            crate::i18n::tr("Change PUK")
+        } else {
+            crate::i18n::tr("Change PIN")
+        };
         self.two_secret_dialog(
             title,
-            if is_puk { "Current PUK" } else { "Current PIN" },
-            if is_puk { "New PUK" } else { "New PIN" },
+            if is_puk {
+                crate::i18n::tr("Current PUK")
+            } else {
+                crate::i18n::tr("Current PIN")
+            },
+            if is_puk {
+                crate::i18n::tr("New PUK")
+            } else {
+                crate::i18n::tr("New PIN")
+            },
             window,
             cx,
             move |cur, new| {
@@ -452,22 +518,24 @@ impl PivViewModel {
                 }
             },
             if is_puk {
-                "PUK changed."
+                crate::i18n::tr("PUK changed.")
             } else {
-                "PIN changed."
+                crate::i18n::tr("PIN changed.")
             },
+            self.pin_default(is_puk),
         );
     }
 
     pub(super) fn open_unblock_pin(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.two_secret_dialog(
-            "Unblock PIN",
+            crate::i18n::tr("Unblock PIN"),
             "PUK",
-            "New PIN",
+            crate::i18n::tr("New PIN"),
             window,
             cx,
             DeviceRepo::piv_unblock_pin_blocking,
-            "PIN unblocked.",
+            crate::i18n::tr("PIN unblocked."),
+            self.pin_default(true),
         );
     }
 
@@ -483,8 +551,9 @@ impl PivViewModel {
         cx: &mut Context<Self>,
         op: impl Fn(String, String) -> Result<(), PFError> + Send + Clone + 'static,
         ok_msg: &'static str,
+        default: DefaultSecret,
     ) {
-        let a = cx.new(|cx| gpui_component::input::InputState::new(window, cx).masked(true));
+        let a = default.input(window, cx);
         let b = cx.new(|cx| gpui_component::input::InputState::new(window, cx).masked(true));
         let errors = FormErrors::default();
         errors.watch(0, &a, window, cx);
@@ -518,17 +587,12 @@ impl PivViewModel {
             let ok = submit.clone();
             let btn = submit.clone();
             dialog
-                .title(title)
-                .child(info_card(if label_a.to_lowercase().contains("puk") {
-                    "Factory default PUK: 12345678, only if unchanged."
-                } else {
-                    "Factory default PIN: 123456, only if unchanged."
-                }))
+                .title(crate::i18n::text(title))
                 .child(
                     gpui_component::v_flex()
                         .gap_3()
                         .pb_2()
-                        .child(errors.field(0, label_a, &a, true))
+                        .children(default.field(&errors, 0, label_a, &a, true))
                         .child(errors.field(1, label_b, &b, true)),
                 )
                 .on_ok(move |_, window, cx| {
@@ -539,11 +603,11 @@ impl PivViewModel {
                     let s = btn.clone();
                     vec![
                         gpui_component::button::Button::new("cancel")
-                            .label("Cancel")
+                            .label(crate::i18n::tr("Cancel"))
                             .on_click(|_, window, cx| window.close_dialog(cx)),
                         gpui_component::button::Button::new("ok")
                             .primary()
-                            .label("Save")
+                            .label(crate::i18n::tr("Save"))
                             .on_click(move |_, window, cx| s(window, cx)),
                     ]
                 })
@@ -562,6 +626,7 @@ impl PivViewModel {
         let mgm = self.mgm_input(window, cx);
         let protected = self.mgm_protected();
         let mgm_label = self.mgm_label();
+        let mgm_automatic = self.mgm_automatic();
         let view = cx.entity().downgrade();
         let submit = {
             let mgm = mgm.clone();
@@ -571,11 +636,12 @@ impl PivViewModel {
                     return;
                 };
                 window.close_dialog(cx);
-                let status = dialog::open_status_dialog("Deleting Certificate", window, cx);
+                let status =
+                    dialog::open_status_dialog(crate::i18n::tr("Deleting Certificate"), window, cx);
                 let _ = view.update(cx, |this, cx| {
                     this.run(
                         move || DeviceRepo::piv_delete_cert_blocking(slot, auth),
-                        "Certificate deleted.",
+                        crate::i18n::tr("Certificate deleted."),
                         status,
                         cx,
                     );
@@ -587,16 +653,23 @@ impl PivViewModel {
             let ok = submit.clone();
             let btn = submit.clone();
             dialog
-                .title(format!("Delete certificate — {}", piv::slot_label(slot)))
-                .child(
+                .title(crate::i18n::format(
+                    "Delete certificate — {0}",
+                    &[format!("{}", crate::i18n::text(piv::slot_label(slot)))],
+                ))
+                .child(crate::i18n::tr(
                     "Clears this slot's certificate (the key stays). Requires the management key.",
-                )
+                ))
                 .child(
                     gpui_component::v_flex()
                         .gap_2()
                         .pb_2()
-                        .child(mgm_label)
-                        .child(gpui_component::input::Input::new(&mgm)),
+                        .children((!mgm_automatic).then(|| {
+                            gpui_component::v_flex()
+                                .gap_2()
+                                .child(mgm_label)
+                                .child(gpui_component::input::Input::new(&mgm))
+                        })),
                 )
                 .on_ok(move |_, window, cx| {
                     ok(window, cx);
@@ -606,11 +679,11 @@ impl PivViewModel {
                     let s = btn.clone();
                     vec![
                         gpui_component::button::Button::new("cancel")
-                            .label("Cancel")
+                            .label(crate::i18n::tr("Cancel"))
                             .on_click(|_, window, cx| window.close_dialog(cx)),
                         gpui_component::button::Button::new("del")
                             .danger()
-                            .label("Delete")
+                            .label(crate::i18n::tr("Delete"))
                             .on_click(move |_, window, cx| s(window, cx)),
                     ]
                 })
@@ -624,7 +697,9 @@ impl PivViewModel {
         let mgm = self.mgm_input(window, cx);
         let protected = self.mgm_protected();
         let mgm_label = self.mgm_label();
-        let pin = cx.new(|cx| gpui_component::input::InputState::new(window, cx).masked(true));
+        let mgm_automatic = self.mgm_automatic();
+        let pin_default = self.pin_default(false);
+        let pin = pin_default.input(window, cx);
         let pin_tries = select_state(window, cx, OPT_TRIES, 0);
         let puk_tries = select_state(window, cx, OPT_TRIES, 0);
         let view = cx.entity().downgrade();
@@ -640,20 +715,18 @@ impl PivViewModel {
                 };
                 let pin_v = pin.read(cx).text().to_string();
                 if pin_v.is_empty() {
-                    window.push_notification(
-                        "PIN is required. The factory default is 123456 if unchanged.",
-                        cx,
-                    );
+                    window.push_notification(crate::i18n::tr("Enter your current PIN."), cx);
                     return;
                 }
                 let pt = selected_key(&pin_tries, OPT_TRIES, cx);
                 let ut = selected_key(&puk_tries, OPT_TRIES, cx);
                 window.close_dialog(cx);
-                let status = dialog::open_status_dialog("Setting Retries", window, cx);
+                let status =
+                    dialog::open_status_dialog(crate::i18n::tr("Setting Retries"), window, cx);
                 let _ = view.update(cx, |this, cx| {
                     this.run(
                         move || DeviceRepo::piv_set_retries_blocking(auth, pin_v, pt, ut),
-                        "Retry counters updated (PIN/PUK reset to defaults).",
+                        crate::i18n::tr("Retry counters updated (PIN/PUK reset to defaults)."),
                         status,
                         cx,
                     );
@@ -671,7 +744,7 @@ impl PivViewModel {
                 gpui_component::v_flex()
                     .gap_1()
                     .flex_1()
-                    .child(label.to_string())
+                    .child(crate::i18n::text(label))
                     .child(
                         gpui_component::select::Select::new(sel)
                             .w_full()
@@ -679,8 +752,10 @@ impl PivViewModel {
                     )
             };
             dialog
-                .title("Set PIN Retries")
-                .child("Resets the PIN and PUK to their defaults and sets new retry limits.")
+                .title(crate::i18n::tr("Set PIN Retries"))
+                .child(crate::i18n::tr(
+                    "Resets the PIN and PUK to their defaults and sets new retry limits.",
+                ))
                 .child(
                     gpui_component::v_flex()
                         .gap_3()
@@ -688,13 +763,21 @@ impl PivViewModel {
                         .child(
                             gpui_component::h_flex()
                                 .gap_3()
-                                .child(field("PIN retries", &pin_tries))
-                                .child(field("PUK retries", &puk_tries)),
+                                .child(field(crate::i18n::tr("PIN retries"), &pin_tries))
+                                .child(field(crate::i18n::tr("PUK retries"), &puk_tries)),
                         )
-                        .child("Current PIN")
-                        .child(gpui_component::input::Input::new(&pin))
-                        .child(mgm_label)
-                        .child(gpui_component::input::Input::new(&mgm)),
+                        .children((!pin_default.automatic()).then(|| {
+                            gpui_component::v_flex()
+                                .gap_2()
+                                .child(crate::i18n::tr("Current PIN"))
+                                .child(gpui_component::input::Input::new(&pin))
+                        }))
+                        .children((!mgm_automatic).then(|| {
+                            gpui_component::v_flex()
+                                .gap_2()
+                                .child(mgm_label)
+                                .child(gpui_component::input::Input::new(&mgm))
+                        })),
                 )
                 .on_ok(move |_, window, cx| {
                     ok(window, cx);
@@ -704,11 +787,11 @@ impl PivViewModel {
                     let s = btn.clone();
                     vec![
                         gpui_component::button::Button::new("cancel")
-                            .label("Cancel")
+                            .label(crate::i18n::tr("Cancel"))
                             .on_click(|_, window, cx| window.close_dialog(cx)),
                         gpui_component::button::Button::new("ok")
                             .primary()
-                            .label("Apply")
+                            .label(crate::i18n::tr("Apply"))
                             .on_click(move |_, window, cx| s(window, cx)),
                     ]
                 })
@@ -721,11 +804,12 @@ impl PivViewModel {
         let cur_algo = self.mgm_algo();
         let protected = self.mgm_protected();
         let cur_label = if protected {
-            "PIN (unlocks the current management key)"
+            crate::i18n::tr("PIN (unlocks the current management key)")
         } else {
-            "Current management key (hex)"
+            crate::i18n::tr("Current management key (hex)")
         };
         let cur = self.mgm_input(window, cx);
+        let mgm_automatic = self.mgm_automatic();
         let new = cx.new(|cx| gpui_component::input::InputState::new(window, cx));
         let algo_sel = select_state(window, cx, OPT_MGM_ALGO, 0);
         let touch_sel = select_state(window, cx, OPT_MGM_TOUCH, 0);
@@ -761,17 +845,23 @@ impl PivViewModel {
                     _ => {
                         return notify(
                             cx,
-                            "New key length must match the algorithm (16/24/32 bytes)",
+                            crate::i18n::tr(
+                                "New key length must match the algorithm (16/24/32 bytes)",
+                            ),
                         );
                     }
                 };
                 let touch = selected_key(&touch_sel, OPT_MGM_TOUCH, cx) == 1;
                 window.close_dialog(cx);
-                let status = dialog::open_status_dialog("Changing Management Key", window, cx);
+                let status = dialog::open_status_dialog(
+                    crate::i18n::tr("Changing Management Key"),
+                    window,
+                    cx,
+                );
                 let _ = view.update(cx, |this, cx| {
                     this.run(
                         move || DeviceRepo::piv_set_mgm_blocking(current, new_algo, new_key, touch),
-                        "Management key changed.",
+                        crate::i18n::tr("Management key changed."),
                         status,
                         cx,
                     );
@@ -787,26 +877,38 @@ impl PivViewModel {
             let ok = submit.clone();
             let btn = submit.clone();
             let field = |label: &str, sel: &Entity<SelectState<Vec<LabeledU8>>>| {
-                gpui_component::v_flex().gap_1().flex_1().child(label.to_string()).child(
-                    gpui_component::select::Select::new(sel).w_full().bg(rgb(0x222225)),
-                )
+                gpui_component::v_flex()
+                    .gap_1()
+                    .flex_1()
+                    .child(crate::i18n::text(label))
+                    .child(
+                        gpui_component::select::Select::new(sel)
+                            .w_full()
+                            .bg(rgb(0x222225)),
+                    )
             };
             dialog
-                .title("Change Management Key")
-                .child("Sets a new PIV management key. Store it safely — it is required for all key/cert changes.")
+                .title(crate::i18n::tr("Change management key"))
+                .child(crate::i18n::tr(
+                    "Set a new management key. Save it to manage keys and certificates later.",
+                ))
                 .child(
                     gpui_component::v_flex()
                         .gap_3()
                         .pb_2()
-                        .child(cur_label)
-                        .child(gpui_component::input::Input::new(&cur))
+                        .children((!mgm_automatic).then(|| {
+                            gpui_component::v_flex()
+                                .gap_2()
+                                .child(cur_label)
+                                .child(gpui_component::input::Input::new(&cur))
+                        }))
                         .child(
                             gpui_component::h_flex()
                                 .gap_3()
-                                .child(field("New algorithm", &algo_sel))
-                                .child(field("Touch", &touch_sel)),
+                                .child(field(crate::i18n::tr("New algorithm"), &algo_sel))
+                                .child(field(crate::i18n::tr("Touch"), &touch_sel)),
                         )
-                        .child("New key (hex)")
+                        .child(crate::i18n::tr("New key (hex)"))
                         .child(
                             gpui_component::h_flex()
                                 .gap_2()
@@ -818,7 +920,7 @@ impl PivViewModel {
                                 )
                                 .child(
                                     gpui_component::button::Button::new("gen-mgm")
-                                        .label("Generate")
+                                        .label(crate::i18n::tr("Generate"))
                                         .outline()
                                         .on_click(move |_, window, cx| gen_key(window, cx)),
                                 ),
@@ -832,11 +934,11 @@ impl PivViewModel {
                     let s = btn.clone();
                     vec![
                         gpui_component::button::Button::new("cancel")
-                            .label("Cancel")
+                            .label(crate::i18n::tr("Cancel"))
                             .on_click(|_, window, cx| window.close_dialog(cx)),
                         gpui_component::button::Button::new("ok")
                             .primary()
-                            .label("Change")
+                            .label(crate::i18n::tr("Change"))
                             .on_click(move |_, window, cx| s(window, cx)),
                     ]
                 })
@@ -856,7 +958,7 @@ impl PivViewModel {
             files: true,
             directories: false,
             multiple: false,
-            prompt: Some("Select certificate (PEM or DER)".into()),
+            prompt: Some(crate::i18n::tr("Select certificate (PEM or DER)").into()),
         });
         let view = cx.entity().downgrade();
         self._task = Some(cx.spawn(async move |_, cx| {
@@ -868,14 +970,16 @@ impl PivViewModel {
             };
             let Ok(bytes) = std::fs::read(&path) else {
                 let _ = view.update(cx, |_, cx| {
-                    cx.emit(PivEvent::Notification("Could not read file".into()))
+                    cx.emit(PivEvent::Notification(
+                        crate::i18n::tr("Could not read file").into(),
+                    ))
                 });
                 return;
             };
             let Some(der) = cert_pem_to_der(&bytes) else {
                 let _ = view.update(cx, |_, cx| {
                     cx.emit(PivEvent::Notification(
-                        "Not a valid PEM/DER certificate".into(),
+                        crate::i18n::tr("Not a valid PEM/DER certificate").into(),
                     ))
                 });
                 return;
@@ -899,7 +1003,7 @@ impl PivViewModel {
             files: true,
             directories: false,
             multiple: false,
-            prompt: Some("Select private key (PEM or DER)".into()),
+            prompt: Some(crate::i18n::tr("Select private key (PEM or DER)").into()),
         });
         let view = cx.entity().downgrade();
         self._task = Some(cx.spawn(async move |_, cx| {
@@ -911,7 +1015,9 @@ impl PivViewModel {
             };
             let Ok(bytes) = std::fs::read(&path) else {
                 let _ = view.update(cx, |_, cx| {
-                    cx.emit(PivEvent::Notification("Could not read file".into()))
+                    cx.emit(PivEvent::Notification(
+                        crate::i18n::tr("Could not read file").into(),
+                    ))
                 });
                 return;
             };
@@ -935,6 +1041,7 @@ impl PivViewModel {
         let mgm = self.mgm_input(window, cx);
         let protected = self.mgm_protected();
         let mgm_label = self.mgm_label();
+        let mgm_automatic = self.mgm_automatic();
         let view = cx.entity().downgrade();
         let submit = {
             let mgm = mgm.clone();
@@ -947,9 +1054,9 @@ impl PivViewModel {
                 window.close_dialog(cx);
                 let status = dialog::open_status_dialog(
                     if is_key {
-                        "Importing Key"
+                        crate::i18n::tr("Importing Key")
                     } else {
-                        "Importing Certificate"
+                        crate::i18n::tr("Importing Certificate")
                     },
                     window,
                     cx,
@@ -958,14 +1065,14 @@ impl PivViewModel {
                     if is_key {
                         this.run(
                             move || DeviceRepo::piv_import_key_blocking(slot, file, auth),
-                            "Key imported.",
+                            crate::i18n::tr("Key imported."),
                             status,
                             cx,
                         );
                     } else {
                         this.run(
                             move || DeviceRepo::piv_import_cert_blocking(slot, file, auth),
-                            "Certificate imported.",
+                            crate::i18n::tr("Certificate imported."),
                             status,
                             cx,
                         );
@@ -979,17 +1086,23 @@ impl PivViewModel {
             let btn = submit.clone();
             dialog
                 .title(if is_key {
-                    "Import Key"
+                    crate::i18n::tr("Import Key")
                 } else {
-                    "Import Certificate"
+                    crate::i18n::tr("Import Certificate")
                 })
-                .child("Enter the management key to authorise the import.")
+                .child(crate::i18n::tr(
+                    "Enter the management key to authorise the import.",
+                ))
                 .child(
                     gpui_component::v_flex()
                         .gap_2()
                         .pb_2()
-                        .child(mgm_label)
-                        .child(gpui_component::input::Input::new(&mgm)),
+                        .children((!mgm_automatic).then(|| {
+                            gpui_component::v_flex()
+                                .gap_2()
+                                .child(mgm_label)
+                                .child(gpui_component::input::Input::new(&mgm))
+                        })),
                 )
                 .on_ok(move |_, window, cx| {
                     ok(window, cx);
@@ -999,11 +1112,11 @@ impl PivViewModel {
                     let s = btn.clone();
                     vec![
                         gpui_component::button::Button::new("cancel")
-                            .label("Cancel")
+                            .label(crate::i18n::tr("Cancel"))
                             .on_click(|_, window, cx| window.close_dialog(cx)),
                         gpui_component::button::Button::new("ok")
                             .primary()
-                            .label("Import")
+                            .label(crate::i18n::tr("Import"))
                             .on_click(move |_, window, cx| s(window, cx)),
                     ]
                 })
@@ -1031,13 +1144,19 @@ impl PivViewModel {
                 .await;
             let _ = view.update(cx, |_, cx| match der {
                 Ok(der) => match std::fs::write(&path, der_to_pem(&der)) {
-                    Ok(_) => cx.emit(PivEvent::Notification(format!(
-                        "Attestation saved to {}",
-                        path.display()
+                    Ok(_) => cx.emit(PivEvent::Notification(crate::i18n::format(
+                        "Attestation saved to {0}",
+                        &[format!("{}", path.display())],
                     ))),
-                    Err(e) => cx.emit(PivEvent::Notification(format!("Save failed: {e}"))),
+                    Err(e) => cx.emit(PivEvent::Notification(crate::i18n::format(
+                        "Save failed: {0}",
+                        &[format!("{}", e)],
+                    ))),
                 },
-                Err(e) => cx.emit(PivEvent::Notification(format!("Attestation failed: {e}"))),
+                Err(e) => cx.emit(PivEvent::Notification(crate::i18n::format(
+                    "Attestation failed: {0}",
+                    &[format!("{}", e)],
+                ))),
             });
         }));
     }
@@ -1054,6 +1173,7 @@ impl PivViewModel {
         let mgm = self.mgm_input(window, cx);
         let protected = self.mgm_protected();
         let mgm_label = self.mgm_label();
+        let mgm_automatic = self.mgm_automatic();
         let view = cx.entity().downgrade();
         let submit = {
             let mgm = mgm.clone();
@@ -1063,11 +1183,12 @@ impl PivViewModel {
                     return;
                 };
                 window.close_dialog(cx);
-                let status = dialog::open_status_dialog("Deleting Key", window, cx);
+                let status =
+                    dialog::open_status_dialog(crate::i18n::tr("Deleting Key"), window, cx);
                 let _ = view.update(cx, |this, cx| {
                     this.run(
                         move || DeviceRepo::piv_delete_key_blocking(slot, auth),
-                        "Key deleted.",
+                        crate::i18n::tr("Key deleted."),
                         status,
                         cx,
                     );
@@ -1079,14 +1200,13 @@ impl PivViewModel {
             let ok = submit.clone();
             let btn = submit.clone();
             dialog
-                .title(format!("Delete key — {}", piv::slot_label(slot)))
-                .child("Permanently deletes this slot's key and certificate. Requires the management key.")
+                .title(crate::i18n::format("Delete key — {0}", &[format!("{}", piv :: slot_label (slot))]))
+                .child(crate::i18n::tr("Permanently deletes this slot's key and certificate. Requires the management key."))
                 .child(
                     gpui_component::v_flex()
                         .gap_2()
                         .pb_2()
-                        .child(mgm_label)
-                        .child(gpui_component::input::Input::new(&mgm)),
+                        .children((!mgm_automatic).then(|| gpui_component::v_flex().gap_2().child(mgm_label).child(gpui_component::input::Input::new(&mgm)))),
                 )
                 .on_ok(move |_, window, cx| {
                     ok(window, cx);
@@ -1096,11 +1216,11 @@ impl PivViewModel {
                     let s = btn.clone();
                     vec![
                         gpui_component::button::Button::new("cancel")
-                            .label("Cancel")
+                            .label(crate::i18n::tr("Cancel"))
                             .on_click(|_, window, cx| window.close_dialog(cx)),
                         gpui_component::button::Button::new("del")
                             .danger()
-                            .label("Delete")
+                            .label(crate::i18n::tr("Delete"))
                             .on_click(move |_, window, cx| s(window, cx)),
                     ]
                 })
@@ -1113,6 +1233,7 @@ impl PivViewModel {
         let mgm_algo = self.mgm_algo();
         let protected = self.mgm_protected();
         let mgm_label = self.mgm_label();
+        let mgm_automatic = self.mgm_automatic();
         let dst_sel = select_state(window, cx, OPT_SLOTS, 0);
         let mgm = self.mgm_input(window, cx);
         let view = cx.entity().downgrade();
@@ -1128,17 +1249,17 @@ impl PivViewModel {
                 if dst == src {
                     let _ = view.update(cx, |_, cx| {
                         cx.emit(PivEvent::Notification(
-                            "Choose a different destination slot".into(),
+                            crate::i18n::tr("Choose a different destination slot").into(),
                         ));
                     });
                     return;
                 }
                 window.close_dialog(cx);
-                let status = dialog::open_status_dialog("Moving Key", window, cx);
+                let status = dialog::open_status_dialog(crate::i18n::tr("Moving Key"), window, cx);
                 let _ = view.update(cx, |this, cx| {
                     this.run(
                         move || DeviceRepo::piv_move_key_blocking(src, dst, auth),
-                        "Key moved.",
+                        crate::i18n::tr("Key moved."),
                         status,
                         cx,
                     );
@@ -1151,20 +1272,29 @@ impl PivViewModel {
             let ok = submit.clone();
             let btn = submit.clone();
             dialog
-                .title(format!("Move key from {}", piv::slot_label(src)))
-                .child("Moves the key + certificate to another slot (overwrites the destination).")
+                .title(crate::i18n::format(
+                    "Move key from {0}",
+                    &[format!("{}", crate::i18n::text(piv::slot_label(src)))],
+                ))
+                .child(crate::i18n::tr(
+                    "Moves the key + certificate to another slot (overwrites the destination).",
+                ))
                 .child(
                     gpui_component::v_flex()
                         .gap_3()
                         .pb_2()
-                        .child("Destination slot")
+                        .child(crate::i18n::tr("Destination slot"))
                         .child(
                             gpui_component::select::Select::new(&dst_sel)
                                 .w_full()
                                 .bg(rgb(0x222225)),
                         )
-                        .child(mgm_label)
-                        .child(gpui_component::input::Input::new(&mgm)),
+                        .children((!mgm_automatic).then(|| {
+                            gpui_component::v_flex()
+                                .gap_2()
+                                .child(mgm_label)
+                                .child(gpui_component::input::Input::new(&mgm))
+                        })),
                 )
                 .on_ok(move |_, window, cx| {
                     ok(window, cx);
@@ -1174,11 +1304,11 @@ impl PivViewModel {
                     let s = btn.clone();
                     vec![
                         gpui_component::button::Button::new("cancel")
-                            .label("Cancel")
+                            .label(crate::i18n::tr("Cancel"))
                             .on_click(|_, window, cx| window.close_dialog(cx)),
                         gpui_component::button::Button::new("mv")
                             .primary()
-                            .label("Move")
+                            .label(crate::i18n::tr("Move"))
                             .on_click(move |_, window, cx| s(window, cx)),
                     ]
                 })
@@ -1190,17 +1320,17 @@ impl PivViewModel {
     pub(super) fn open_reset_dialog(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let view = cx.entity().downgrade();
         dialog::open_confirm(
-            "Reset PIV Applet",
-            "This blocks the PIN and PUK, then factory-resets PIV — deleting ALL keys and certificates and restoring the default PIN/PUK/management key. This cannot be undone.".to_string(),
-            "Reset",
+            crate::i18n::tr("Reset PIV Applet"),
+            crate::i18n::tr("This blocks the PIN and PUK, then factory-resets PIV — deleting ALL keys and certificates and restoring the default PIN/PUK/management key. This cannot be undone.").to_string(),
+            crate::i18n::tr("Reset"),
             gpui_component::button::ButtonVariant::Danger,
             window,
             cx,
             move |_dh, window, cx| {
                 window.close_dialog(cx);
-                let status = dialog::open_status_dialog("Resetting PIV", window, cx);
+                let status = dialog::open_status_dialog(crate::i18n::tr("Resetting PIV"), window, cx);
                 let _ = view.update(cx, |this, cx| {
-                    this.run(DeviceRepo::piv_reset_blocking, "PIV applet reset.", status, cx);
+                    this.run(DeviceRepo::piv_reset_blocking, crate::i18n::tr("PIV applet reset."), status, cx);
                 });
             },
         );

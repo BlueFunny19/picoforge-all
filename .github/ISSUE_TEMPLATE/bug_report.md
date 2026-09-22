@@ -24,7 +24,7 @@ Matrix is our most preferred option for direct communication, followed by Discor
 
 ## Before submitting an issue, check the following checklist:
 
-- [ ] I have checked the [Troubleshooting Guide](../docs/Troubleshooting.md)
+- [ ] I have checked the [Troubleshooting Guide](https://github.com/BlueFunny19/picoforge-all/blob/main/docs/Troubleshooting.md)
 - [ ] I have searched the existing issues to ensure this has not already been reported
 - [ ] I am using the latest version of PicoForge
 - [ ] I am using the the latest supported version of picofido/picofido2
