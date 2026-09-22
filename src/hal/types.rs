@@ -185,6 +185,8 @@ impl fmt::Display for FirmwareType {
 pub struct LedStatusConfig {
     /// Whether the LED stays on steady (true) or pulses (false).
     pub steady: bool,
+    /// Per-state steady/breathing modes when advertised by Pico All.
+    pub steady_modes: Option<[bool; 7]>,
     /// Fixed array of `(color, brightness)` pairs indexed by device status:
     /// Idle, Processing, Touch, Boot.
     pub statuses: [(u8, u8); 4],

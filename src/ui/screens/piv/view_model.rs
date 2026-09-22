@@ -6,6 +6,7 @@ use crate::ui::app::AppModels;
 use crate::ui::components::applet_gate::AppletGate;
 use crate::ui::components::dialog;
 use crate::ui::components::dialog::StatusContent;
+use crate::ui::components::form::{FormErrors, info_card};
 use crate::ui::components::form::{LabeledU8, select_state, selected_key};
 use crate::ui::models::device::{DeviceEvent, DeviceRepo, MgmAuth, USB_CAP_PIV, piv};
 use gpui::*;
@@ -113,6 +114,7 @@ fn resolve_mgm_auth(
 }
 
 pub struct PivViewModel {
+    pub(super) slot_search: Entity<gpui_component::input::InputState>,
     pub(super) device: Entity<DeviceRepo>,
     pub(super) info: Option<piv::PivInfo>,
     pub(super) loaded: bool,
@@ -127,13 +129,23 @@ pub enum PivEvent {
 impl EventEmitter<PivEvent> for PivViewModel {}
 
 impl PivViewModel {
-    pub fn new(_window: &mut Window, cx: &mut Context<Self>, models: &AppModels) -> Self {
+    pub fn new(window: &mut Window, cx: &mut Context<Self>, models: &AppModels) -> Self {
+        let slot_search = cx.new(|cx| {
+            gpui_component::input::InputState::new(window, cx)
+                .placeholder("Search slots, algorithms or certificates")
+        });
+        cx.subscribe(
+            &slot_search,
+            |_, _, _: &gpui_component::input::InputEvent, cx| cx.notify(),
+        )
+        .detach();
         let device = models.device.clone();
         cx.subscribe(&device, |this: &mut Self, _, _: &DeviceEvent, cx| {
             this.on_device_event(cx);
         })
         .detach();
         let mut this = Self {
+            slot_search,
             device,
             info: None,
             loaded: false,
@@ -474,22 +486,22 @@ impl PivViewModel {
     ) {
         let a = cx.new(|cx| gpui_component::input::InputState::new(window, cx).masked(true));
         let b = cx.new(|cx| gpui_component::input::InputState::new(window, cx).masked(true));
+        let errors = FormErrors::default();
+        errors.watch(0, &a, window, cx);
+        errors.watch(1, &b, window, cx);
         let view = cx.entity().downgrade();
         let submit = {
+            let errors = errors.clone();
             let a = a.clone();
             let b = b.clone();
             let view = view.clone();
             std::rc::Rc::new(move |window: &mut Window, cx: &mut App| {
                 let av = a.read(cx).text().to_string();
                 let bv = b.read(cx).text().to_string();
-                if av.is_empty() || bv.is_empty() {
-                    window.push_notification(
-                        format!(
-                            "{} is required.",
-                            if av.is_empty() { label_a } else { label_b }
-                        ),
-                        cx,
-                    );
+                errors.clear();
+                errors.required(0, label_a, &av);
+                errors.required(1, label_b, &bv);
+                if !errors.valid(window) {
                     return;
                 }
                 window.close_dialog(cx);
@@ -507,15 +519,17 @@ impl PivViewModel {
             let btn = submit.clone();
             dialog
                 .title(title)
-                .child("Factory defaults, only if unchanged: PIN 123456; PUK 12345678.")
+                .child(info_card(if label_a.to_lowercase().contains("puk") {
+                    "Factory default PUK: 12345678, only if unchanged."
+                } else {
+                    "Factory default PIN: 123456, only if unchanged."
+                }))
                 .child(
                     gpui_component::v_flex()
                         .gap_3()
                         .pb_2()
-                        .child(label_a)
-                        .child(gpui_component::input::Input::new(&a))
-                        .child(label_b)
-                        .child(gpui_component::input::Input::new(&b)),
+                        .child(errors.field(0, label_a, &a, true))
+                        .child(errors.field(1, label_b, &b, true)),
                 )
                 .on_ok(move |_, window, cx| {
                     ok(window, cx);

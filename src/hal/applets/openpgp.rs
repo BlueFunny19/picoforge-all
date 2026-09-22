@@ -363,7 +363,15 @@ pub fn change_pin(
 pub fn unblock_with_rc(session: &CcidSession, rc: &str, new_pw1: &str) -> Result<(), PFError> {
     let mut body = rc.as_bytes().to_vec();
     body.extend_from_slice(new_pw1.as_bytes());
-    session.transceive_full(&Apdu::write(CLA_ISO, INS_RESET_RETRY, 0x00, PW1, &body))?;
+    let (_, sw) = session.transceive(&Apdu::write(CLA_ISO, INS_RESET_RETRY, 0x00, PW1, &body))?;
+    if sw.0 == 0x6A88 {
+        return Err(PFError::Device(
+            "No reset code is set. Set one with your admin PIN first.".into(),
+        ));
+    }
+    if !sw.is_ok() {
+        return Err(sw.to_error());
+    }
     Ok(())
 }
 

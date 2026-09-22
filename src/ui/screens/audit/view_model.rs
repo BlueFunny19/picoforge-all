@@ -1,4 +1,4 @@
-//! View model for the Audit screen — export and verify the device's
+//! View model for the Audit screen. export and verify the device's
 //! tamper-evident security journal.
 
 use crate::ui::DialogSubmit;
@@ -6,6 +6,7 @@ use crate::ui::app::AppModels;
 use crate::ui::components::applet_gate::AppletGate;
 use crate::ui::components::dialog;
 use crate::ui::components::dialog::StatusContent;
+use crate::ui::components::form::{FormErrors, info_card};
 use crate::ui::models::device::{DeviceEvent, DeviceRepo, FirmwareType, audit};
 use gpui::*;
 use gpui_component::WindowExt;
@@ -20,6 +21,11 @@ pub struct AuditViewModel {
     /// query is ungated, so it loads automatically). Journalling is opt-in.
     pub(super) enabled: Option<bool>,
     pub(super) loading: bool,
+    pub(super) status_loading: bool,
+    pub(super) status_error: Option<String>,
+    _status_task: Option<Task<()>>,
+    status_epoch: u64,
+    status_serial: Option<String>,
     _task: Option<Task<()>>,
 }
 
@@ -27,40 +33,73 @@ impl AuditViewModel {
     pub fn new(_window: &mut Window, cx: &mut Context<Self>, models: &AppModels) -> Self {
         let device = models.device.clone();
         cx.subscribe(&device, |this: &mut Self, _, _: &DeviceEvent, cx| {
-            if this.device.read(cx).device_changed {
+            let serial = this
+                .device
+                .read(cx)
+                .status
+                .as_ref()
+                .map(|s| s.info.serial.clone());
+            if this.status_serial != serial {
+                this.status_serial = serial;
                 this.journal = None;
                 this.verification = None;
                 this.enabled = None;
+                this.status_epoch += 1;
+                this.status_loading = false;
+                this.status_error = None;
             }
-            this.refresh_status(cx);
+            if this.enabled.is_none() && this.status_error.is_none() {
+                this.refresh_status(cx);
+            }
             cx.notify();
         })
         .detach();
+        let status_serial = device
+            .read(cx)
+            .status
+            .as_ref()
+            .map(|s| s.info.serial.clone());
         let mut this = Self {
             device,
+            status_serial,
             journal: None,
             verification: None,
             enabled: None,
             loading: false,
+            status_loading: false,
+            status_error: None,
+            _status_task: None,
+            status_epoch: 0,
             _task: None,
         };
         this.refresh_status(cx);
         this
     }
 
-    /// Load whether journalling is on (ungated — no PIN, no touch).
+    /// Load whether journalling is on (ungated. no PIN, no touch).
     pub(super) fn refresh_status(&mut self, cx: &mut Context<Self>) {
-        if self.loading || self.gate(cx) != AppletGate::Ready {
+        if self.loading || self.status_loading || self.gate(cx) != AppletGate::Ready {
             return;
         }
+        self.status_loading = true;
+        self.status_error = None;
+        let epoch = self.status_epoch;
+        cx.notify();
         let weak = cx.entity().downgrade();
-        self._task = Some(cx.spawn(async move |_, cx| {
+        self._status_task = Some(cx.spawn(async move |_, cx| {
             let res = cx
                 .background_executor()
                 .spawn(async { DeviceRepo::audit_status_blocking() })
                 .await;
             let _ = weak.update(cx, |this, cx| {
-                this.enabled = res.ok();
+                if this.status_epoch != epoch {
+                    return;
+                }
+                this.status_loading = false;
+                match res {
+                    Ok(enabled) => this.enabled = Some(enabled),
+                    Err(error) => this.status_error = Some(error),
+                }
                 cx.notify();
             });
         }));
@@ -97,15 +136,15 @@ impl AuditViewModel {
         let (title, body) = if enable {
             (
                 "Enable Audit Journalling",
-                "Turns the tamper-evident journal ON — security events are then recorded to the key's flash. Requires the FIDO PIN (or a touch if none is set) plus a touch to confirm.",
+                "Start recording security events. Confirm this change on your device.",
             )
         } else {
             (
                 "Disable Audit Journalling",
-                "Turns the journal OFF — no further events are recorded. Requires the FIDO PIN (or a touch if none is set) plus a touch to confirm.",
+                "Stop recording new security events. Confirm this change on your device.",
             )
         };
-        Self::open_gate_dialog(title, body, pin, None, submit, window, cx);
+        self.open_gate_dialog(title, body, pin, None, submit, window, cx);
     }
 
     fn run_toggle(
@@ -166,7 +205,7 @@ impl AuditViewModel {
         cx.new(|cx| {
             InputState::new(window, cx)
                 .masked(true)
-                .placeholder("FIDO PIN — leave blank to touch instead")
+                .placeholder("Enter your FIDO PIN")
         })
     }
 
@@ -185,7 +224,7 @@ impl AuditViewModel {
                 let _ = view.update(cx, |this, cx| this.run_read(p, status, cx));
             })
         };
-        Self::open_gate_dialog(
+        self.open_gate_dialog(
             "Read Audit Journal",
             "Exports the security journal. Requires the FIDO PIN, or a touch if no PIN is set.",
             pin,
@@ -224,7 +263,7 @@ impl AuditViewModel {
                         this.journal = Some(journal);
                         this.verification = None;
                         let _ = status.update(cx, |d, cx| {
-                            d.set_success(format!("Journal read — {n} entries."), cx)
+                            d.set_success(format!("Journal read. {n} entries."), cx)
                         });
                     }
                     Err(e) => {
@@ -258,9 +297,9 @@ impl AuditViewModel {
                 let _ = view.update(cx, |this, cx| this.run_verify(p, e, status, cx));
             })
         };
-        Self::open_gate_dialog(
+        self.open_gate_dialog(
             "Verify Audit Checkpoint",
-            "Exports the journal and checks a fresh DEVK-signed checkpoint over it — proving the log is authentic and the device genuine.",
+            "Read the journal and verify its signature. An expected key can also confirm that it came from your enrolled device.",
             pin,
             Some(("Expected key (optional)", expect)),
             submit,
@@ -295,18 +334,25 @@ impl AuditViewModel {
                 match res {
                     Ok(v) => {
                         let msg = if v.authentic() {
-                            "Journal authentic — signature and chain verified.".to_string()
+                            "Journal authentic. signature and chain verified.".to_string()
                         } else if !v.signature_ok {
-                            "SIGNATURE INVALID — do not trust this journal.".to_string()
+                            "SIGNATURE INVALID. do not trust this journal.".to_string()
                         } else if !v.head_matches {
-                            "Head mismatch — the journal changed mid-read (possible tamper)."
+                            "Head mismatch. the journal changed mid-read (possible tamper)."
                                 .to_string()
                         } else {
-                            "Attestation key MISMATCH — not the enrolled device.".to_string()
+                            "Attestation key MISMATCH. not the enrolled device.".to_string()
                         };
                         this.journal = Some(v.journal.clone());
+                        let authentic = v.authentic();
                         this.verification = Some(v);
-                        let _ = status.update(cx, |d, cx| d.set_success(msg, cx));
+                        let _ = status.update(cx, |d, cx| {
+                            if authentic {
+                                d.set_success(msg, cx)
+                            } else {
+                                d.set_error(msg, cx)
+                            }
+                        });
                     }
                     Err(e) => {
                         let _ = status.update(cx, |d, cx| d.set_error(e, cx));
@@ -319,6 +365,7 @@ impl AuditViewModel {
 
     /// A dialog with an optional-PIN field and an optional second field.
     fn open_gate_dialog(
+        &self,
         title: &'static str,
         body: &'static str,
         pin: Entity<InputState>,
@@ -327,6 +374,38 @@ impl AuditViewModel {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        let pin_state = self
+            .device
+            .read(cx)
+            .fido_info
+            .as_ref()
+            .and_then(|f| f.options.get("clientPin").copied());
+        let pin_required = pin_state == Some(true);
+        let errors = FormErrors::default();
+        errors.watch(0, &pin, window, cx);
+        let action = if title.contains("Enable") {
+            "Enable"
+        } else if title.contains("Disable") {
+            "Disable"
+        } else if extra.is_some() {
+            "Verify"
+        } else {
+            "Read journal"
+        };
+        let submit = {
+            let errors = errors.clone();
+            let pin = pin.clone();
+            std::rc::Rc::new(move |window: &mut Window, cx: &mut App| {
+                errors.clear();
+                if pin_required {
+                    errors.required(0, "FIDO PIN", &pin.read(cx).text().to_string());
+                }
+                if !errors.valid(window) {
+                    return;
+                }
+                submit(window, cx);
+            })
+        };
         window.open_dialog(cx, move |dialog, _w, _| {
             let pin = pin.clone();
             let extra = extra.clone();
@@ -334,9 +413,9 @@ impl AuditViewModel {
             let btn = submit.clone();
             let mut fields = gpui_component::v_flex()
                 .gap_3()
-                .pb_2()
-                .child("FIDO PIN")
-                .child(gpui_component::input::Input::new(&pin));
+                .pb_2();
+            if pin_state != Some(false) { fields = fields.child(errors.field(0, if pin_required { "FIDO PIN" } else { "FIDO PIN (if set)" }, &pin, pin_required)); }
+            else { fields = fields.child(info_card("No FIDO PIN is set. Press and release BOOTSEL when the device asks for confirmation.")); }
             if let Some((label, input)) = &extra {
                 fields = fields
                     .child(label.to_string())
@@ -358,7 +437,7 @@ impl AuditViewModel {
                             .on_click(|_, window, cx| window.close_dialog(cx)),
                         gpui_component::button::Button::new("run")
                             .primary()
-                            .label("Run")
+                            .label(action)
                             .on_click(move |_, window, cx| s(window, cx)),
                     ]
                 })

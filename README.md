@@ -30,7 +30,7 @@ PicoForge All is an unofficial fork of PicoForge, a desktop application for conf
 
 - Reading device information and firmware details
 - Configuring USB VID/PID and product names
-- Adjusting LED settings (GPIO, brightness, driver)
+- Adjusting LED hardware settings (GPIO, driver, colour order) and per-status colour, brightness and breathing/steady mode
 - Inspecting, signing and installing Pico All firmware
 - Reviewing and applying staged Secure Boot provisioning
 - Real-time system logging and diagnostics
@@ -235,3 +235,11 @@ This is an unofficial build. The upstream PicoForge maintainers do not maintain 
 Copyright © 2026 Suyog Tandel
 
 </div>
+
+### Object editing and status lights on Pico All
+
+SmartCard-HSM Objects accepts either UTF-8 text or a file, up to **1,800 bytes per object/file**. PicoForge allocates a free ID for each new object; replacing an object keeps its ID. PIV slots and HSM key/object lists support search and independently scroll with visible rows rendered on demand.
+
+Reset HSM uses user PIN `123456`, security officer PIN `12345678`, and no DKEK shares. Setup can use custom PINs. Blue PIN hints show known factory or PicoForge reset defaults, not the current secret stored on the device. FIDO has no default PIN; create one before managing stored passkeys.
+
+Per-status breathing/steady switches require Pico All firmware advertising PHY TLV `0x12`. Unsupported firmware shows these switches disabled. The global brightness, dimmable and steady controls are no longer exposed. The ordinary Success and Error effects end after their notification interval; Nuke keeps its dedicated confirmation/execution indication.

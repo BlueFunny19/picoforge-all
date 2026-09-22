@@ -258,3 +258,124 @@ fn current_app_ea_then_reset() {
         "RESET PASS: unplug/reconnect detection, PIN/EA cleanup, HSM and Audit state preserved"
     );
 }
+
+#[test]
+#[ignore = "requires the specified Pico All and three BOOTSEL confirmations; restores status-light configuration"]
+fn current_app_status_modes_roundtrip() {
+    select_target();
+    let state = DeviceRepo::read_device_state_blocking().unwrap();
+    let original = state.led_status.clone().expect("LED settings");
+    assert!(
+        original.steady_modes.is_some(),
+        "Install firmware with per-state modes first"
+    );
+    let mut updated = original.clone();
+    updated.steady_modes = Some([true, false, true, false, true, false, false]);
+    println!("LED STEP 1: press BOOTSEL to save independent modes (Ready steady)");
+    DeviceRepo::write_all_config_blocking(
+        state.status.method.clone(),
+        None,
+        Some(updated.clone()),
+        None,
+        None,
+    )
+    .unwrap();
+    let result = std::panic::catch_unwind(|| {
+        assert_eq!(
+            io::read_led_config(state.status.method.clone()).unwrap(),
+            updated
+        );
+        std::thread::sleep(std::time::Duration::from_secs(5));
+        let mut updated = updated.clone();
+        updated.steady_modes = Some([false, true, false, true, false, true, true]);
+        println!("LED STEP 2: press BOOTSEL to save the opposite modes (Ready breathing)");
+        DeviceRepo::write_all_config_blocking(
+            state.status.method.clone(),
+            None,
+            Some(updated.clone()),
+            None,
+            None,
+        )
+        .unwrap();
+        assert_eq!(
+            io::read_led_config(state.status.method.clone()).unwrap(),
+            updated
+        );
+        std::thread::sleep(std::time::Duration::from_secs(5));
+    });
+    println!("LED RESTORE: press BOOTSEL to restore the original light settings");
+    DeviceRepo::write_all_config_blocking(
+        state.status.method.clone(),
+        None,
+        Some(original.clone()),
+        None,
+        None,
+    )
+    .expect("restore original LED settings");
+    assert_eq!(io::read_led_config(state.status.method).unwrap(), original);
+    if let Err(panic) = result {
+        std::panic::resume_unwind(panic);
+    }
+    println!("LED PASS: independent modes saved/read back, original settings restored");
+}
+
+#[test]
+#[ignore = "requires the current HSM PIN; creates and deletes two temporary objects, preserving existing content"]
+fn current_app_hsm_object_editor() {
+    select_target();
+    let pin = std::env::var("PICOFORGE_TEST_HSM_PIN").expect("Supply the current HSM PIN");
+    let original = hsm::read_info().unwrap();
+    let first =
+        hsm::write_object_auto(pin.as_bytes(), 0xCD, "PicoForge 文字测试".as_bytes()).unwrap();
+    let mut second = None;
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        assert_eq!(
+            hsm::read_object(pin.as_bytes(), first).unwrap(),
+            "PicoForge 文字测试".as_bytes()
+        );
+        let binary = vec![0xAB; hsm::MAX_OBJECT_BYTES];
+        let id = hsm::write_object_auto(pin.as_bytes(), 0xCD, &binary).unwrap();
+        second = Some(id);
+        assert_ne!(id, first);
+        assert!(!original.files.contains(&first) && !original.files.contains(&id));
+        assert_eq!(hsm::read_object(pin.as_bytes(), id).unwrap(), binary);
+        hsm::write_object(pin.as_bytes(), first, b"updated").unwrap();
+        assert_eq!(hsm::read_object(pin.as_bytes(), first).unwrap(), b"updated");
+        assert!(
+            hsm::write_object_auto(pin.as_bytes(), 0xCD, &vec![0; hsm::MAX_OBJECT_BYTES + 1])
+                .is_err()
+        );
+    }));
+    if let Some(id) = second {
+        hsm::delete_object(pin.as_bytes(), id).unwrap();
+    }
+    hsm::delete_object(pin.as_bytes(), first).unwrap();
+    assert_eq!(hsm::read_info().unwrap().files, original.files);
+    if let Err(panic) = result {
+        std::panic::resume_unwind(panic);
+    }
+    println!(
+        "OBJECT PASS: UTF-8 text, 1,800-byte file, automatic IDs, replacement, size rejection and cleanup"
+    );
+}
+
+#[test]
+#[ignore = "resets only an EMPTY dedicated HSM to PicoForge defaults; clears its PINs and DKEK configuration"]
+fn current_app_hsm_reset_defaults() {
+    select_target();
+    assert!(
+        hsm::read_info()
+            .unwrap()
+            .files
+            .iter()
+            .all(|id| matches!(*id, 0xC400 | 0xCC00)),
+        "This regression only resets an empty test HSM"
+    );
+    hsm::reset_defaults().unwrap();
+    let info = hsm::read_info().unwrap();
+    assert_eq!(info.initialized, Some(true));
+    assert!(info.files.iter().all(|id| matches!(*id, 0xC400 | 0xCC00)));
+    println!(
+        "HSM RESET PASS: user PIN 123456, SO PIN 12345678, no DKEK shares; initialized and empty"
+    );
+}

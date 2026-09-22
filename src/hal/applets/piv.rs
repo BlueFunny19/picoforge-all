@@ -516,13 +516,22 @@ pub fn authenticate_mgm(session: &CcidSession, key: &[u8], algo: u8) -> Result<(
     tlv::write(&mut inner, TAG_CHALLENGE, &challenge);
     let mut req2 = Vec::new();
     tlv::write(&mut req2, TAG_DYN_AUTH, &inner);
-    let r2 = session.transceive_full(&Apdu::read(
+    let (r2, sw) = session.transceive(&Apdu::read(
         CLA_ISO,
         INS_GENERAL_AUTH,
         algo,
         SLOT_MGM,
         &req2,
     ))?;
+    if sw.0 == 0x6984 {
+        return Err(PFError::Device(
+            "The management key is incorrect. Enter the current management key and try again."
+                .into(),
+        ));
+    }
+    if !sw.is_ok() {
+        return Err(sw.to_error());
+    }
 
     // Verify the card's response encrypts our challenge (mutual auth).
     let outer2 =

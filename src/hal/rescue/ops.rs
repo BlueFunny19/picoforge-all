@@ -770,6 +770,7 @@ impl RescueOperations for PcscTransport {
             steady,
             statuses,
             notifications: None,
+            steady_modes: None,
         })
     }
 

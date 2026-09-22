@@ -302,21 +302,55 @@ pub fn delete_object(pin: &[u8], fid: u16) -> Result<(), PFError> {
     s.transceive_full(&Apdu::write(0, 0xE4, 0, 0, &fid.to_be_bytes()))?;
     Ok(())
 }
+pub const MAX_OBJECT_BYTES: usize = 1800;
+pub fn validate_object_data(data: &[u8]) -> Result<(), PFError> {
+    if data.is_empty() || data.len() > MAX_OBJECT_BYTES {
+        return Err(error("Content must contain 1 to 1,800 bytes."));
+    }
+    Ok(())
+}
+pub fn next_object_id(files: &[u16], prefix: u8) -> Result<u16, PFError> {
+    public_object((prefix as u16) << 8)?;
+    (1..=255u16)
+        .map(|id| ((prefix as u16) << 8) | id)
+        .find(|fid| {
+            !files.contains(fid)
+                && (!matches!(prefix, 0xC4 | 0xCE)
+                    || !files
+                        .iter()
+                        .any(|f| matches!(f >> 8, 0xCC | 0xC4 | 0xCE) && (*f as u8 == *fid as u8)))
+        })
+        .ok_or_else(|| error("All object slots of this type are occupied."))
+}
+pub fn write_object_auto(pin: &[u8], prefix: u8, data: &[u8]) -> Result<u16, PFError> {
+    write_object_in_slot(pin, None, prefix, data)
+}
 pub fn write_object(pin: &[u8], fid: u16, data: &[u8]) -> Result<(), PFError> {
-    public_object(fid)?;
-    if fid as u8 == 0 {
+    write_object_in_slot(pin, Some(fid), (fid >> 8) as u8, data).map(|_| ())
+}
+fn write_object_in_slot(
+    pin: &[u8],
+    requested: Option<u16>,
+    prefix: u8,
+    data: &[u8],
+) -> Result<u16, PFError> {
+    public_object((prefix as u16) << 8)?;
+    validate_object_data(data)?;
+    if requested.is_some_and(|id| id as u8 == 0) {
         return Err(error("Device identity objects are read-only"));
     }
-    if data.is_empty() || data.len() > 1800 {
-        return Err(error("Object must contain 1 to 1800 bytes"));
-    }
+    let s = open()?;
+    verify(&s, pin, 0x81)?;
+    // Allocation and writing share the same card transaction.
+    let fid = match requested {
+        Some(id) => id,
+        None => next_object_id(&list_files(&s)?, prefix)?,
+    };
     let mut body = Vec::new();
     tlv::write(&mut body, 0x54, &[0, 0]);
     tlv::write(&mut body, 0x53, data);
-    let s = open()?;
-    verify(&s, pin, 0x81)?;
     s.send_chained(&Apdu::write(0, 0xD7, (fid >> 8) as u8, fid as u8, &body))?;
-    Ok(())
+    Ok(fid)
 }
 pub fn wrap_key(pin: &[u8], id: u8) -> Result<Vec<u8>, PFError> {
     key_id(id)?;
@@ -348,6 +382,11 @@ fn unwrap_in_slot(pin: &[u8], requested: Option<u8>, data: &[u8]) -> Result<(), 
     s.send_chained(&Apdu::write(0x80, 0x74, id, 0x93, data))?;
     Ok(())
 }
+/// The same fixed defaults used by PicoForge's Reset HSM action.
+pub fn reset_defaults() -> Result<(), PFError> {
+    initialize(b"123456", b"12345678", 0)
+}
+
 pub fn initialize(pin: &[u8], so: &[u8], shares: u8) -> Result<(), PFError> {
     initialize_card(pin, so, shares, false)
 }
@@ -459,5 +498,32 @@ mod allocation_tests {
     fn automatic_id_does_not_overwrite_a_full_card() {
         let files: Vec<_> = (1..=255u16).map(|id| 0xCC00 | id).collect();
         assert!(next_key_id(&files).is_err());
+    }
+}
+
+#[cfg(test)]
+mod object_editor_tests {
+    use super::*;
+    #[test]
+    fn allocation_preserves_existing_objects_and_identity() {
+        assert_eq!(
+            next_object_id(&[0xCD01, 0xCD03, 0xCF02], 0xCD).unwrap(),
+            0xCD02
+        );
+        assert_eq!(
+            next_object_id(&[0xCC01, 0xC402, 0xCE03], 0xCE).unwrap(),
+            0xCE04
+        );
+        assert!(next_object_id(&[], 0xCC).is_err());
+        let full: Vec<_> = (1..=255).map(|n| 0xCD00 | n).collect();
+        assert!(next_object_id(&full, 0xCD).is_err());
+    }
+    #[test]
+    fn content_limit_counts_bytes() {
+        assert!(validate_object_data(&[]).is_err());
+        assert!(validate_object_data(&vec![1; MAX_OBJECT_BYTES]).is_ok());
+        assert!(validate_object_data(&vec![1; MAX_OBJECT_BYTES + 1]).is_err());
+        assert!(validate_object_data("中".repeat(600).as_bytes()).is_ok());
+        assert!(validate_object_data("中".repeat(601).as_bytes()).is_err());
     }
 }

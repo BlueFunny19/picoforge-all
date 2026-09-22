@@ -426,6 +426,12 @@ impl PasskeysViewModel {
     }
 
     fn render_locked_state(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let pin_set = self
+            .device
+            .read(cx)
+            .fido_info
+            .as_ref()
+            .is_some_and(|f| f.options.get("clientPin") == Some(&true));
         let listener = cx.listener(|this, _, window, cx| {
             this.open_unlock_dialog(window, cx);
         });
@@ -453,18 +459,18 @@ impl PasskeysViewModel {
                         div()
                             .text_lg()
                             .font_semibold()
-                            .child("Authentication Required"),
+                            .child(if pin_set { "Authentication Required" } else { "Set up a FIDO PIN" }),
                     )
                     .child(
                         div()
                             .text_color(theme.muted_foreground)
                             .text_sm()
-                            .child("Unlock your device to view and manage passkeys."),
+                            .child(if pin_set { "Unlock your device to view and manage passkeys." } else { "Create a PIN before managing stored passkeys. FIDO has no default PIN." }),
                     )
                     .child(
                         PFIconButton::new(
                             Icon::default().path("icons/lock-open.svg"),
-                            "Unlock Storage",
+                            if pin_set { "Unlock Storage" } else { "Set up PIN" },
                         )
                         .on_click(listener)
                         .with_colors(rgb(0xe4e4e7), rgb(0xd0d0d3), rgb(0xe4e4e7))

@@ -18,7 +18,7 @@ pub enum PFError {
     #[error("IO/Hex Error: {0}")]
     Io(String),
     /// A device-level error returned by the firmware or transport layer.
-    #[error("Device Error: {0}")]
+    #[error("{0}")]
     Device(String),
 }
 

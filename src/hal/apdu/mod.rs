@@ -127,7 +127,7 @@ impl StatusWord {
             0x6A82 => "Requested object not found".to_string(),
             0x6A83 => "Record not found".to_string(),
             0x6A84 => "Not enough memory on the device".to_string(),
-            0x6A88 => "Reference data not found — no reset code set, or unknown object".to_string(),
+            0x6A88 => "The requested object was not found.".to_string(),
             0x6985 => "Conditions of use not satisfied".to_string(),
             0x6700 => "Wrong length".to_string(),
             0x6B00 => "Wrong parameters P1-P2".to_string(),

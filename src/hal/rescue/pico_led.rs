@@ -37,7 +37,15 @@ pub fn parse(raw: &[u8]) -> Option<LedStatusConfig> {
         Some(_) => return None,
         None => None,
     };
+    let steady_modes = match block(raw, 0x12) {
+        Some([1, flags]) if flags & 0x80 == 0 => {
+            Some(std::array::from_fn(|i| flags & (1 << i) != 0))
+        }
+        Some(_) => return None,
+        None => None,
+    };
     Some(LedStatusConfig {
+        steady_modes,
         steady: b[1] != 0,
         notifications,
         statuses: std::array::from_fn(|i| (b[2 + i * 2], b[3 + i * 2])),
@@ -74,7 +82,8 @@ fn update(raw: &mut [u8], config: &LedStatusConfig) -> Result<(), PFError> {
     let current = parse(raw).ok_or_else(|| {
         PFError::Device("This firmware does not support status-light editing.".into())
     })?;
-    if current.notifications.is_some() != config.notifications.is_some()
+    if current.steady_modes.is_some() != config.steady_modes.is_some()
+        || current.notifications.is_some() != config.notifications.is_some()
         || config.statuses.iter().any(|&(color, _)| color > 7)
         || config
             .notifications
@@ -99,6 +108,14 @@ fn update(raw: &mut [u8], config: &LedStatusConfig) -> Result<(), PFError> {
                     raw[pos + 5 + i * 2] = brightness;
                 }
             }
+            0x12 => {
+                if let Some(modes) = config.steady_modes {
+                    raw[pos + 3] = modes
+                        .iter()
+                        .enumerate()
+                        .fold(0, |flags, (i, steady)| flags | (u8::from(*steady) << i));
+                }
+            }
             0x11 => {
                 if let Some(notifications) = config.notifications {
                     for (i, (color, brightness)) in notifications.into_iter().enumerate() {
@@ -116,6 +133,25 @@ fn update(raw: &mut [u8], config: &LedStatusConfig) -> Result<(), PFError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn per_status_modes_roundtrip_and_compatibility() {
+        let mut raw = vec![
+            0x10, 10, 1, 0, 6, 255, 6, 255, 4, 255, 3, 255, 0x12, 2, 1, 0, 0x72, 1, 42,
+        ];
+        let mut config = parse(&raw).unwrap();
+        let modes = [true, false, true, false, true, false, true];
+        config.steady_modes = Some(modes);
+        update(&mut raw, &config).unwrap();
+        assert_eq!(parse(&raw).unwrap().steady_modes, Some(modes));
+        assert_eq!(raw[15], 0x55);
+        assert_eq!(&raw[16..], &[0x72, 1, 42]);
+        assert!(update(&mut raw[..12], &config).is_err());
+        raw[15] = 0x80;
+        assert!(parse(&raw).is_none());
+        raw[15] = 0;
+        raw[14] = 2;
+        assert!(parse(&raw).is_none());
+    }
     #[test]
     fn versioned_values_and_old_firmware() {
         let b = [0x10, 10, 1, 0, 2, 255, 2, 255, 4, 255, 3, 255];

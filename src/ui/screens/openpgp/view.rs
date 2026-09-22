@@ -262,21 +262,27 @@ impl Render for OpenPgpViewModel {
 
         let pin_card = Card::new()
             .title("PINs")
-            .description("User PIN (PW1) and admin PIN (PW3)")
+            .description("User PIN and admin PIN")
             .icon(Icon::default().path("icons/lock.svg"))
             .child(
                 v_flex()
                     .gap_2()
                     .child(self.action_row(
                         "User PIN",
-                        "Change the user PIN (PW1)",
+                        "Change the user PIN",
                         change_user_btn,
                         theme,
                     ))
                     .child(self.action_row(
                         "Admin PIN",
-                        "Change the admin PIN (PW3)",
+                        "Change the admin PIN",
                         change_admin_btn,
+                        theme,
+                    ))
+                    .child(self.action_row(
+                        "Reset code",
+                        "Set or clear the reset code (needs the admin PIN)",
+                        reset_code_btn,
                         theme,
                     ))
                     .child(self.action_row(
@@ -289,12 +295,6 @@ impl Render for OpenPgpViewModel {
                         "Unblock via admin",
                         "Reset a blocked user PIN with the admin PIN",
                         unblock_admin_btn,
-                        theme,
-                    ))
-                    .child(self.action_row(
-                        "Reset code",
-                        "Set or clear the reset code (needs the admin PIN)",
-                        reset_code_btn,
                         theme,
                     )),
             );

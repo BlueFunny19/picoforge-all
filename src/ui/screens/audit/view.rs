@@ -1,11 +1,12 @@
 //! Audit screen rendering.
 
-use crate::ui::components::button::PFButton;
+use crate::ui::components::button::standard;
 use crate::ui::components::card::Card;
 use crate::ui::components::page_view::PageView;
 use crate::ui::models::device::audit;
 use crate::ui::screens::audit::view_model::AuditViewModel;
 use gpui::*;
+use gpui_component::Disableable;
 use gpui_component::{ActiveTheme, Icon, StyledExt, Theme, h_flex, v_flex};
 
 fn empty_state(heading: &str, body: String, theme: &Theme) -> AnyElement {
@@ -119,7 +120,7 @@ impl AuditViewModel {
                 v_flex()
                     .gap_1()
                     .child(div().text_sm().child(format!(
-                        "Window [{}, {}) — {} entries, {} folded into the epoch",
+                        "Window [{}, {}). {} entries, {} folded into the epoch",
                         j.start,
                         j.seq_next,
                         j.entries.len(),
@@ -141,7 +142,7 @@ impl AuditViewModel {
             return div()
                 .text_sm()
                 .text_color(theme.muted_foreground)
-                .child("Verify a signed checkpoint to prove the journal is authentic and the device genuine.")
+                .child("Verify a checkpoint to check the journal signature. An expected key also checks the device identity.")
                 .into_any_element();
         };
 
@@ -223,82 +224,96 @@ impl Render for AuditViewModel {
                 .into_any_element();
         }
 
-        let read_btn = PFButton::new("Read journal")
-            .id("audit-read")
-            .with_colors(rgb(0x222225), rgb(0x2a2a2d), rgb(0x333336))
-            .disabled(self.loading)
+        let busy = self.loading || self.status_loading;
+        let read_btn = standard("audit-read", cx)
+            .label("Read journal")
+            .disabled(busy)
             .on_click(cx.listener(|this, _, window, cx| this.open_read(window, cx)));
-        let verify_btn = PFButton::new("Verify")
-            .id("audit-verify")
-            .with_colors(rgb(0x222225), rgb(0x2a2a2d), rgb(0x333336))
-            .disabled(self.loading)
+        let verify_btn = standard("audit-verify", cx)
+            .label("Verify")
+            .disabled(busy)
             .on_click(cx.listener(|this, _, window, cx| this.open_verify(window, cx)));
         let toggle_btn = match self.enabled {
-            Some(true) => Some(
-                PFButton::new("Disable")
-                    .id("audit-disable")
-                    .with_colors(rgb(0x222225), rgb(0x2a2a2d), rgb(0x333336))
-                    .disabled(self.loading)
-                    .on_click(
-                        cx.listener(|this, _, window, cx| this.open_toggle(false, window, cx)),
-                    ),
-            ),
-            Some(false) => Some(
-                PFButton::new("Enable")
-                    .id("audit-enable")
-                    .with_colors(rgb(0x222225), rgb(0x2a2a2d), rgb(0x333336))
-                    .disabled(self.loading)
-                    .on_click(
-                        cx.listener(|this, _, window, cx| this.open_toggle(true, window, cx)),
-                    ),
-            ),
-            None => None,
+            Some(enabled) => standard("audit-toggle", cx)
+                .label(if enabled { "Disable" } else { "Enable" })
+                .disabled(busy)
+                .on_click(
+                    cx.listener(move |this, _, window, cx| this.open_toggle(!enabled, window, cx)),
+                ),
+            None => standard("audit-retry", cx)
+                .label("Retry")
+                .disabled(busy)
+                .on_click(cx.listener(|this, _, _, cx| this.refresh_status(cx))),
         };
-
         let theme = cx.theme();
-        let journal_body = self.journal_body(theme);
-        let verify_body = self.verify_body(theme);
-
-        let (dot, status_text) = match self.enabled {
-            Some(true) => (
-                theme.green,
-                "On — recording security events to the key's flash.",
-            ),
-            Some(false) => (
-                theme.muted_foreground,
-                "Off — journalling is opt-in; nothing is being recorded.",
-            ),
-            None => (theme.muted_foreground, "Reading status…"),
+        let row = |title: &str, description: String, action: AnyElement| {
+            h_flex()
+                .w_full()
+                .justify_between()
+                .items_center()
+                .gap_4()
+                .p_4()
+                .border_1()
+                .border_color(theme.border)
+                .rounded_lg()
+                .child(
+                    v_flex().min_w_0().gap_1().child(title.to_string()).child(
+                        div()
+                            .text_sm()
+                            .text_color(theme.muted_foreground)
+                            .child(description),
+                    ),
+                )
+                .child(action)
         };
-        let status_body = h_flex()
-            .gap_2()
-            .items_center()
-            .child(div().w(px(10.)).h(px(10.)).rounded_full().bg(dot))
-            .child(div().text_sm().child(status_text.to_string()));
-        let status_card = {
-            let mut c = Card::new()
-                .title("Journalling")
-                .description("Turn the tamper-evident journal on or off (PIN + touch)")
-                .icon(Icon::default().path("icons/book-open.svg"));
-            if let Some(btn) = toggle_btn {
-                c = c.header_right(btn);
+        let status = if let Some(error) = &self.status_error {
+            format!("Could not read status. {error}")
+        } else if self.status_loading {
+            "Reading status…".into()
+        } else {
+            match self.enabled {
+                Some(true) => "On. Security events are being recorded.".into(),
+                Some(false) => "Off. New security events are not being recorded.".into(),
+                None => "Status unavailable. Retry to read it again.".into(),
             }
-            c.child(status_body)
         };
-
+        let status_card = Card::new()
+            .title("Journal settings")
+            .description("Choose whether the device records security events")
+            .icon(Icon::default().path("icons/book-open.svg"))
+            .child(row(
+                "Record security events",
+                status,
+                toggle_btn.into_any_element(),
+            ));
         let journal_card = Card::new()
-            .title("Audit journal")
-            .description("Hash-chained security events (boots, FIDO ops, PIN, config)")
+            .title("Security events")
+            .description("Review device activity and configuration changes")
             .icon(Icon::default().path("icons/scroll-text.svg"))
-            .header_right(read_btn)
-            .child(journal_body);
-
+            .child(
+                v_flex()
+                    .gap_4()
+                    .child(row(
+                        "Read journal",
+                        "Load the events stored on this device.".into(),
+                        read_btn.into_any_element(),
+                    ))
+                    .child(self.journal_body(theme)),
+            );
         let verify_card = Card::new()
-            .title("Checkpoint verification")
-            .description("DEVK-signed proof of authenticity and device identity")
+            .title("Journal verification")
+            .description("Check the journal signature and device identity")
             .icon(Icon::default().path("icons/shield-check.svg"))
-            .header_right(verify_btn)
-            .child(verify_body);
+            .child(
+                v_flex()
+                    .gap_4()
+                    .child(row(
+                        "Verify checkpoint",
+                        "Compare an expected device key when you have one.".into(),
+                        verify_btn.into_any_element(),
+                    ))
+                    .child(self.verify_body(theme)),
+            );
 
         let content = v_flex()
             .gap_6()

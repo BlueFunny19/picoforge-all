@@ -2058,6 +2058,7 @@ pub(crate) fn read_rskey_led_config(transport: &HidTransport) -> Result<LedStatu
         steady,
         statuses,
         notifications: None,
+        steady_modes: None,
     })
 }
 

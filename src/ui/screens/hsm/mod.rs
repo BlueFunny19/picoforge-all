@@ -1,4 +1,5 @@
 //! SmartCard-HSM management screen.
+mod object_editor;
 use crate::hal::applets::hsm;
 use crate::hal::types::FirmwareType;
 use crate::ui::app::AppModels;
@@ -7,14 +8,14 @@ use crate::ui::components::{
     button::standard,
     card::Card,
     dialog,
-    form::{select_state, selected_key},
+    form::{FormErrors, info_card, select_state, selected_key},
     information,
     page_view::PageView,
 };
 use crate::ui::models::device::{DeviceEvent, DeviceRepo};
 use gpui::*;
 use gpui_component::button::{Button, ButtonVariants};
-use gpui_component::input::{Input, InputState};
+use gpui_component::input::{Input, InputEvent, InputState};
 use gpui_component::select::Select;
 use gpui_component::{ActiveTheme, Disableable, Icon, WindowExt, h_flex, v_flex};
 
@@ -93,12 +94,7 @@ impl Action {
                 ("New SO PIN (6–16 characters)", true),
                 ("DKEK shares (0 disables key backup)", false),
             ],
-            Self::Initialize => vec![
-                ("New user PIN", true),
-                ("New SO PIN", true),
-                ("DKEK shares (0–16)", false),
-                ("Type ERASE HSM to confirm", false),
-            ],
+            Self::Initialize => Vec::new(),
         }
     }
     fn description(self) -> &'static str {
@@ -136,27 +132,42 @@ pub struct HsmViewModel {
     device: Entity<DeviceRepo>,
     info: Option<hsm::HsmInfo>,
     loading: bool,
+    loaded: bool,
     error: Option<String>,
     result: String,
+    key_search: Entity<InputState>,
+    object_search: Entity<InputState>,
     _task: Option<Task<()>>,
 }
 impl HsmViewModel {
-    pub fn new(_window: &mut Window, cx: &mut Context<Self>, models: &AppModels) -> Self {
+    pub fn new(window: &mut Window, cx: &mut Context<Self>, models: &AppModels) -> Self {
+        let key_search = cx.new(|cx| InputState::new(window, cx).placeholder("Search keys"));
+        let object_search = cx.new(|cx| InputState::new(window, cx).placeholder("Search objects"));
+        for input in [&key_search, &object_search] {
+            cx.subscribe(input, |_, _, _: &InputEvent, cx| cx.notify())
+                .detach();
+        }
         let device = models.device.clone();
         cx.subscribe(&device, |this: &mut Self, _, _: &DeviceEvent, cx| {
             if this.device.read(cx).device_changed {
                 this.info = None;
+                this.loaded = false;
                 this.result.clear();
             }
-            this.load(cx);
+            if !this.loaded {
+                this.load(cx);
+            }
         })
         .detach();
         let mut this = Self {
             device,
             info: None,
             loading: false,
+            loaded: false,
             error: None,
             result: String::new(),
+            key_search,
+            object_search,
             _task: None,
         };
         this.load(cx);
@@ -194,6 +205,7 @@ impl HsmViewModel {
                 .await;
             let _ = this.update(cx, |this, cx| {
                 this.loading = false;
+                this.loaded = true;
                 match res {
                     Ok(info) => this.info = Some(info),
                     Err(e) => this.error = Some(e.to_string()),
@@ -219,6 +231,14 @@ impl HsmViewModel {
             && !matches!(action, Action::Setup | Action::Initialize | Action::Read)
         {
             self.open_action(Action::Setup, window, cx);
+            return;
+        }
+        if matches!(action, Action::Write) {
+            self.open_object_editor(id, window, cx);
+            return;
+        }
+        if matches!(action, Action::Initialize) {
+            self.open_reset(window, cx);
             return;
         }
         let fields: Vec<_> = action
@@ -257,8 +277,13 @@ impl HsmViewModel {
         } else {
             Some(select_state(window, cx, options, 0))
         };
+        let errors = FormErrors::default();
+        for (index, (_, input)) in fields.iter().enumerate() {
+            errors.watch(index, input, window, cx);
+        }
         let weak = cx.entity().downgrade();
         let submit = {
+            let errors = errors.clone();
             let fields = fields.clone();
             let choice = choice.clone();
             std::rc::Rc::new(move |window: &mut Window, cx: &mut App| {
@@ -266,15 +291,23 @@ impl HsmViewModel {
                     .iter()
                     .map(|(_, f)| f.read(cx).text().to_string())
                     .collect();
+                errors.clear();
                 for (index, (label, _)) in fields.iter().enumerate() {
                     let optional = (index == 1
                         && matches!(action, Action::Generate | Action::Unwrap))
                         || (index == 0 && matches!(action, Action::Read | Action::Dkek))
                         || (index == 1 && matches!(action, Action::Dkek));
-                    if !optional && args[index].is_empty() {
-                        window.push_notification(format!("{label} is required."), cx);
-                        return;
+                    if !optional {
+                        errors.required(index, label, &args[index]);
                     }
+                }
+                if matches!(action, Action::Pin | Action::SoPin | Action::Unblock)
+                    && args[1] != args[2]
+                {
+                    errors.set(2, "New PIN entries do not match.");
+                }
+                if !errors.valid(window) {
+                    return;
                 }
                 let selected = choice
                     .as_ref()
@@ -286,7 +319,14 @@ impl HsmViewModel {
             })
         };
         window.open_dialog(cx, move |d, _, _| {
-            let mut form = v_flex().gap_2().child(action.description());
+            let mut form = v_flex().gap_3().child(action.description());
+            if !matches!(action, Action::Setup | Action::Dkek) {
+                form = form.child(info_card(if matches!(action, Action::SoPin | Action::Unblock) {
+                    "PicoForge reset default: SO PIN 12345678. Use your own PIN if it was changed or chosen during setup."
+                } else {
+                    "PicoForge reset default: user PIN 123456. Use your own PIN if it was changed or chosen during setup."
+                }));
+            }
             if let Some(choice) = &choice {
                 form = form.child("Algorithm").child(Select::new(choice).w_full());
             }
@@ -297,7 +337,8 @@ impl HsmViewModel {
                 if index == 1 && id.is_some() {
                     form = form.child(format!("Selected ID: {:02X}", id.unwrap()));
                 } else {
-                    form = form.child(*label).child(Input::new(input));
+                    let required = !((index == 0 && matches!(action, Action::Read | Action::Dkek)) || (index == 1 && matches!(action, Action::Dkek)));
+                    form = form.child(errors.field(index, label, input, required));
                 }
             }
             let ok = submit.clone();
@@ -384,7 +425,14 @@ fn execute(action: Action, args: &[String], choice: u8) -> Result<Vec<u8>, Strin
         Action::Crypto => return hsm::crypto(pin, id()?, choice, &bytes(&args[2])?).map_err(err),
         Action::Read => return hsm::read_object(pin, fid()?).map_err(err),
         Action::DeleteObject => hsm::delete_object(pin, fid()?).map_err(err)?,
-        Action::Write => hsm::write_object(pin, fid()?, &bytes(&args[2])?).map_err(err)?,
+        Action::Write => {
+            let data = bytes(&args[2])?;
+            if args[1].is_empty() {
+                hsm::write_object_auto(pin, choice, &data).map_err(err)?;
+            } else {
+                hsm::write_object(pin, fid()?, &data).map_err(err)?;
+            }
+        }
         Action::Pin | Action::SoPin | Action::Unblock => {
             if args[1] != args[2] {
                 return Err("New PIN entries do not match".into());
@@ -406,16 +454,7 @@ fn execute(action: Action, args: &[String], choice: u8) -> Result<Vec<u8>, Strin
                 .map_err(|_| "Enter a DKEK share count from 0 to 16")?;
             hsm::setup(pin, args[1].as_bytes(), shares).map_err(err)?;
         }
-        Action::Initialize => {
-            if args[3] != "ERASE HSM" {
-                return Err("Type ERASE HSM to confirm initialization".into());
-            }
-            let shares = args[2]
-                .trim()
-                .parse()
-                .map_err(|_| "Enter a DKEK share count from 0 to 16")?;
-            hsm::initialize(pin, args[1].as_bytes(), shares).map_err(err)?;
-        }
+        Action::Initialize => hsm::reset_defaults().map_err(err)?,
     }
     Ok(Vec::new())
 }
@@ -437,103 +476,62 @@ impl HsmViewModel {
         } else {
             Action::Write
         };
-        let mut rows = v_flex().gap_2();
-        if ids.is_empty() {
-            rows = rows.child(
-                div()
-                    .p_4()
-                    .text_sm()
-                    .text_color(cx.theme().muted_foreground)
-                    .child(if self.info.is_none() {
-                        "Card information unavailable"
-                    } else if keys {
-                        "No stored keys"
-                    } else {
-                        "No stored objects"
-                    }),
-            );
-        }
-        for id in &ids {
-            let id = *id;
-            let kind = match id >> 8 {
-                0xCC => "Private / secret key",
-                0xC4 => "Key description",
-                0xCE => "End-entity certificate",
-                0xCA => "CA certificate",
-                0xC8 => "Certificate description",
-                0xC9 => "Data description",
-                0xCF => "Readable data",
-                0xCD => "Protected data",
-                _ => "Object",
-            };
-            let mut actions = h_flex().gap_2().flex_shrink_0();
-            for (action, icon) in if keys {
-                vec![
-                    (Action::Crypto, "icons/key.svg"),
-                    (Action::Wrap, "icons/save.svg"),
-                    (Action::Delete, "icons/trash-2.svg"),
-                ]
-            } else {
-                vec![
-                    (Action::Read, "icons/file.svg"),
-                    (Action::Write, "icons/replace.svg"),
-                    (Action::DeleteObject, "icons/trash-2.svg"),
-                ]
-            } {
-                actions = actions.child(
-                    standard(
-                        SharedString::from(format!("hsm-{id}-{}", action.title())),
-                        cx,
-                    )
-                    .icon(Icon::default().path(icon))
-                    .tooltip(action.title())
-                    .disabled(self.loading)
-                    .on_click(cx.listener(move |this, _, w, cx| {
-                        this.open_action_for(action, Some(id), w, cx)
-                    })),
-                );
-            }
-            rows = rows.child(
-                h_flex()
-                    .w_full()
-                    .justify_between()
-                    .gap_4()
-                    .p_4()
-                    .border_1()
-                    .border_color(cx.theme().border)
-                    .rounded_lg()
-                    .child(
-                        h_flex()
-                            .gap_3()
-                            .child(div().p_2().rounded_lg().bg(rgb(0x252528)).child(
-                                Icon::default().path(if keys {
-                                    "icons/key.svg"
-                                } else {
-                                    "icons/file.svg"
-                                }),
-                            ))
-                            .child(
-                                v_flex()
-                                    .gap_1()
-                                    .child(if keys {
-                                        format!("Key {:02X}", id & 0xff)
-                                    } else {
-                                        format!("Object {id:04X}")
-                                    })
-                                    .child(
-                                        div()
-                                            .text_sm()
-                                            .text_color(cx.theme().muted_foreground)
-                                            .child(kind),
-                                    ),
-                            ),
-                    )
-                    .child(actions),
-            );
-        }
+        let search = if keys {
+            &self.key_search
+        } else {
+            &self.object_search
+        };
+        let query = search.read(cx).text().to_string().to_lowercase();
+        let total = ids.len();
+        let ids: Vec<_> = ids
+            .into_iter()
+            .filter(|id| {
+                format!(
+                    "{} {id:04X} {:02X} {}",
+                    if keys { "Key" } else { "Object" },
+                    id & 0xff,
+                    object_kind(*id)
+                )
+                .to_lowercase()
+                .contains(&query)
+            })
+            .collect();
+        let weak = cx.entity().downgrade();
+        let rows = if ids.is_empty() {
+            div()
+                .p_4()
+                .text_sm()
+                .text_color(cx.theme().muted_foreground)
+                .child(if !query.is_empty() {
+                    "No matches"
+                } else if keys {
+                    "No stored keys"
+                } else {
+                    "No stored objects"
+                })
+                .into_any_element()
+        } else {
+            uniform_list(
+                if keys {
+                    "hsm-key-list"
+                } else {
+                    "hsm-object-list"
+                },
+                ids.len(),
+                move |range, _, cx| {
+                    weak.update(cx, |this, cx| {
+                        range.map(|i| this.stored_row(ids[i], keys, cx)).collect()
+                    })
+                    .unwrap_or_default()
+                },
+            )
+            .h(px(264.))
+            .w_full()
+            .into_any_element()
+        };
         Card::new()
             .title(if keys { "Keys" } else { "Objects" })
-            .description(format!("{} stored", ids.len()))
+            .description(format!("{total} stored"))
             .icon(Icon::default().path(if keys {
                 "icons/key.svg"
             } else {
@@ -552,7 +550,82 @@ impl HsmViewModel {
                 .disabled(self.loading || self.info.is_none())
                 .on_click(cx.listener(move |this, _, w, cx| this.open_action(action, w, cx))),
             )
-            .child(rows)
+            .child(
+                v_flex()
+                    .gap_3()
+                    .child(Input::new(search).cleanable(true))
+                    .child(rows),
+            )
+    }
+    fn stored_row(&self, id: u16, keys: bool, cx: &mut Context<Self>) -> AnyElement {
+        let kind = object_kind(id);
+        let mut actions = h_flex().gap_2().flex_shrink_0();
+        for (action, icon) in if keys {
+            vec![
+                (Action::Crypto, "icons/key.svg"),
+                (Action::Wrap, "icons/save.svg"),
+                (Action::Delete, "icons/trash-2.svg"),
+            ]
+        } else {
+            vec![
+                (Action::Read, "icons/file.svg"),
+                (Action::Write, "icons/replace.svg"),
+                (Action::DeleteObject, "icons/trash-2.svg"),
+            ]
+        } {
+            actions =
+                actions.child(
+                    standard(
+                        SharedString::from(format!("hsm-{id}-{}", action.title())),
+                        cx,
+                    )
+                    .icon(Icon::default().path(icon))
+                    .tooltip(action.title())
+                    .disabled(self.loading)
+                    .on_click(cx.listener(move |this, _, w, cx| {
+                        this.open_action_for(action, Some(id), w, cx)
+                    })),
+                );
+        }
+        let row =
+            h_flex()
+                .h(px(80.))
+                .mb_2()
+                .w_full()
+                .justify_between()
+                .gap_4()
+                .p_4()
+                .border_1()
+                .border_color(cx.theme().border)
+                .rounded_lg()
+                .child(
+                    h_flex()
+                        .gap_3()
+                        .child(div().p_2().rounded_lg().bg(rgb(0x252528)).child(
+                            Icon::default().path(if keys {
+                                "icons/key.svg"
+                            } else {
+                                "icons/file.svg"
+                            }),
+                        ))
+                        .child(
+                            v_flex()
+                                .gap_1()
+                                .child(if keys {
+                                    format!("Key {:02X}", id & 0xff)
+                                } else {
+                                    format!("Object {id:04X}")
+                                })
+                                .child(
+                                    div()
+                                        .text_sm()
+                                        .text_color(cx.theme().muted_foreground)
+                                        .child(kind),
+                                ),
+                        ),
+                )
+                .child(actions);
+        row.into_any_element()
     }
     fn action_row(
         &self,
@@ -764,5 +837,19 @@ impl Render for HsmViewModel {
             body,
             cx.theme(),
         )
+    }
+}
+
+fn object_kind(id: u16) -> &'static str {
+    match id >> 8 {
+        0xCC => "Private / secret key",
+        0xC4 => "Key description",
+        0xCE => "End-entity certificate",
+        0xCA => "CA certificate",
+        0xC8 => "Certificate description",
+        0xC9 => "Data description",
+        0xCF => "Readable data",
+        0xCD => "Protected data",
+        _ => "Object",
     }
 }

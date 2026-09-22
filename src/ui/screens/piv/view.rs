@@ -118,6 +118,9 @@ impl PivViewModel {
         }
 
         v_flex()
+            .h(px(172.))
+            .mb_2()
+            .overflow_hidden()
             .gap_3()
             .p_4()
             .border_1()
@@ -128,7 +131,11 @@ impl PivViewModel {
                     .gap_0p5()
                     .child(div().font_medium().child(piv::slot_label(slot)))
                     .child(
-                        crate::ui::components::information::grid()
+                        div()
+                            .w_full()
+                            .grid()
+                            .grid_cols(3)
+                            .gap_3()
                             .child(kv(
                                 "Algorithm",
                                 s.meta
@@ -150,7 +157,13 @@ impl PivViewModel {
                             )),
                     ),
             )
-            .child(h_flex().gap_2().flex_wrap().children(btns))
+            .child(
+                h_flex()
+                    .id(SharedString::from(format!("piv-actions-{slot}")))
+                    .gap_2()
+                    .overflow_x_scroll()
+                    .children(btns),
+            )
             .into_any_element()
     }
 
@@ -197,11 +210,40 @@ impl Render for PivViewModel {
         let info = self.info.clone();
         let slots = info.as_ref().map(|i| i.slots.clone()).unwrap_or_default();
 
-        // Slot rows (mutable cx).
-        let mut slot_rows = Vec::new();
-        for s in slots {
-            slot_rows.push(self.render_slot_row(s, cx));
-        }
+        let query = self.slot_search.read(cx).text().to_string().to_lowercase();
+        let slots: Vec<_> = slots
+            .into_iter()
+            .filter(|s| {
+                format!(
+                    "{} {} {}",
+                    piv::slot_label(s.slot),
+                    s.meta.map(|m| piv::algo_label(m.algo)).unwrap_or("Empty"),
+                    if s.has_cert {
+                        "certificate installed"
+                    } else {
+                        "no certificate"
+                    }
+                )
+                .to_lowercase()
+                .contains(&query)
+            })
+            .collect();
+        let weak = cx.entity().downgrade();
+        let slot_rows = if slots.is_empty() {
+            div().p_4().child("No matching slots").into_any_element()
+        } else {
+            uniform_list("piv-slot-list", slots.len(), move |range, _, cx| {
+                weak.update(cx, |this, cx| {
+                    range
+                        .map(|i| this.render_slot_row(slots[i].clone(), cx))
+                        .collect()
+                })
+                .unwrap_or_default()
+            })
+            .h(px(360.))
+            .w_full()
+            .into_any_element()
+        };
 
         // Buttons.
         let theme = cx.theme();
@@ -310,7 +352,12 @@ impl Render for PivViewModel {
             .title("Key slots")
             .description("Primary and retired certificate slots")
             .icon(Icon::default().path("icons/key.svg"))
-            .child(v_flex().gap_2().children(slot_rows));
+            .child(
+                v_flex()
+                    .gap_3()
+                    .child(gpui_component::input::Input::new(&self.slot_search).cleanable(true))
+                    .child(slot_rows),
+            );
 
         let pin_card = Card::new()
             .title("PIN & PUK")

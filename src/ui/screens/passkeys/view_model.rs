@@ -195,6 +195,16 @@ impl PasskeysViewModel {
     }
 
     pub(super) fn open_unlock_dialog(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if !self
+            .device
+            .read(cx)
+            .fido_info
+            .as_ref()
+            .is_some_and(|f| f.options.get("clientPin") == Some(&true))
+        {
+            self.open_setup_pin_dialog(window, cx);
+            return;
+        }
         let view_handle = cx.entity().downgrade();
 
         dialog::open_pin_prompt(

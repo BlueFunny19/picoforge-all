@@ -11,13 +11,7 @@ use crate::ui::models::device::{
 use gpui::*;
 use gpui_component::input::InputState;
 use gpui_component::select::{SelectItem, SelectState};
-use gpui_component::slider::SliderState;
 use std::time::Duration;
-
-/// Slider position shown for LED brightness when the device has no phy override.
-/// Purely cosmetic: an unmoved slider is treated as "no override" on save, so this
-/// value is never written unless the user actually drags the slider.
-const DEFAULT_BRIGHTNESS: u8 = 8;
 
 /// After a PHY config write, RS-Key firmware warm-reboots and re-enumerates on
 /// its own, so the confirmation read must wait for the device to re-appear
@@ -269,9 +263,6 @@ pub struct ConfigViewModel {
     pub(super) led_gpio_input: Entity<InputState>,
     pub(super) led_driver_select: Entity<SelectState<Vec<DriverSelectOption>>>,
     pub(super) led_order_select: Entity<SelectState<Vec<OrderSelectOption>>>,
-    pub(super) led_brightness_slider: Entity<SliderState>,
-    pub(super) led_dimmable: bool,
-    pub(super) led_steady: bool,
     pub(super) touch_timeout_input: Entity<InputState>,
     pub(super) power_cycle: bool,
     pub(super) loading: bool,
@@ -279,6 +270,7 @@ pub struct ConfigViewModel {
 
     // RS-Key specific state
     pub(super) led_status_steady: bool,
+    pub(super) led_status_modes: [bool; 7],
     pub(super) led_status_colors: [u8; 7],
     pub(super) led_status_brightness: [u8; 7],
     pub(super) usb_apps_supported: u16,
@@ -341,13 +333,7 @@ impl ConfigViewModel {
             .and_then(|c| c.touch_timeout)
             .map(|t| t.to_string().into())
             .unwrap_or_default();
-        let current_brightness = config
-            .and_then(|c| c.led_brightness)
-            .map(|b| b as f32)
-            .unwrap_or(DEFAULT_BRIGHTNESS as f32);
 
-        let led_dimmable = config.map(|c| c.led_dimmable).unwrap_or(true);
-        let led_steady = config.map(|c| c.led_steady).unwrap_or(false);
         let power_cycle = config.map(|c| c.power_cycle_on_reset).unwrap_or(false);
         let enabled_usb_itf = config.and_then(|c| c.enabled_usb_itf);
         let curves = config
@@ -380,10 +366,14 @@ impl ConfigViewModel {
             .unwrap_or_else(|| "Firmware default".to_string());
 
         let mut led_status_steady = false;
+        let mut led_status_modes = [false; 7];
         let mut led_status_colors = [0; 7];
         let mut led_status_brightness = [0; 7];
         if let Some(led) = &device_read.led_status {
             led_status_steady = led.steady;
+            led_status_modes = led
+                .steady_modes
+                .unwrap_or([led.steady, led.steady, false, false, false, false, false]);
             for i in 0..4 {
                 led_status_colors[i] = led.statuses[i].0;
                 led_status_brightness[i] = led.statuses[i].1;
@@ -521,14 +511,6 @@ impl ConfigViewModel {
         )
         .detach();
 
-        let led_brightness_slider = cx.new(|_| {
-            SliderState::new()
-                .min(0.0)
-                .max(15.0)
-                .step(1.0)
-                .default_value(current_brightness)
-        });
-
         let touch_timeout_input = cx.new(|cx| {
             InputState::new(window, cx)
                 .placeholder(touch_placeholder)
@@ -545,9 +527,6 @@ impl ConfigViewModel {
             led_gpio_input,
             led_driver_select,
             led_order_select,
-            led_brightness_slider,
-            led_dimmable,
-            led_steady,
             touch_timeout_input,
             power_cycle,
             curve_p256: curves.contains(RescueCurves::SECP256R1),
@@ -564,6 +543,7 @@ impl ConfigViewModel {
             loading: false,
             is_custom_vendor,
             led_status_steady,
+            led_status_modes,
             led_status_colors,
             led_status_brightness,
             usb_apps_supported,
@@ -705,8 +685,7 @@ impl ConfigViewModel {
                                 );
 
                                 let config = &fs.status.config;
-                                this.led_dimmable = config.led_dimmable;
-                                this.led_steady = config.led_steady;
+
                                 this.power_cycle = config.power_cycle_on_reset;
                                 Self::sync_curve_toggles(this, Some(config));
 
@@ -901,19 +880,6 @@ impl ConfigViewModel {
             has_changes = true;
         }
 
-        // LED brightness: an unmoved slider preserves the device's value
-        // (None = firmware default) instead of writing its placeholder position.
-        let init_brightness = current_led_brightness.unwrap_or(DEFAULT_BRIGHTNESS);
-        let slider_brightness = self.led_brightness_slider.read(cx).value().start() as u8;
-        let final_led_brightness = if slider_brightness != init_brightness {
-            Some(slider_brightness)
-        } else {
-            current_led_brightness
-        };
-        if final_led_brightness != current_led_brightness {
-            has_changes = true;
-        }
-
         // Touch timeout: empty input = "firmware default" (no override written).
         // `0` firmware-side also means the 30 s default, so an empty field is honest.
         let touch_timeout_str = self.touch_timeout_input.read(cx).text().to_string();
@@ -927,10 +893,7 @@ impl ConfigViewModel {
             has_changes = true;
         }
 
-        if (self.led_dimmable != current_led_dimmable)
-            || (self.led_steady != current_led_steady)
-            || (self.power_cycle != current_power_cycle)
-        {
+        if self.power_cycle != current_power_cycle {
             has_changes = true;
         }
 
@@ -969,12 +932,12 @@ impl ConfigViewModel {
             product_name: Some(product_name),
             manufacturer_name: Some(manufacturer_name),
             led_gpio: final_led_gpio,
-            led_brightness: final_led_brightness,
+            led_brightness: current_led_brightness,
             touch_timeout: final_touch_timeout,
             led_driver: final_led_driver,
-            led_dimmable: Some(self.led_dimmable),
+            led_dimmable: Some(current_led_dimmable),
             power_cycle_on_reset: Some(self.power_cycle),
-            led_steady: Some(self.led_steady),
+            led_steady: Some(current_led_steady),
             enable_secp256k1: None,
             raw_curves_mask: built_curves_mask,
             led_order: final_led_order,
@@ -988,9 +951,11 @@ impl ConfigViewModel {
         // Error also controls timeouts, including older seven-state firmware.
         self.led_status_colors[5] = self.led_status_colors[6];
         self.led_status_brightness[5] = self.led_status_brightness[6];
+        self.led_status_modes[5] = self.led_status_modes[6];
         let led_changed = match &current_led {
             Some(led) => {
-                led.steady != self.led_status_steady
+                led.steady_modes.is_some_and(|m| m != self.led_status_modes)
+                    || led.steady != self.led_status_steady
                     || (0..4).any(|i| {
                         led.statuses[i]
                             != (self.led_status_colors[i], self.led_status_brightness[i])
@@ -1015,6 +980,10 @@ impl ConfigViewModel {
 
         let phy = has_changes.then_some(changes);
         let led = led_changed.then(|| LedStatusConfig {
+            steady_modes: current_led
+                .as_ref()
+                .and_then(|l| l.steady_modes)
+                .map(|_| self.led_status_modes),
             steady: self.led_status_steady,
             notifications: current_led.as_ref().and_then(|l| l.notifications).map(|_| {
                 std::array::from_fn(|i| {
@@ -1144,18 +1113,14 @@ impl ConfigViewModel {
             .map(|t| t.to_string())
             .unwrap_or_default();
 
-        self.led_dimmable = config.map(|c| c.led_dimmable).unwrap_or(true);
-        self.led_steady = config.map(|c| c.led_steady).unwrap_or(false);
         self.power_cycle = config.map(|c| c.power_cycle_on_reset).unwrap_or(false);
         Self::sync_curve_toggles(self, config);
 
-        let brightness = config
-            .and_then(|c| c.led_brightness)
-            .map(|b| b as f32)
-            .unwrap_or(DEFAULT_BRIGHTNESS as f32);
-
         if let Some(led) = &device.led_status {
             self.led_status_steady = led.steady;
+            self.led_status_modes = led
+                .steady_modes
+                .unwrap_or([led.steady, led.steady, false, false, false, false, false]);
             for i in 0..4 {
                 self.led_status_colors[i] = led.statuses[i].0;
                 self.led_status_brightness[i] = led.statuses[i].1;
@@ -1204,8 +1169,6 @@ impl ConfigViewModel {
             .update(cx, |input, cx| input.set_value(new_gpio, window, cx));
         self.touch_timeout_input
             .update(cx, |input, cx| input.set_value(new_timeout, window, cx));
-        self.led_brightness_slider
-            .update(cx, |slider, cx| slider.set_value(brightness, window, cx));
 
         self.led_driver_select.update(cx, |select, cx| {
             select.set_selected_index(

@@ -5,7 +5,7 @@ use crate::ui::models::device::{
 };
 use crate::ui::screens::config::view_model::ConfigViewModel;
 use gpui::*;
-use gpui_component::{button::*, input::*, select::*, slider::*, switch::*, *};
+use gpui_component::{button::*, input::*, select::*, switch::*, *};
 
 /// Per-status LED brightness is a full u8 on the device (0-255, 0 = off). The
 /// +/- steppers move in coarse steps (15 divides 255 evenly) so the whole range
@@ -131,81 +131,6 @@ impl ConfigViewModel {
             );
         }
 
-        // Global brightness / dimmable / steady live in the phy record. On RS-Key
-        // the per-status EF_LED_CONF (Status LED Colors card) overrides them at
-        // boot, so showing them here too would be duplicate, dead controls.
-        if !is_rskey {
-            let dim_listener = cx.listener(|this, checked, _, cx| {
-                this.led_dimmable = *checked;
-                cx.notify();
-            });
-            let steady_listener = cx.listener(|this, checked, _, cx| {
-                this.led_steady = *checked;
-                cx.notify();
-            });
-            let theme = cx.theme();
-            let brightness = self.led_brightness_slider.read(cx).value().start() as i32;
-
-            content = content
-                .child(div().h_px().bg(theme.border))
-                .child(
-                    v_flex().gap_2().child("Brightness (0-15)").child(
-                        h_flex()
-                            .items_center()
-                            .gap_4()
-                            .child(
-                                Slider::new(&self.led_brightness_slider)
-                                    .flex_1()
-                                    .disabled(hardware_config_disabled),
-                            )
-                            .child(
-                                div()
-                                    .text_xs()
-                                    .text_color(theme.muted_foreground)
-                                    .child(format!("Level {}", brightness)),
-                            ),
-                    ),
-                )
-                .child(
-                    h_flex()
-                        .items_center()
-                        .justify_between()
-                        .child(
-                            v_flex().gap_0p5().child("LED Dimmable").child(
-                                div()
-                                    .text_sm()
-                                    .text_color(theme.muted_foreground)
-                                    .child("Allow brightness adjustment"),
-                            ),
-                        )
-                        .child(
-                            Switch::new("led-dimmable")
-                                .checked(self.led_dimmable)
-                                .disabled(hardware_config_disabled)
-                                .on_click(dim_listener),
-                        ),
-                )
-                .child(
-                    h_flex()
-                        .items_center()
-                        .justify_between()
-                        .child(
-                            v_flex().gap_0p5().child("LED Steady Mode").child(
-                                div()
-                                    .text_sm()
-                                    .text_color(theme.muted_foreground)
-                                    .child("Keep LED on constantly"),
-                            ),
-                        )
-                        .child(
-                            Switch::new("led-steady")
-                                .checked(self.led_steady)
-                                .disabled(hardware_config_disabled)
-                                .on_click(steady_listener),
-                        ),
-                );
-        }
-
         Card::new()
             .title("LED Settings")
             .description("Adjust visual feedback behavior")
@@ -280,6 +205,12 @@ impl ConfigViewModel {
             .status
             .as_ref()
             .is_some_and(|s| s.firmware_type == FirmwareType::PicoAll);
+        let modes_available = self
+            .device
+            .read(cx)
+            .led_status
+            .as_ref()
+            .is_some_and(|l| l.steady_modes.is_some());
         let mut rows = div().grid().grid_cols(2).gap_4();
         let notifications_available = self
             .device
@@ -327,7 +258,37 @@ impl ConfigViewModel {
                     .border_1()
                     .border_color(cx.theme().border)
                     .rounded_lg()
-                    .child(div().font_semibold().child(name))
+                    .child(
+                        h_flex()
+                            .justify_between()
+                            .gap_3()
+                            .child(div().font_semibold().child(name))
+                            .child(
+                                h_flex()
+                                    .gap_2()
+                                    .child(
+                                        div()
+                                            .text_sm()
+                                            .text_color(cx.theme().muted_foreground)
+                                            .child(if !modes_available {
+                                                "Unavailable"
+                                            } else if self.led_status_modes[i] {
+                                                "Steady"
+                                            } else {
+                                                "Breathing"
+                                            }),
+                                    )
+                                    .child(
+                                        Switch::new(SharedString::from(format!("status-mode-{i}")))
+                                            .checked(self.led_status_modes[i])
+                                            .disabled(disabled || !available || !modes_available)
+                                            .on_click(cx.listener(move |this, checked, _, cx| {
+                                                this.led_status_modes[i] = *checked;
+                                                cx.notify();
+                                            })),
+                                    ),
+                            ),
+                    )
                     .child(
                         div()
                             .grid()
@@ -423,25 +384,13 @@ impl ConfigViewModel {
         let mut card = Card::new()
             .title("Status light")
             .icon(Icon::default().path("icons/palette.svg"))
-            .child(rows)
-            .child(
-                h_flex()
-                    .justify_between()
-                    .child(if pico_all {
-                        "Steady ready light"
-                    } else {
-                        "Steady light"
-                    })
-                    .child(
-                        Switch::new("status-steady")
-                            .checked(self.led_status_steady)
-                            .disabled(disabled || !available)
-                            .on_click(cx.listener(|this, checked, _, cx| {
-                                this.led_status_steady = *checked;
-                                cx.notify();
-                            })),
-                    ),
-            );
+            .description("Switch off for breathing, on for a steady light")
+            .child(rows);
+        if !modes_available {
+            card = card.child(crate::ui::components::form::info_card(
+                "Update Pico All firmware to configure breathing or steady mode for each status.",
+            ));
+        }
         if pico_all && available && !notifications_available {
             card = card.child(crate::ui::components::notice::warning(
                 "Notification colors unavailable",
